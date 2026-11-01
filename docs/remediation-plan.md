@@ -11,8 +11,9 @@ NSSM-001 through NSSM-024 match its numbered findings. NSSM-025 through NSSM-034
 split its additional follow-ups into independent tasks. The latter ten are
 follow-ups, not ten additional reproduced high-priority defects.
 
-**Status:** B00 is merged. B01 implements NSSM-001, NSSM-003, NSSM-010 and
-NSSM-011 in [PR 5](https://github.com/existical/nssm-native/pull/5) and awaits merge; see the
+**Status:** B00 and B01 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
+are fixed but unreleased through
+[PR 5](https://github.com/existical/nssm-native/pull/5); see the
 [fix records](fixes/README.md) and [validation](reviews/b01-validation.md).
 The other tasks remain planned; NSSM-034 requires confirmation.
 [Previously merged changes](fixes/implemented.md) retain separate CONT IDs.
@@ -35,7 +36,7 @@ work. P2 tasks share an early group only when they support the same repair.
 | Order | Scope | Issue IDs | Prerequisites and completion |
 | --- | --- | --- | --- |
 | B00 | Publish review, plan, fix records and comparison rules | Documentation only | Merged in PR 4; CONT-001 through CONT-005 backfilled |
-| B01 | Registry and environment bounds | 001, 003, 010, 011 | First runtime group; bounded reads and guard tests pass |
+| B01 | Registry and environment bounds | 001, 003, 010, 011 | Merged in PR 5; regression, sanitizer and four-configuration checks passed |
 | B02 | Safe command quoting | 002 | Independent of B01; dump argument round trips pass |
 | B03 | Affinity and numeric parsing | 004, 029, 031 | Check all numeric callers; no invalid indexing or shifts |
 | B04 | Hook ownership and launch handles | 005, 006, 017 | Deterministic completion/failure tests; no leaked handles |
