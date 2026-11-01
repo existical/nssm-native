@@ -58,7 +58,7 @@
 #include "process.h"
 #include "registry.h"
 #include "settings.h"
-#include "io.h"
+#include "nssm_io.h"
 #include "gui.h"
 #endif
 

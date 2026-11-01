@@ -1,2 +1,5 @@
 *.mc diff
 *.rc diff
+
+# The upstream C++ files retain their existing CRLF line endings.
+src/* whitespace=cr-at-eol

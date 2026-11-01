@@ -1,6 +1,6 @@
-# Generated build files; keep the reproducible build script.
-/build/*
-!/build/build-x64.cmd
+# Generated build and packaging output.
+/build/
+/dist/
 /out/
 /tmp/
 /nssm.exe
@@ -14,3 +14,4 @@
 *.ilk
 *.res
 /.vs/
+/CMakeUserPresets.json
