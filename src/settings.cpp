@@ -122,7 +122,7 @@ static int setting_not_dumpable(const TCHAR *service_name, void *param, const TC
   return 0;
 }
 
-static int setting_dump_string(const TCHAR *service_name, void *param, const TCHAR *name, const value_t *value, const TCHAR *additional) {
+static int setting_dump_string(const TCHAR *service_name, unsigned long type, const TCHAR *name, const value_t *value, const TCHAR *additional) {
   TCHAR quoted_service_name[SERVICE_NAME_LENGTH * 2];
   TCHAR quoted_value[VALUE_LENGTH * 2];
   TCHAR quoted_additional[VALUE_LENGTH * 2];
@@ -138,7 +138,6 @@ static int setting_dump_string(const TCHAR *service_name, void *param, const TCH
   }
   else quoted_additional[0] = _T('\0');
 
-  unsigned long type = (unsigned long) param;
   if (is_string_type(type)) {
     if (_tcslen(value->string)) {
       if (quote(value->string, quoted_value, _countof(quoted_value))) return 2;
@@ -259,7 +258,7 @@ static int setting_dump_exit_action(const TCHAR *service_name, void *param, cons
 
     ret = setting_get_exit_action(service_name, 0, name, default_value, value, additional);
     if (ret == 1) {
-      if (setting_dump_string(service_name, (void *) REG_SZ, name, value, additional)) errors++;
+      if (setting_dump_string(service_name, REG_SZ, name, value, additional)) errors++;
     }
     else if (ret < 0) errors++;
   }
@@ -332,7 +331,7 @@ static int setting_dump_hooks(const TCHAR *service_name, void *param, const TCHA
         continue;
       }
 
-      if (setting_dump_string(service_name, (void *) REG_SZ, name, value, hook_name)) errors++;
+      if (setting_dump_string(service_name, REG_SZ, name, value, hook_name)) errors++;
     }
   }
 
@@ -576,7 +575,7 @@ static int setting_dump_environment(const TCHAR *service_name, void *param, cons
     }
 
     _sntprintf_s(value->string, len, _TRUNCATE, _T("%c%s"), (s > env) ? _T('+') : _T(':'), s);
-    if (setting_dump_string(service_name, (void *) REG_SZ, name, value, 0)) errors++;
+    if (setting_dump_string(service_name, REG_SZ, name, value, 0)) errors++;
     HeapFree(GetProcessHeap(), 0, value->string);
     value->string = 0;
 
@@ -645,7 +644,7 @@ static int setting_dump_priority(const TCHAR *service_name, void *key_ptr, const
   settings_t *setting = (settings_t *) setting_ptr;
   int ret = setting_get_priority(service_name, key_ptr, name, (void *) setting->default_value, value, 0);
   if (ret != 1) return ret;
-  return setting_dump_string(service_name, (void *) REG_SZ, name, value, 0);
+  return setting_dump_string(service_name, REG_SZ, name, value, 0);
 }
 
 /* Functions to manage native service settings. */
@@ -833,7 +832,7 @@ static int setting_dump_dependon(const TCHAR *service_name, SC_HANDLE service_ha
     }
 
     _sntprintf_s(value->string, len, _TRUNCATE, _T("%c%s"), (s > dependencies) ? _T('+') : _T(':'), s);
-    if (setting_dump_string(service_name, (void *) REG_SZ, name, value, 0)) errors++;
+    if (setting_dump_string(service_name, REG_SZ, name, value, 0)) errors++;
     HeapFree(GetProcessHeap(), 0, value->string);
     value->string = 0;
 
@@ -1165,10 +1164,10 @@ int native_dump_objectname(const TCHAR *service_name, void *param, const TCHAR *
       /* Parameters are the other way round. */
       value_t inverted;
       inverted.string = _T("****");
-      return setting_dump_string(service_name, (void *) REG_SZ, name, &inverted, value->string);
+      return setting_dump_string(service_name, REG_SZ, name, &inverted, value->string);
     }
   }
-  return setting_dump_string(service_name, (void *) REG_SZ, name, value, 0);
+  return setting_dump_string(service_name, REG_SZ, name, value, 0);
 }
 
 int native_set_startup(const TCHAR *service_name, void *param, const TCHAR *name, void *default_value, value_t *value, const TCHAR *additional) {
@@ -1393,7 +1392,7 @@ int dump_setting(const TCHAR *service_name, HKEY key, SC_HANDLE service_handle, 
   if (setting->native) ret = get_setting(service_name, service_handle, setting, &value, 0);
   else ret = get_setting(service_name, key, setting, &value, 0);
   if (ret != 1) return ret;
-  return setting_dump_string(service_name, (void *) setting->type, setting->name, &value, 0);
+  return setting_dump_string(service_name, setting->type, setting->name, &value, 0);
 }
 
 settings_t settings[] = {

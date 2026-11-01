@@ -81,7 +81,8 @@ target_compile_definitions(nssm PRIVATE WIN32 _CONSOLE UNICODE _UNICODE
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
   set_property(SOURCE resources/nssm.rc APPEND PROPERTY COMPILE_DEFINITIONS _WIN64)
 endif()
-target_compile_options(nssm PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/W3;/GF;/Gy;/Zi>")
+target_compile_options(nssm PRIVATE
+  "$<$<COMPILE_LANGUAGE:CXX>:/W3;/GF;/Gy;/Zi;/we4302;/we4311;/we4312>")
 target_link_options(nssm PRIVATE /DEBUG /DYNAMICBASE /NXCOMPAT
   "$<$<NOT:$<CONFIG:Debug>>:/OPT:REF;/OPT:ICF>")
 target_link_libraries(nssm PRIVATE

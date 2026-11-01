@@ -78,6 +78,6 @@ GitHub Actions runs x86 and x64 in Debug and Release. It checks out complete Git
 history and tags, then uses the same build script and CTest checks. Executables
 and PDBs are attached to the workflow run as artifacts.
 
-Existing upstream pointer conversion warnings in `settings.cpp` remain visible.
-Fixes to service behavior and legacy Windows compatibility require separate
-changes and regression validation.
+Pointer-size conversion diagnostics C4302, C4311 and C4312 are treated as errors
+when compiling application C++ sources. Fixes to service behavior and legacy
+Windows compatibility require separate changes and regression validation.
