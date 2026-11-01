@@ -14,7 +14,7 @@ try {
     & cmake --build --preset $buildPreset --parallel
     if ($LASTEXITCODE -ne 0) { throw 'Compilation failed.' }
     & ctest --preset $buildPreset
-    if ($LASTEXITCODE -ne 0) { throw 'Smoke checks failed.' }
+    if ($LASTEXITCODE -ne 0) { throw 'CTest checks failed.' }
     Write-Output "Executable: $projectRoot\build\$configurePreset\bin\$Configuration\nssm.exe"
 }
 finally {

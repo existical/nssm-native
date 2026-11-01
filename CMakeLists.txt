@@ -54,7 +54,7 @@ add_custom_target(nssm_version
   COMMENT "Updating NSSM build version"
   VERBATIM)
 
-add_executable(nssm
+set(nssm_sources
   src/account.cpp
   src/console.cpp
   src/env.cpp
@@ -70,6 +70,7 @@ add_executable(nssm
   src/settings.cpp
   src/utf8.cpp
   resources/nssm.rc)
+add_executable(nssm ${nssm_sources})
 add_dependencies(nssm nssm_messages nssm_version)
 target_include_directories(nssm PRIVATE src resources "${generated_dir}")
 target_compile_features(nssm PRIVATE cxx_std_11)
@@ -109,4 +110,5 @@ if(BUILD_TESTING)
       -Executable "$<TARGET_FILE:nssm>" -Architecture "${test_arch}"
       -Configuration "$<CONFIG>" -VersionHeader "${generated_dir}/version.h")
   set_tests_properties(nssm.smoke PROPERTIES TIMEOUT 20)
+  add_subdirectory(tests)
 endif()

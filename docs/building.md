@@ -70,9 +70,28 @@ The historical two-part numeric Windows version layout is
 
 ## Checks
 
-CTest runs `tests/smoke.ps1`. It checks the command's exit status and exact version
-output, the PE machine type, and the embedded file/product metadata. These checks
-run without installing services or changing registry configuration.
+CTest runs four groups:
+
+- `nssm.smoke`: command exit status, exact version output, PE machine type and
+  embedded file/product metadata.
+- `nssm.environment`: empty values in every position and combination, set and
+  unset operations, block termination, and environment expansion.
+- `nssm.hooks`: command quoting, expansion, missing/deleted hooks, argument
+  parsing, and launching a test executable whose path contains spaces.
+- `nssm.startup`: slow startup independent of `AppThrottle`, checkpoint progress,
+  stalled and indefinitely pending services, API failures, service exit codes,
+  and clock rollover, using a simulated SCM and clock.
+
+The regression executable compiles the production implementations with test-only
+wrappers for the entry point and SCM calls. Tests do not install or control real
+services. Registry access is redirected within the test process to a temporary
+HKCU key, which is deleted afterwards; the hook test also creates and removes a
+copy of its executable under the build directory. Environment changes are local
+to each test process. No administrator rights are required.
+
+The startup progress checks follow the SCM checkpoint/wait-hint contract in
+[Microsoft's SERVICE_STATUS reference](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/ns-winsvc-service_status),
+with an additional total polling limit documented in [usage](usage.md).
 
 GitHub Actions runs x86 and x64 in Debug and Release. It checks out complete Git
 history and tags, then uses the same build script and CTest checks. Executables
