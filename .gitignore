@@ -1,0 +1,16 @@
+# Generated build files; keep the reproducible build script.
+/build/*
+!/build/build-x64.cmd
+/out/
+/tmp/
+/nssm.exe
+/version.h
+/version.h.new
+/messages.h
+/messages.rc
+/MSG*.bin
+*.obj
+*.pdb
+*.ilk
+*.res
+/.vs/

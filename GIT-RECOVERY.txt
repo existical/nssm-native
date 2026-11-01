@@ -1,0 +1,62 @@
+NSSM Git history recovery - 2026-11-01
+
+The local source has been connected to its existing upstream history.
+All 38 original tracked files matched upstream HEAD byte for byte before
+the Git metadata was attached. Those source files were left unchanged.
+Commit hashes, authors, committers, timestamps and messages are preserved.
+
+Official history:
+  URL: https://git.nssm.cc/nssm/nssm.git
+  Remote name: upstream
+  Branch: master, tracking upstream/master
+  Upstream HEAD: dee49fc1a0804f06687299b8e9612a3fce1c5e9a
+  Upstream HEAD date: 2017-05-16
+  Upstream HEAD subject: Try to build PDB files even for releases.
+  Complete upstream history: 367 commits; no shallow history.
+
+Release tags:
+  The supplied official HTTPS repository advertised no tags.
+  Its 26 historical annotated tags (v1.0 and v2.0 through v2.24) were
+  recovered from https://github.com/ONLYOFFICE/nssm.git.
+  The tag objects and their tagger metadata were preserved unchanged.
+  Every tag target was verified to be an ancestor of official upstream HEAD.
+  The mirror's fork release v2.24.1 and its fork commits were not imported.
+  These checks establish consistency with upstream history, not signature
+  authentication of the recovered tags.
+  v2.24 tag object: 283c965dc80d539ae0c4252aabd0485164f5b49b
+  v2.24 target: 220d2b0e952fe81ebf0acfad96371dce46eedf93
+  git describe at the recovered baseline: v2.24-103-gdee49fc
+
+Local configuration:
+  core.autocrlf=false preserves the line endings already stored upstream.
+  Continuation repository: https://github.com/existical/nssm-native
+  Remote name for the continuation repository: origin
+  The continuation setup commit adds .gitignore, this note and
+  build/build-x64.cmd. Generated build output is ignored.
+  The existing existical/nssm repository contains a separate Node.js wrapper;
+  its unrelated history is not part of the native application's master branch.
+
+Build:
+  Run build\build-x64.cmd from this folder.
+  It uses the installed Visual Studio 2022 Build Tools and Windows SDK.
+  Output: nssm.exe, a 64-bit Release executable with a static C runtime.
+  The upstream version.cmd derives the version and revision from Git.
+  The recovered baseline builds as version 2.24-103-gdee49fc.
+  Once development commits are added, the revision count and hash change.
+
+Offline backup:
+  build/nssm-history.bundle contains the full recovered Git history and tags.
+  It was verified with git bundle verify and the object database with git fsck.
+  To recover elsewhere: git clone C:/path/to/nssm-history.bundle nssm
+  The bundle contains committed history and refs, not local Git configuration,
+  uncommitted additions or generated executables.
+
+Publishing continuation work:
+  The public continuation repository is existical/nssm-native.
+  The master branch preserves the original upstream history and adds setup
+  changes in a separate commit. Historical release tags retain their objects.
+  Publish subsequent committed updates with:
+    git push origin master
+  Publish new release tags with:
+    git push origin --tags
+  The upstream remote remains available for provenance and comparison.
