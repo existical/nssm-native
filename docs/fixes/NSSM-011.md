@@ -7,8 +7,8 @@
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`, `v2.24-103-gdee49fc` |
 | Reproduced against | Production code at `05205d7784dbd0e90dc6d26957d3133f7a1c62a9` with the new regression harness |
 | Evidence | Nonzero sentinel reproduction, protected-page coverage and legacy source inspection |
-| Fix PR | Pending publication |
-| Implementation commit | Pending commit |
+| Fix PR | [PR 5](https://github.com/existical/nssm-native/pull/5) |
+| Implementation commit | [1ecfc6be59e80fe78ea94553634d02a6ed9524d0](https://github.com/existical/nssm-native/commit/1ecfc6be59e80fe78ea94553634d02a6ed9524d0) |
 | First release | Not yet released |
 
 `format_double_null` inspected the character after the final valid index.

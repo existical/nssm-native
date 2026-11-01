@@ -17,7 +17,8 @@ not a tagged release.
 | [CONT-004](implemented.md#cont-004) | Complete hook command quoting is preserved | Fixed, unreleased | [PR 3](https://github.com/existical/nssm-native/pull/3), `8fede4b` | Not yet released |
 | [CONT-005](implemented.md#cont-005) | Startup waits independently of restart throttling | Fixed, unreleased | [PR 3](https://github.com/existical/nssm-native/pull/3), `8fede4b` | Not yet released |
 
-The B01 implementation is available on its feature branch and awaits merge:
+The B01 implementation is in [PR 5](https://github.com/existical/nssm-native/pull/5)
+and awaits merge:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |

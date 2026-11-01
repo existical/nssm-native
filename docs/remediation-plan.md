@@ -12,7 +12,7 @@ split its additional follow-ups into independent tasks. The latter ten are
 follow-ups, not ten additional reproduced high-priority defects.
 
 **Status:** B00 is merged. B01 implements NSSM-001, NSSM-003, NSSM-010 and
-NSSM-011 on a feature branch and awaits merge; see the
+NSSM-011 in [PR 5](https://github.com/existical/nssm-native/pull/5) and awaits merge; see the
 [fix records](fixes/README.md) and [validation](reviews/b01-validation.md).
 The other tasks remain planned; NSSM-034 requires confirmation.
 [Previously merged changes](fixes/implemented.md) retain separate CONT IDs.
