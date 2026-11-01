@@ -6,8 +6,13 @@ monitors it and can restart it when it exits. It includes a graphical installer
 and a command-line interface for managing services.
 
 This repository preserves the upstream commit history and historical release
-tags. The continuation currently establishes a maintained source layout,
-repeatable builds and automated checks. See [upstream provenance](docs/upstream.md).
+tags. The continuation provides a maintained source layout, repeatable builds,
+automated checks and targeted fixes. See [upstream provenance](docs/upstream.md).
+
+See the [fix history](docs/fixes/README.md) for changes already merged,
+the [implementation plan](docs/remediation-plan.md) for open review findings,
+and [comparing builds](docs/comparing-builds.md) for exact legacy baselines,
+behavior differences and release identification.
 
 ## Build
 
@@ -61,8 +66,8 @@ environment variables and hooks.
 | `resources/` | Windows dialogs, icon, resource IDs and translated messages |
 | `cmake/` | Version generation |
 | `scripts/` | Build entry point |
-| `tests/` | Executable smoke checks |
-| `docs/` | Build instructions, usage and upstream records |
+| `tests/` | Smoke and environment, hook and startup regression checks |
+| `docs/` | Build instructions, usage, fix history, plans and upstream records |
 | `.github/workflows/` | x86/x64 Debug/Release builds and checks |
 | `build/` | Ignored generated projects, resources, symbols and executables |
 

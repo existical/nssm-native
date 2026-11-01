@@ -1,0 +1,20 @@
+quote: result=0, declared capacity=9 wchar, resulting length=12, canary changed=1
+affinity 0-64: result=0, mask=0xffffffffffffffff
+CheckTokenMembership bool target: trailing bytes=00 00 00 (were 5a 5a 5a)
+registry expansion: result=0, declared capacity=64 wchar, resulting length=80, canary changed=1
+duplicate environment keys: allocated length=15, canary changed=1
+format_double_null: input length=5, output length=6, final CRLF=1
+unterminated registry environment: stored=4 wchar, result=0, scanned length=68
+reset AppParameters: result=1, returned pointer aliases static default=1 (CLI unconditionally HeapFree's it)
+AppExit dump (stored Default=Ignore and 42=Exit):
+ set review AppExit Default Ignore
+ set review AppExit Default Ignore
+AppExit dump return=0
+stdin handle inheritable=0
+offline rotation: file size=4, threshold=1048576, requested delay=0, copied=1, actual Sleep=1048576 ms
+cleanup_loggers wait result=0xffffffff (WAIT_FAILED=0xffffffff)
+UTF-16 timestamp result=1, bytes written=0, error=0
+hook thread finishes immediately: result=0, copies from freed memory=1, double frees=0
+hook primary thread handle left open=1
+hook thread creation failure: result=101, copies from freed memory=0, double frees=2
+hook primary thread handle left open=1

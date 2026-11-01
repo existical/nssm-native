@@ -1,0 +1,542 @@
+NSSM code review - 2026-11-02
+
+Repository: https://github.com/existical/nssm-native
+Reviewed commit: 5d7454b2cd878b66bcd4b036c33a5b53b184cf3a (master)
+Source paths are relative to the repository root.
+
+The review found 24 actionable findings, including 9 high-priority issues.
+Several can corrupt memory; others affect process cleanup, logging, command
+completion, or the accuracy of exported and reset configuration. The passing
+test suite does not cover these cases.
+
+Scope: all 14 C++ implementation files, associated headers, resources and GUI
+paths, build/version scripts, tests, and GitHub Actions configuration. Review
+methods were manual source tracing, an x64 Release MSVC /analyze build, focused
+probes against the production implementations, and the existing build/test
+matrix. This was a code review, not a request to change production behavior:
+no tracked source files were changed.
+
+Priority P1 means fix before the next release because the failure can corrupt
+memory, affect unrelated processes, or seriously disrupt normal operation.
+Priority P2 means a concrete correctness or reliability defect to schedule
+after the P1 work. Priority reflects impact as well as trigger frequency.
+These priorities are not CVSS scores or claims of demonstrated exploitability.
+
+"Reproduced" below means a controlled local probe demonstrated the stated
+behavior. Some probes substitute API calls to force a particular schedule or
+failure. "Source-traced" means the implementation establishes the defect but
+the complete user-visible failure was not exercised. This distinction matters
+especially for process termination, GUI interaction, and SCM configuration.
+
+1. [P1] Registry expansion supplies bytes where the API expects characters.
+   Location: src/registry.cpp:296, especially 335-336.
+   Evidence: Reproduced.
+
+   get_string() receives a byte capacity, uses it to allocate and clear buffers,
+   then passes that same number to ExpandEnvironmentStringsW as a character
+   capacity. In a Unicode build, expansion can write beyond the real
+   destination while still reporting success. Application paths, arguments,
+   directories, and hook commands pass through this helper.
+
+   The probe supplied a 64-wchar destination and an environment expansion of
+   80 characters. The helper returned success and overwrote the canary after
+   the declared destination.
+
+   Fix: use explicit byte and character capacities, preflight expansion size,
+   and reject results that do not fit, including the terminating NUL.
+   Regression coverage: exact-fit and oversized expansion, both string types,
+   absent variables, and every caller's capacity convention.
+
+2. [P1] Command quoting underestimates its output and overruns the buffer.
+   Location: src/nssm.cpp:101-159; used by configuration dump paths.
+   Evidence: Reproduced.
+
+   The sizing pass does not count all escape characters that the writing pass
+   inserts. Metacharacters and backslash runs can therefore pass the capacity
+   check and still overflow the destination.
+
+   quote("&&&&", ...) returned success with capacity 9 wchar, then produced
+   12 characters plus NUL, changing the guard region. Production callers use
+   larger fixed buffers, so long configuration values can encounter the same
+   mismatch during nssm dump.
+
+   Fix: share one exact sizing/writing algorithm or use checked append
+   operations. Test buffer boundaries with &, ^, %, quotes, and trailing
+   backslashes, including combinations of those characters.
+
+3. [P1] Updating duplicate environment keys overwrites the allocated block.
+   Location: src/registry.cpp:546-580, append_to_double_null().
+   Evidence: Reproduced.
+
+   Allocation excludes every existing matching key and reserves space for one
+   replacement. The copy pass writes the replacement for every match. A block
+   with duplicate keys, including case variants, therefore needs more space
+   than was allocated.
+
+   Updating A=one followed by a=two to A=replacement allocated 15 wchar and
+   overwrote the canary.
+
+   Fix: emit the replacement once and discard subsequent matching entries.
+   Test exact duplicates, case variants, first/middle/last matches, and
+   unrelated variables. This is separate from the empty-value iterator fix
+   already merged in PR #3.
+
+4. [P1] CPU-affinity parsing can write past its array and shift out of range.
+   Location: src/service.cpp:230-282, affinity_string_to_mask().
+   Evidence: Source-traced array overflow; invalid endpoint reproduced.
+
+   The parser bounds each first CPU number but never bounds n before writing
+   set[n]. More than 64 comma-separated entries, even repeated valid CPU
+   numbers, write past the stack array. A trailing comma at the boundary also
+   makes the final traversal access beyond the array. Range endpoints are not
+   validated before shifting or iterating.
+
+   The probe accepted 0-64 and returned an all-bits-set mask. Shifts by 64 or
+   greater are undefined in C++; large endpoints can also cause long loops.
+   The stack overwrite itself was established by source tracing, not by
+   deliberately crashing a running service.
+
+   Fix: validate entry count, both endpoints, ordering, and numeric conversion.
+   Reject malformed or overflowing numbers before any array access or shift.
+   Test 64/65 entries, trailing delimiters, reversed ranges, and endpoints.
+
+5. [P1] A fast hook worker can free data that its caller still uses.
+   Location: src/hook.cpp:368-376; worker cleanup at 37-47.
+   Evidence: Reproduced with a forced valid thread schedule.
+
+   CreateThread may run await_hook() before returning. That worker frees hook
+   and hook->name, but nssm_hook() subsequently reads hook->name to register or
+   wait for the worker. Synchronous waiting can also retain a name pointer
+   while the worker frees it.
+
+   The probe completed the worker before returning from the substituted
+   CreateThread call. Quarantined allocations detected a copy from freed
+   storage.
+
+   Fix: define separate ownership for caller and worker data, copying or
+   transferring the name before starting the worker. Test immediate exit,
+   asynchronous hooks, synchronous hooks, and timeout completion.
+
+6. [P1] Hook thread-creation failure frees the hook twice.
+   Location: src/hook.cpp:383-387.
+   Evidence: Reproduced with CreateThread failure injection.
+
+   The fallback calls await_hook(hook), which frees the name and hook object.
+   The caller then dereferences hook and frees both allocations again. The
+   probe detected two duplicate frees. It also showed the fallback retains
+   the initial NOTRUN status rather than returning the synchronous result.
+
+   Fix: let the synchronous fallback own its cleanup and return its result.
+   Cover thread-creation failure explicitly in regression tests.
+
+7. [P1] Logger cleanup waits on a handle it has already closed.
+   Location: src/io.cpp:90-96 and 432-447.
+   Evidence: Invalid wait reproduced; lifetime consequences source-traced.
+
+   close_handle() closes a handle before saving its numeric value through
+   remember. cleanup_loggers() then passes that closed value to
+   WaitForSingleObject. The probe returned WAIT_FAILED.
+
+   Cleanup consequently does not reliably join the logger before closing its
+   pipe. The worker also owns a copy of the same read-handle value and closes
+   it on exit, creating races and duplicate-close opportunities. Restarting
+   while an old logger remains active can lose output or affect reused handles.
+
+   Fix: retain the live thread handle, close all relevant writer ends, wait for
+   logger completion, then close the thread handle. Assign each pipe/file
+   handle one owner, and handle timeout/error outcomes explicitly.
+   Test active output during shutdown, shared stdout/stderr, and rapid restart.
+
+8. [P1] Offline log-rotation arguments are passed in the wrong order.
+   Location: src/io.cpp:221, 327, and 367.
+   Evidence: Reproduced; sleep and copying were intercepted.
+
+   rotate_file() expects seconds, delay, low-size, high-size. Both callers
+   pass seconds, low-size, high-size, delay. Threshold values become sleep
+   durations, while the intended threshold is changed.
+
+   With a 4-byte log, a 1 MiB threshold, zero delay, and copy/truncate rotation,
+   the probe unexpectedly rotated the file and requested Sleep(1048576):
+   about 17 minutes 29 seconds. The probe recorded this request without
+   actually sleeping or copying the file.
+
+   Fix the argument order and prefer a named options structure. Test both
+   output streams, size/time thresholds, nonzero delay, and both rotation
+   modes, including a file that is below the configured threshold.
+
+9. [P1] Process-tree cleanup loses the process identity before acting on it.
+   Location: src/process.cpp:102-119 and 332-339;
+             src/service.cpp:2076-2100.
+   Evidence: Source-traced race; no unrelated process was terminated.
+
+   check_parent() validates a process through a handle and closes that handle.
+   walk_process_tree() later opens the numeric PID again and invokes the
+   termination callback without validating creation time on this new handle.
+   end_service() similarly releases the original root handle before starting
+   tree cleanup.
+
+   If a process exits and its PID is reused between those operations, the
+   second handle can refer to an unrelated process. Existing creation-time
+   checks do not cover this gap.
+
+   Fix: retain validated handles through the operation, and validate identity
+   on the exact handle used for termination. Test with controlled process
+   snapshots and handle-opening substitutions. Consider a Job Object design
+   separately, accounting for compatibility and breakaway behavior.
+
+10. [P2] Registry strings are used without bounded termination validation.
+    Location: src/registry.cpp:243-290 and 296-335.
+    Evidence: Reproduced for REG_MULTI_SZ; other consumers source-traced.
+
+    get_environment() allocates exactly the stored byte size, reads it, then
+    invokes an unbounded double-NUL scanner. RegQueryValueExW does not guarantee
+    terminators for string types. get_string() similarly passes returned data
+    to string/path APIs without first validating its type and terminators.
+
+    A raw four-wchar environment value containing A=xy without NULs was
+    accepted; the scanner consumed 68 characters into the padded guard area.
+    A malformed registry value can therefore cause reads outside the actual
+    allocation and unpredictable configuration loading.
+
+    Fix: validate type, byte alignment, returned length, and termination;
+    allocate safe terminator space or reject malformed input using bounded
+    parsing. Check the second query's type and size as well.
+
+11. [P2] MULTI_SZ formatting reads one character past the supplied block.
+    Location: src/registry.cpp:427 and 438, format_double_null().
+    Evidence: Reproduced.
+
+    Both loops inspect dn[i + 1] even when i is the final valid index. This
+    happens with a correctly terminated block, not only malformed input.
+    A valid five-character A=x/NUL/NUL block followed by a nonzero guard
+    produced a six-character allocation with a spurious trailing CRLF.
+
+    Fix: detect the final double NUL within the supplied length and construct
+    the formatted result with explicit termination. Use a guarded allocation
+    boundary test, plus empty, single-entry, and multi-entry cases.
+
+12. [P2] Configured stdin is opened without handle inheritance.
+    Location: src/io.cpp:314-321.
+    Evidence: Handle flag reproduced; actual child read not exercised.
+
+    CreateFile() receives no inheritable security attributes. Unlike stdout
+    and stderr, stdin is not subsequently duplicated as an inheritable handle.
+    Setting STARTF_USESTDHANDLES and CreateProcess inheritance does not set the
+    missing flag on this handle.
+
+    The probe measured HANDLE_FLAG_INHERIT as zero. A child using AppStdin
+    can therefore receive an unusable standard-input handle.
+
+    Fix: create or duplicate an inheritable handle and close the parent's
+    copy appropriately. Add an integration test where the child reads known
+    bytes from its standard input.
+
+13. [P2] UTF-16 timestamp logging passes an invalid pointer and splits code units.
+    Location: src/io.cpp:550 and 572-584.
+    Evidence: Timestamp write failure reproduced; splitting source-traced.
+
+    write_timestamp() passes (void *) *utf16, the first character converted
+    into an address, instead of the buffer pointer. The probe wrote zero
+    timestamp bytes and returned an error.
+
+    Separately, write_with_timestamp() scans bytes for LF and splits after
+    one byte even for UTF-16. Inserting a timestamp there splits the two-byte
+    newline and corrupts the output encoding.
+
+    Fix the pointer and use encoding-aware newline boundaries, including
+    partial code units split across pipe reads. Test UTF-8 and UTF-16 with
+    multiple lines per chunk, split newlines, and rotation.
+
+14. [P2] Logger byte counts and complaint flags are used uninitialized.
+    Location: src/io.cpp:555-595, 605-619, and 717-728.
+    Evidence: Source-traced; MSVC /analyze also identifies relevant paths.
+
+    log_complained and timestamp_complained are ORed into the caller's flags
+    without initialization. Timestamped writes accumulate into *out without
+    resetting it for the current chunk. The first non-Unicode write to an
+    empty file adds an uninitialized out after skipping the BOM. If the
+    initial file-information query fails, size is left uninitialized because
+    the code clears logger->size instead.
+
+    These paths can miscount log size, trigger incorrect rotations, suppress
+    or misreport errors, and disable a configured threshold.
+
+    Fix: initialize counters and flags, separate bytes-written-this-call from
+    total size, and propagate timestamp/write failures consistently.
+    Cover empty files, ASCII output, repeated timestamped chunks, and failed
+    file-information queries.
+
+15. [P2] Resetting a string setting hands a static pointer to HeapFree.
+    Location: src/settings.cpp:91-92 and src/service.cpp:1224.
+    Evidence: Pointer alias reproduced; invalid free established by caller trace.
+
+    setting_set_string() replaces a null value.string with default_value.
+    Defaults such as AppParameters use static string literals. The CLI
+    unconditionally HeapFree()s the returned value.string.
+
+    The reset probe confirmed that the pointer aliases the static default.
+    It deliberately did not perform the invalid free.
+
+    Fix: keep the borrowed default in a local pointer or return an owned copy.
+    Define ownership in the setting callback contract and test reset paths
+    with null, empty, and nonempty defaults under heap diagnostics.
+
+16. [P2] AppExit export loses per-exit-code rules and can loop forever.
+    Location: src/settings.cpp:236-267; src/registry.cpp:70-75.
+    Evidence: Incorrect dump reproduced; enumeration hang source-traced.
+
+    After scanning the name, code[i] points at its terminator, so the callback
+    selects Default for numeric exit codes too. The digit check also uses OR
+    instead of AND. A probe storing Default=Ignore and 42=Exit exported
+    Default Ignore twice and returned success.
+
+    Enumeration errors are retried without advancing index; a value name too
+    long for the 16-character buffer repeatedly returns ERROR_MORE_DATA.
+    The dump callback also forwards its settings_t metadata argument into a
+    getter that expects the default action string, and leaves its opened
+    registry key unclosed.
+
+    Fix default-versus-numeric selection and callback argument handling;
+    handle enumeration errors with bounded progress or failure; release the
+    key and temporary values. Add dump/import round-trip tests that compare
+    the actual stored rules, including nondefault codes and malformed names.
+
+17. [P2] Child process primary-thread handles leak.
+    Location: src/service.cpp:1931-1974, src/hook.cpp:358-388,
+              src/env.cpp:170-181.
+    Evidence: Hook handle leak reproduced; other paths source-traced.
+
+    Successful CreateProcess calls return a process handle and a primary
+    thread handle. Service launch saves the process handle and may resume the
+    thread, but never closes pi.hThread. Hook launch also leaves pi.hThread
+    open. test_environment() terminates its child without closing either
+    returned handle.
+
+    The hook probe confirmed the primary-thread handle remained open in both
+    tested completion paths. Repeated restarts/hooks can accumulate handles
+    in the long-lived NSSM process.
+
+    Fix: close each primary-thread handle after its last required use and
+    close both handles in the environment validator. Cover success and
+    failure paths and verify steady handle counts across repeated launches.
+
+18. [P2] Administrator detection writes a four-byte BOOL into a one-byte bool.
+    Location: src/nssm.cpp:188; is_admin declared in src/service.cpp:3.
+    Evidence: API write width reproduced.
+
+    Casting &is_admin to PBOOL does not enlarge the C++ bool object.
+    CheckTokenMembership writes a Windows BOOL, overwriting three adjacent
+    bytes. In a probe with a bool followed by guard bytes, all three guard
+    bytes changed from 5A to 00.
+
+    The present global layout may put padding there, but the write remains
+    outside the object and is unsafe to depend upon.
+
+    Fix: use a local BOOL initialized to FALSE, check the API result, then
+    assign its Boolean value to is_admin.
+
+19. [P2] A zero timeout returns an uninitialized wait result.
+    Location: src/service.cpp:2237-2292, await_single_handle().
+    Evidence: Source-traced and reported by MSVC /analyze.
+
+    When timeout is zero, the loop does not execute and ret is never assigned.
+    Zero is a valid configuration for AppThrottle and stop-method delays.
+    Callers can therefore make restart/stop decisions from an undefined result.
+
+    Fix: perform a zero-duration wait and return its defined outcome, or
+    explicitly define the zero-time policy. Test signaled, unsignaled, and
+    invalid handles with zero timeout.
+
+20. [P2] GUI validation failure closes a service handle still owned by the dialog.
+    Location: src/gui.cpp:399-407 and 730-735.
+    Evidence: Source-traced; no interactive GUI reproduction.
+
+    configure() borrows orig_service->handle by copying its numeric value.
+    On validation failure, cleanup_nssm_service() closes that same handle.
+    The original dialog retains the now-invalid handle for later attempts.
+    A retry can fail unexpectedly or later close a reused handle.
+
+    Fix: give the original object sole ownership, or acquire a separate
+    service handle for the temporary configuration. Test edit, invalid input,
+    correction, save, and cancel sequences in one dialog session.
+
+21. [P2] Service-install failure destroys a caller-owned object twice.
+    Location: src/service.cpp:1259-1263, caller at 920-921;
+              src/gui.cpp:768-770.
+    Evidence: Source-traced.
+
+    If opening the SCM fails, install_service() calls cleanup_nssm_service()
+    on its argument. Both CLI and GUI callers subsequently clean the same
+    object again, causing use-after-free/double-free behavior on the error
+    path.
+
+    Fix: keep object ownership with the caller and make install_service()
+    release only resources it acquired internally. Test denied SCM access
+    and injected SCM-open failure.
+
+22. [P2] Error logging has invalid varargs and missing terminators.
+    Location: src/service.cpp:1689; src/io.cpp:38;
+              src/registry.cpp:785; consumer in src/event.cpp:49-65.
+    Evidence: Source-traced.
+
+    monitor_service() prepares a textual return code but passes the integer
+    ret as a log insertion pointer. The pipe-creation and invalid-affinity
+    calls omit the null sentinel consumed by log_event(). On those error
+    paths, logging can read arbitrary varargs as pointers instead of reliably
+    recording the original failure.
+
+    Fix the specific calls, then replace or wrap the sentinel-based interface
+    with a typed/count-based API. Exercise those error paths explicitly.
+
+23. [P2] Dependency reset/removal can retain or discard the wrong dependencies.
+    Location: src/settings.cpp:748-755, 863-870, and 879-890;
+              src/service.cpp:650-706.
+    Evidence: Source-traced against the SCM API contract; no live SCM edits.
+
+    Resetting one dependency type passes the other type's buffer directly to
+    ChangeServiceConfig. When there are no entries of that other type, the
+    helper returns NULL. The SCM interprets NULL as "leave unchanged", so a
+    requested reset can silently leave the old dependencies intact.
+
+    When removing the final service dependency while group dependencies
+    remain, concatenating a two-NUL empty service block leaves a leading NUL
+    before the group list. The resulting block appears empty to the SCM and
+    can discard group dependencies as well.
+
+    Fix: distinguish "no change" from "empty list", merge logical entries
+    first, and construct one valid MULTI_SZ. Test each reset/removal
+    combination with service-only, group-only, mixed, and empty lists.
+
+24. [P2] Stop/pause/continue polling can wait indefinitely.
+    Location: src/service.cpp:130-148.
+    Evidence: Source-traced.
+
+    await_service_control_response() caps only its polling interval. It has
+    no total deadline or no-progress cutoff. A service that stays in a
+    pending or initial state can therefore leave the CLI and calling
+    automation waiting indefinitely.
+
+    START now uses the separate bounded helper from PR #3, so this finding
+    concerns the remaining control operations.
+
+    Fix: use progress-aware, bounded polling and return a distinct timeout
+    failure. Account for legitimately long shutdown configuration. Test
+    stalled states, advancing checkpoints, query failures, and final errors.
+
+Additional follow-ups from the review:
+
+A. src/gui.cpp:538-603: the password-confirmation buffer is wiped and freed on
+   failure paths, but not after a successful match. Free and securely clear
+   this temporary buffer on every path. This is a local memory-lifetime
+   concern; no external disclosure was demonstrated.
+
+B. src/account.cpp:152-199: canonicalise_username() does not close its LSA
+   policy or release the SID on success and several failures. Consolidate
+   cleanup. At line 338, _wcsnicmp receives MaximumLength in bytes rather than
+   a character count, and LSA strings are counted strings; compare exactly
+   Length / sizeof(wchar_t) characters after validating equal lengths.
+   Domain-account paths were reviewed statically, not exercised live.
+
+C. src/process.cpp:7-15: get_debug_token() can read an uninitialized token
+   after OpenThreadToken failure, and ignores the retry's success. Initialize
+   the handle, check impersonation/open results, and balance impersonation
+   ownership on failure.
+
+D. src/nssm.cpp:226: CPU-count detection evaluates a shift before its 64-bit
+   boundary check and counts contiguous low bits rather than arbitrary masks.
+   Review sparse affinity and processor-group behavior on large machines.
+   Such hardware was not used in this review.
+
+E. src/service.cpp:1016: MODE_DUMPING requests SERVICE_CHANGE_CONFIG even though
+   dumping should need read access. This prevents export by callers with
+   query-only rights.
+
+F. src/nssm.cpp:28 onward: unsigned numeric parsing does not fully validate
+   overflow, signs, or whether a conversion consumed digits. Define the
+   accepted syntax and enforce it consistently across numeric settings.
+
+G. src/event.cpp:13-18: error_string() allocates 65535 bytes but advertises
+   65535 characters to FormatMessageW. /analyze identifies the capacity
+   mismatch. An actual system message long enough to overflow this allocation
+   was not found or reproduced. Fix the unit mismatch; do not infer a
+   demonstrated overflow solely from the analyzer warning.
+
+H. src/registry.cpp:get_exit_action(): a missing default registry value can
+   return success without initializing the caller's action buffer. Audit
+   missing/malformed AppExit data alongside finding 16. Also check whether
+   editing hooks preserves literal environment-variable references rather
+   than saving expanded values.
+
+Validation and retained evidence:
+
+- x64 Release, x64 Debug, x86 Release, and x86 Debug all built successfully.
+  Each configuration passed all four CTest groups: smoke, environment,
+  hooks, and startup (16 successful test-group executions).
+- The isolated x64 Release /analyze build completed and emitted 67 warnings.
+  Warnings were triaged rather than counted as 67 separate bugs; some concern
+  generic API preconditions, ignored returns, or conservative analysis.
+- Focused probe results:
+    build/review-probes-results.txt
+  Probe source:
+    build/review-probes/CMakeLists.txt
+    build/review-probes/main.cpp
+    build/review-probes/registry_probe.cpp
+    build/review-probes/io_probe.cpp
+    build/review-probes/hook_probe.cpp
+  Probe executable:
+    build/review-probes-build/Release/review_probes.exe
+- Baseline logs:
+    build/review-baseline-x64-Release.log
+    build/review-baseline-x64-Debug.log
+    build/review-baseline-x86-Release.log
+    build/review-baseline-x86-Debug.log
+  Static-analysis logs:
+    build/review-analysis-configure.log
+    build/review-analysis-build.log
+
+The probes use padded/canary allocations and quarantined frees to observe
+otherwise unsafe operations. API substitutions force immediate hook completion,
+thread-creation failure, or record sleeps without performing them. The probes
+are diagnostic artifacts, not product binaries or committed regression tests.
+Registry fixtures were isolated under HKCU and cleaned up. No real services
+were installed, reconfigured, stopped, or terminated for these probes.
+
+Live SCM behavior, interactive GUI flows, domain accounts, PID-reuse stress,
+and long-running logger/restart stress remain integration-test gaps. The
+source review and targeted probes establish the findings above, but do not
+establish the absence of other defects.
+
+Suggested remediation order:
+1. Buffer bounds and ownership: findings 1-7, 10-11, 15, 18, and 21-22.
+2. Process identity and handle lifetime: findings 9, 17, and 20.
+3. Logging and redirection: findings 8 and 12-14.
+4. Configuration round trips and control behavior: findings 16, 19, 23-24.
+
+Keep fixes in focused, reviewable changes with regression tests for each
+demonstrated failure. Run the existing four-configuration matrix after each
+group and add an isolated Windows service integration suite for the remaining
+SCM, shutdown, output-draining, and process-tree scenarios. Run memory/handle
+diagnostics on those tests where supported.
+
+Primary Windows API references used to verify contracts:
+
+ExpandEnvironmentStringsW (capacity and return value are in characters):
+https://learn.microsoft.com/en-us/windows/win32/api/processenv/nf-processenv-expandenvironmentstringsw
+
+RegQueryValueExW (stored string data may lack terminators):
+https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regqueryvalueexw
+
+CreateThread (worker can run before CreateThread returns):
+https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createthread
+
+WaitForSingleObject (requires a valid handle; closing during a wait is unsafe):
+https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-waitforsingleobject
+
+CreateProcessW (standard-handle inheritance requirements):
+https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw
+
+CheckTokenMembership (output is PBOOL):
+https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-checktokenmembership
+
+ChangeServiceConfigW (NULL dependencies mean unchanged; empty means cleared):
+https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-changeserviceconfigw
