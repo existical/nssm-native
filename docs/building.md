@@ -70,7 +70,7 @@ The historical two-part numeric Windows version layout is
 
 ## Checks
 
-CTest runs four groups:
+CTest runs six groups:
 
 - `nssm.smoke`: command exit status, exact version output, PE machine type and
   embedded file/product metadata.
@@ -81,13 +81,22 @@ CTest runs four groups:
 - `nssm.startup`: slow startup independent of `AppThrottle`, checkpoint progress,
   stalled and indefinitely pending services, API failures, service exit codes,
   and clock rollover, using a simulated SCM and clock.
+- `nssm.registry`: expansion capacity, registry types/termination, empty values,
+  allocation/API failures and bounded retries for concurrent value changes.
+- `nssm.multisz`: duplicate updates, complete-key matching, bounded formatting,
+  round trips and input blocks ending at a protected memory page.
 
 The regression executable compiles the production implementations with test-only
-wrappers for the entry point and SCM calls. Tests do not install or control real
+wrappers for the entry point, SCM, registry queries, expansion and allocations.
+Tests do not install or control real
 services. Registry access is redirected within the test process to a temporary
 HKCU key, which is deleted afterwards; the hook test also creates and removes a
 copy of its executable under the build directory. Environment changes are local
 to each test process. No administrator rights are required.
+
+The B01 [validation record](reviews/b01-validation.md) includes the observed
+pre-fix failures, full build matrix, static analysis and separate
+AddressSanitizer commands.
 
 The startup progress checks follow the SCM checkpoint/wait-hint contract in
 [Microsoft's SERVICE_STATUS reference](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/ns-winsvc-service_status),

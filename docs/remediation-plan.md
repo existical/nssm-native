@@ -11,10 +11,11 @@ NSSM-001 through NSSM-024 match its numbered findings. NSSM-025 through NSSM-034
 split its additional follow-ups into independent tasks. The latter ten are
 follow-ups, not ten additional reproduced high-priority defects.
 
-**Initial status:** all 34 tasks below are planned; NSSM-034 requires
-confirmation before implementation. No runtime fixes are delivered by this
-documentation change. [Previously merged changes](fixes/implemented.md) have
-separate CONT identifiers and are already recorded.
+**Status:** B00 is merged. B01 implements NSSM-001, NSSM-003, NSSM-010 and
+NSSM-011 in [PR 5](https://github.com/existical/nssm-native/pull/5) and awaits merge; see the
+[fix records](fixes/README.md) and [validation](reviews/b01-validation.md).
+The other tasks remain planned; NSSM-034 requires confirmation.
+[Previously merged changes](fixes/implemented.md) retain separate CONT IDs.
 
 The recovered legacy development baseline is
 `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`, described by Git as
@@ -33,7 +34,7 @@ work. P2 tasks share an early group only when they support the same repair.
 
 | Order | Scope | Issue IDs | Prerequisites and completion |
 | --- | --- | --- | --- |
-| B00 | Publish review, plan, fix records and comparison rules | Documentation only | This change; backfill CONT-001 through CONT-005 |
+| B00 | Publish review, plan, fix records and comparison rules | Documentation only | Merged in PR 4; CONT-001 through CONT-005 backfilled |
 | B01 | Registry and environment bounds | 001, 003, 010, 011 | First runtime group; bounded reads and guard tests pass |
 | B02 | Safe command quoting | 002 | Independent of B01; dump argument round trips pass |
 | B03 | Affinity and numeric parsing | 004, 029, 031 | Check all numeric callers; no invalid indexing or shifts |
@@ -620,7 +621,7 @@ matching artifacts exist.
 
 Existing CONT records are backfilled now. They remain **fixed but unreleased**
 for code fixes, and **implemented but unreleased** for build infrastructure.
-The P1/P2 review tasks remain planned until their own implementation lands.
+Review tasks remain planned or in progress until their own implementation lands.
 
 ## Release and comparison acceptance
 
