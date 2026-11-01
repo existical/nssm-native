@@ -1,0 +1,37 @@
+name: Windows build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.architecture }} ${{ matrix.configuration }}
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [x64, x86]
+        configuration: [Release, Debug]
+    steps:
+      - name: Check out complete history and release tags
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Configure, compile and check executable
+        shell: pwsh
+        run: ./scripts/build.ps1 -Architecture '${{ matrix.architecture }}' -Configuration '${{ matrix.configuration }}'
+      - name: Upload executable and debugging symbols
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: nssm-${{ matrix.architecture }}-${{ matrix.configuration }}
+          path: |
+            build/windows-${{ matrix.architecture }}/bin/${{ matrix.configuration }}/nssm.exe
+            build/windows-${{ matrix.architecture }}/bin/${{ matrix.configuration }}/nssm.pdb
+          if-no-files-found: error
