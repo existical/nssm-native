@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Fix environment block iteration so empty values do not skip subsequent
+  variables or walk past the block's end.
+- Preserve hook command-line quotes, including executable paths with spaces
+  and final quoted arguments, while retaining environment expansion.
+- Separate `nssm start` waiting from `AppThrottle`. Follow SCM checkpoints and
+  wait hints with a 60-second polling limit; report startup, query and timeout
+  failures instead of treating a pending start as successful.
+- Add Windows regression tests for environment blocks, hook commands and
+  service startup, alongside the executable smoke checks.
 - Pass registry value types directly to the settings-dump helper, eliminating
   x64 pointer conversion warnings. Treat pointer-size conversion warnings as
   compiler errors to prevent regressions.

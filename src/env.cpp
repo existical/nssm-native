@@ -90,13 +90,15 @@ TCHAR *expand_environment_string(TCHAR *string) {
 static int set_environment_block(TCHAR *env, bool set) {
   int ret = 0;
 
-  TCHAR *s, *t;
-  for (s = env; *s; s++) {
+  TCHAR *s, *t, *next;
+  for (s = env; *s; s = next) {
+    /* Find the next entry before splitting this one, even if its value is empty. */
+    next = s + _tcslen(s) + 1;
     for (t = s; *t && *t != _T('='); t++);
     if (*t == _T('=')) {
-      *t = _T('\0');
+      *t++ = _T('\0');
       if (set) {
-        TCHAR *expanded = expand_environment_string(++t);
+        TCHAR *expanded = expand_environment_string(t);
         if (expanded) {
           if (! SetEnvironmentVariable(s, expanded)) ret++;
           HeapFree(GetProcessHeap(), 0, expanded);
@@ -108,9 +110,7 @@ static int set_environment_block(TCHAR *env, bool set) {
       else {
         if (! SetEnvironmentVariable(s, NULL)) ret++;
       }
-      for (t++; *t; t++);
     }
-    s = t;
   }
 
   return ret;

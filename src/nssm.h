@@ -94,6 +94,9 @@ const TCHAR *nssm_exe();
 */
 #define NSSM_RESET_THROTTLE_RESTART 1500
 
+/* Maximum CLI wait for START_PENDING, independent of restart throttling. */
+#define NSSM_STARTUP_TIMEOUT 60000
+
 /*
   How many milliseconds to wait for the application to die after sending
   a Control-C event to its console.  Override in registry.

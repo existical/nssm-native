@@ -1021,7 +1021,8 @@ int get_hook(const TCHAR *service_name, const TCHAR *hook_event, const TCHAR *ho
     return 1;
   }
 
-  int ret = expand_parameter(key, (TCHAR *) hook_action, buffer, buflen, true, false);
+  /* A hook is a complete command line, not a path to unquote. */
+  int ret = expand_parameter(key, (TCHAR *) hook_action, buffer, buflen, false, false);
 
   /* Close registry */
   RegCloseKey(key);

@@ -83,11 +83,54 @@ static inline int service_control_response(unsigned long control, unsigned long 
   return 0;
 }
 
-static inline int await_service_control_response(unsigned long control, SC_HANDLE service_handle, SERVICE_STATUS *service_status, unsigned long initial_status, unsigned long cutoff) {
+/* Wait for SCM startup completion, retaining errors and bounding both a stalled
+   checkpoint and the total wait. Only SERVICE_RUNNING means success. */
+static unsigned long await_service_start(SC_HANDLE service_handle, SERVICE_STATUS *status) {
+  unsigned long started = GetTickCount();
+  unsigned long progressed = started;
+  unsigned long checkpoint = 0;
+  unsigned long progress_timeout = 0;
+  bool first = true;
+
+  while (true) {
+    if (! QueryServiceStatus(service_handle, status)) return GetLastError();
+    if (status->dwCurrentState == SERVICE_RUNNING) return ERROR_SUCCESS;
+    if (status->dwCurrentState != SERVICE_START_PENDING) {
+      if (status->dwWin32ExitCode) return status->dwWin32ExitCode;
+      if (status->dwCurrentState == SERVICE_STOPPED) return ERROR_SERVICE_NOT_ACTIVE;
+      return ERROR_SERVICE_CANNOT_ACCEPT_CTRL;
+    }
+
+    unsigned long now = GetTickCount();
+    if (first || status->dwCheckPoint > checkpoint) {
+      first = false;
+      checkpoint = status->dwCheckPoint;
+      progressed = now;
+      progress_timeout = status->dwWaitHint;
+      /* Services which omit a wait hint still get a finite progress window. */
+      if (! progress_timeout) progress_timeout = 10000;
+      if (progress_timeout < 1000) progress_timeout = 1000;
+      if (progress_timeout > NSSM_STARTUP_TIMEOUT) progress_timeout = NSSM_STARTUP_TIMEOUT;
+    }
+
+    /* Unsigned subtraction also works across GetTickCount() rollover. */
+    unsigned long elapsed = now - started;
+    unsigned long stalled = now - progressed;
+    if (elapsed >= NSSM_STARTUP_TIMEOUT || stalled >= progress_timeout) return ERROR_TIMEOUT;
+
+    unsigned long wait = progress_timeout / 10;
+    if (wait < 100) wait = 100;
+    if (wait > 1000) wait = 1000;
+    if (wait > NSSM_STARTUP_TIMEOUT - elapsed) wait = NSSM_STARTUP_TIMEOUT - elapsed;
+    if (wait > progress_timeout - stalled) wait = progress_timeout - stalled;
+    Sleep(wait);
+  }
+}
+
+static inline int await_service_control_response(unsigned long control, SC_HANDLE service_handle, SERVICE_STATUS *service_status, unsigned long initial_status) {
   int tries = 0;
   unsigned long checkpoint = 0;
   unsigned long waithint = 0;
-  unsigned long waited = 0;
   while (QueryServiceStatus(service_handle, service_status)) {
     int response = service_control_response(control, service_status->dwCurrentState);
     /* Alas we can't WaitForSingleObject() on an SC_HANDLE. */
@@ -98,19 +141,11 @@ static inline int await_service_control_response(unsigned long control, SC_HANDL
       waithint = service_status->dwWaitHint;
       if (++tries > 10) tries = 10;
       unsigned long wait = 50 * tries;
-      if (cutoff) {
-        if (waited > cutoff) return response;
-        waited += wait;
-      }
       Sleep(wait);
     }
     else return response;
   }
   return -1;
-}
-
-static inline int await_service_control_response(unsigned long control, SC_HANDLE service_handle, SERVICE_STATUS *service_status, unsigned long initial_status) {
-  return await_service_control_response(control, service_handle, service_status, initial_status, 0);
 }
 
 static inline void wait_for_hooks(nssm_service_t *service, bool notify) {
@@ -1402,10 +1437,10 @@ int control_service(unsigned long control, int argc, TCHAR **argv, bool return_s
   int ret;
   unsigned long error;
   SERVICE_STATUS service_status;
+  ZeroMemory(&service_status, sizeof(service_status));
   if (control == NSSM_SERVICE_CONTROL_START) {
-    unsigned long initial_status = SERVICE_STOPPED;
     ret = StartService(service_handle, (unsigned long) argc, (const TCHAR **) argv);
-    error = GetLastError();
+    error = ret ? ERROR_SUCCESS : GetLastError();
     CloseServiceHandle(services);
 
     if (error == ERROR_IO_PENDING) {
@@ -1419,20 +1454,13 @@ int control_service(unsigned long control, int argc, TCHAR **argv, bool return_s
     }
 
     if (ret) {
-      unsigned long cutoff = 0;
-
-      /* If we manage the service, respect the throttle time. */
-      HKEY key = open_registry(service_name, 0, KEY_READ, false);
-      if (key) {
-        if (get_number(key, NSSM_REG_THROTTLE, &cutoff, false) != 1) cutoff = NSSM_RESET_THROTTLE_RESTART;
-        RegCloseKey(key);
-      }
-
-      int response = await_service_control_response(control, service_handle, &service_status, initial_status, cutoff);
+      error = await_service_start(service_handle, &service_status);
       CloseServiceHandle(service_handle);
 
-      if (response) {
-        print_message(stderr, NSSM_MESSAGE_BAD_CONTROL_RESPONSE, canonical_name, service_status_text(service_status.dwCurrentState), service_control_text(control));
+      if (error != ERROR_SUCCESS) {
+        if (service_status.dwCurrentState) print_message(stderr, NSSM_MESSAGE_BAD_CONTROL_RESPONSE, canonical_name, service_status_text(service_status.dwCurrentState), service_control_text(control));
+        _ftprintf(stderr, _T("%s: %s: %s"), canonical_name, service_control_text(control), error_string(error));
+        if (error == ERROR_SERVICE_SPECIFIC_ERROR) _ftprintf(stderr, _T("%s: service-specific exit code %lu\n"), canonical_name, service_status.dwServiceSpecificExitCode);
         if (return_status) return 0;
         return 1;
       }
