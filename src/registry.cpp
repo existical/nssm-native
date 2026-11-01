@@ -240,105 +240,163 @@ int create_exit_action(TCHAR *service_name, const TCHAR *action_string, bool edi
   return 0;
 }
 
-int get_environment(TCHAR *service_name, HKEY key, TCHAR *value, TCHAR **env, unsigned long *envlen) {
-  unsigned long type = REG_MULTI_SZ;
-  unsigned long envsize;
-
-  *envlen = 0;
-
-  /* Dummy test to find buffer size */
-  unsigned long ret = RegQueryValueEx(key, value, 0, &type, NULL, &envsize);
-  if (ret != ERROR_SUCCESS) {
-    *env = 0;
-    /* The service probably doesn't have any environment configured */
-    if (ret == ERROR_FILE_NOT_FOUND) return 0;
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_QUERYVALUE_FAILED, value, error_string(ret), 0);
-    return 1;
+/* Find the first complete MULTI_SZ terminator without reading past count.
+   A null pointer with zero length represents an absent block. */
+static bool double_null_length(const TCHAR *block, unsigned long count, unsigned long *length) {
+  *length = 0;
+  if (! block) return ! count;
+  if (count > ((size_t) -1) / sizeof(TCHAR)) return false;
+  if (count < 2 || (! block[0] && block[1])) return false;
+  for (unsigned long i = 0; i < count - 1; i++) {
+    if (! block[i] && ! block[i + 1]) {
+      *length = i + 2;
+      return true;
+    }
   }
-
-  if (type != REG_MULTI_SZ) {
-    log_event(EVENTLOG_WARNING_TYPE, NSSM_EVENT_INVALID_ENVIRONMENT_STRING_TYPE, value, service_name, 0);
-    *env = 0;
-    return 2;
-  }
-
-  /* Minimum usable environment would be A= NULL NULL. */
-  if (envsize < 4 * sizeof(TCHAR)) {
-    *env = 0;
-    return 3;
-  }
-
-  /* Previously initialised? */
-  if (*env) HeapFree(GetProcessHeap(), 0, *env);
-
-  *env = (TCHAR *) HeapAlloc(GetProcessHeap(), 0, envsize);
-  if (! *env) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, value, _T("get_environment()"), 0);
-    return 4;
-  }
-
-  /* Actually get the strings. */
-  ret = RegQueryValueEx(key, value, 0, &type, (unsigned char *) *env, &envsize);
-  if (ret != ERROR_SUCCESS) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_QUERYVALUE_FAILED, value, error_string(ret), 0);
-    HeapFree(GetProcessHeap(), 0, *env);
-    *env = 0;
-    return 5;
-  }
-
-  /* Value retrieved by RegQueryValueEx() is SIZE not COUNT. */
-  *envlen = (unsigned long) environment_length(*env);
-
-  return 0;
+  return false;
 }
 
+/* A registry string must terminate within its returned character count. */
+static bool terminated_string(const TCHAR *buffer, unsigned long count) {
+  unsigned long i = 0;
+  while (i < count && buffer[i]) i++;
+  if (i == count) return false;
+  /* Only zero padding may follow the first terminator. */
+  for (; i < count; i++) if (buffer[i]) return false;
+  return true;
+}
 
+/* Both the returned character count and its byte allocation must fit. */
+static bool add_block_entry(size_t *length, size_t entry_length) {
+  size_t limit = ((size_t) -1) / sizeof(TCHAR);
+  if (limit > MAXDWORD) limit = MAXDWORD;
+  if (entry_length >= limit || *length > limit - entry_length - 1) return false;
+  *length += entry_length + 1;
+  return true;
+}
+
+int get_environment(TCHAR *service_name, HKEY key, TCHAR *value, TCHAR **env, unsigned long *envlen) {
+  if (! env || ! envlen) return 1;
+  if (*env) HeapFree(GetProcessHeap(), 0, *env);
+  *env = 0;
+  *envlen = 0;
+
+  /* A concurrent registry writer can grow the value between queries. */
+  for (unsigned int attempt = 0; attempt < 3; attempt++) {
+    unsigned long type = 0, bytes = 0;
+    unsigned long ret = RegQueryValueEx(key, value, 0, &type, NULL, &bytes);
+    if (ret == ERROR_FILE_NOT_FOUND) return 0;
+    if (ret != ERROR_SUCCESS) {
+      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_QUERYVALUE_FAILED, value, error_string(ret), 0);
+      return 1;
+    }
+    if (type != REG_MULTI_SZ) {
+      log_event(EVENTLOG_WARNING_TYPE, NSSM_EVENT_INVALID_ENVIRONMENT_STRING_TYPE, value, service_name, 0);
+      return 2;
+    }
+    if (bytes < 2 * sizeof(TCHAR) || bytes % sizeof(TCHAR)) {
+      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_QUERYVALUE_FAILED, value, error_string(ERROR_INVALID_DATA), 0);
+      return 3;
+    }
+
+    TCHAR *buffer = (TCHAR *) HeapAlloc(GetProcessHeap(), 0, bytes);
+    if (! buffer) {
+      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, value, _T("get_environment()"), 0);
+      return 4;
+    }
+    unsigned long capacity = bytes;
+    ret = RegQueryValueEx(key, value, 0, &type, (unsigned char *) buffer, &bytes);
+    if (ret == ERROR_MORE_DATA) {
+      HeapFree(GetProcessHeap(), 0, buffer);
+      continue;
+    }
+    if (ret != ERROR_SUCCESS) {
+      HeapFree(GetProcessHeap(), 0, buffer);
+      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_QUERYVALUE_FAILED, value, error_string(ret), 0);
+      return 5;
+    }
+
+    unsigned long length = 0;
+    bool valid = type == REG_MULTI_SZ && bytes <= capacity && ! (bytes % sizeof(TCHAR));
+    if (valid) valid = double_null_length(buffer, bytes / sizeof(TCHAR), &length);
+    /* Permit zero padding, but not hidden entries after the end marker. */
+    if (valid) {
+      for (unsigned long i = length; i < bytes / sizeof(TCHAR); i++) {
+        if (buffer[i]) { valid = false; break; }
+      }
+    }
+    if (! valid) {
+      HeapFree(GetProcessHeap(), 0, buffer);
+      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_QUERYVALUE_FAILED, value, error_string(ERROR_INVALID_DATA), 0);
+      return 3;
+    }
+    *env = buffer;
+    *envlen = length;
+    return 0;
+  }
+  log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_QUERYVALUE_FAILED, value, error_string(ERROR_MORE_DATA), 0);
+  return 5;
+}
+
+/* datalen is a byte capacity, including space for the terminating TCHAR. */
 int get_string(HKEY key, TCHAR *value, TCHAR *data, unsigned long datalen, bool expand, bool sanitise, bool must_exist) {
-  TCHAR *buffer = (TCHAR *) HeapAlloc(GetProcessHeap(), 0, datalen);
+  if (! data) return 2;
+  ZeroMemory(data, datalen);
+  if (datalen < sizeof(TCHAR) || datalen % sizeof(TCHAR)) return 2;
+  const unsigned long capacity = datalen / sizeof(TCHAR);
+  const size_t buffer_bytes = (size_t) capacity * sizeof(TCHAR);
+  TCHAR *buffer = (TCHAR *) HeapAlloc(GetProcessHeap(), 0, buffer_bytes);
   if (! buffer) {
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, value, _T("get_string()"), 0);
     return 1;
   }
 
-  ZeroMemory(data, datalen);
-
-  unsigned long type = REG_EXPAND_SZ;
-  unsigned long buflen = datalen;
-
-  unsigned long ret = RegQueryValueEx(key, value, 0, &type, (unsigned char *) buffer, &buflen);
+  unsigned long type = 0, bytes = datalen;
+  unsigned long ret = RegQueryValueEx(key, value, 0, &type, (unsigned char *) buffer, &bytes);
+  if (ret == ERROR_SUCCESS) {
+    bool valid = (type == REG_SZ || type == REG_EXPAND_SZ) &&
+      bytes >= sizeof(TCHAR) && bytes <= datalen && ! (bytes % sizeof(TCHAR));
+    if (valid) valid = terminated_string(buffer, bytes / sizeof(TCHAR));
+    if (! valid) ret = ERROR_INVALID_DATA;
+  }
   if (ret != ERROR_SUCCESS) {
     HeapFree(GetProcessHeap(), 0, buffer);
-
-    if (ret == ERROR_FILE_NOT_FOUND) {
-      if (! must_exist) return 0;
-    }
-
+    if (ret == ERROR_FILE_NOT_FOUND && ! must_exist) return 0;
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_QUERYVALUE_FAILED, value, error_string(ret), 0);
     return 2;
   }
 
-  /* Paths aren't allowed to contain quotes. */
   if (sanitise) PathUnquoteSpaces(buffer);
-
-  /* Do we want to expand the string? */
-  if (! expand) {
-    if (type == REG_EXPAND_SZ) type = REG_SZ;
-  }
-
-  /* Technically we shouldn't expand environment strings from REG_SZ values */
-  if (type != REG_EXPAND_SZ) {
-    memmove(data, buffer, buflen);
+  if (! expand || type == REG_SZ) {
+    memmove(data, buffer, (_tcslen(buffer) + 1) * sizeof(TCHAR));
     HeapFree(GetProcessHeap(), 0, buffer);
     return 0;
   }
 
-  ret = ExpandEnvironmentStrings((TCHAR *) buffer, data, datalen);
-  if (! ret || ret > datalen) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_EXPANDENVIRONMENTSTRINGS_FAILED, buffer, error_string(GetLastError()), 0);
+  unsigned long needed = ExpandEnvironmentStrings(buffer, NULL, 0);
+  if (! needed || needed > capacity) {
+    unsigned long error = needed ? ERROR_INSUFFICIENT_BUFFER : GetLastError();
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_EXPANDENVIRONMENTSTRINGS_FAILED, buffer, error_string(error), 0);
     HeapFree(GetProcessHeap(), 0, buffer);
     return 3;
   }
-
+  /* Publish output only after success, including when the environment changes. */
+  TCHAR *expanded = (TCHAR *) HeapAlloc(GetProcessHeap(), 0, buffer_bytes);
+  if (! expanded) {
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, value, _T("get_string()"), 0);
+    HeapFree(GetProcessHeap(), 0, buffer);
+    return 1;
+  }
+  ret = ExpandEnvironmentStrings(buffer, expanded, capacity);
+  if (! ret || ret > capacity) {
+    unsigned long error = ret ? ERROR_INSUFFICIENT_BUFFER : GetLastError();
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_EXPANDENVIRONMENTSTRINGS_FAILED, buffer, error_string(error), 0);
+    HeapFree(GetProcessHeap(), 0, expanded);
+    HeapFree(GetProcessHeap(), 0, buffer);
+    return 3;
+  }
+  memmove(data, expanded, ret * sizeof(TCHAR));
+  HeapFree(GetProcessHeap(), 0, expanded);
   HeapFree(GetProcessHeap(), 0, buffer);
   return 0;
 }
@@ -414,36 +472,39 @@ int get_number(HKEY key, TCHAR *value, unsigned long *number) {
   return get_number(key, value, number, true);
 }
 
-/* Replace NULL with CRLF. Leave NULL NULL as the end marker. */
+/* Replace entry separators with CRLF; newlen includes two trailing NULs. */
 int format_double_null(TCHAR *dn, unsigned long dnlen, TCHAR **formatted, unsigned long *newlen) {
-  unsigned long i, j;
-  *newlen = dnlen;
+  *formatted = 0;
+  *newlen = 0;
+  unsigned long length;
+  if (! double_null_length(dn, dnlen, &length)) return 1;
+  if (! length) return 0;
 
-  if (! *newlen) {
-    *formatted = 0;
-    return 0;
+  size_t len = 1;
+  for (unsigned long i = 0; i < length - 1; i++) {
+    /* Add one character, or two for an entry separator. */
+    size_t extra = (! dn[i] && dn[i + 1]) ? 1 : 0;
+    if (! add_block_entry(&len, extra)) return 1;
   }
-
-  for (i = 0; i < dnlen; i++) if (! dn[i] && dn[i + 1]) ++*newlen;
-
-  *formatted = (TCHAR *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, *newlen * sizeof(TCHAR));
-  if (! *formatted) {
-    *newlen = 0;
-    return 1;
-  }
-
-  for (i = 0, j = 0; i < dnlen; i++) {
-    (*formatted)[j] = dn[i];
-    if (! dn[i]) {
-      if (dn[i + 1]) {
-        (*formatted)[j] = _T('\r');
-        (*formatted)[++j] = _T('\n');
-      }
+  TCHAR *buffer = (TCHAR *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, len * sizeof(TCHAR));
+  if (! buffer) return 1;
+  size_t j = 0;
+  for (unsigned long i = 0; i < length - 1; i++) {
+    if (j >= len - 1) goto format_failed;
+    if (! dn[i] && dn[i + 1]) {
+      buffer[j++] = _T('\r');
+      if (j >= len - 1) goto format_failed;
+      buffer[j++] = _T('\n');
     }
-    j++;
+    else buffer[j++] = dn[i];
   }
-
+  *formatted = buffer;
+  *newlen = (unsigned long) len;
   return 0;
+
+format_failed:
+  HeapFree(GetProcessHeap(), 0, buffer);
+  return 1;
 }
 
 /* Strip CR and replace LF with NULL.  */
@@ -523,69 +584,61 @@ int copy_double_null(TCHAR *dn, unsigned long dnlen, TCHAR **newdn) {
   Create a new block with all the strings of the first block plus a new string.
   The new string may be specified as <key> <delimiter> <value> and the keylen
   gives the offset into the string to compare against existing entries.
-  If the key is already present its value will be overwritten in place.
-  If the key is blank or empty the new block will still be allocated and have
-  non-zero length.
+  If keylen is zero the entire entry is compared.  Matching entries are
+  replaced once at the first match; unrelated entry order is preserved.
+  A blank append copies the original block.
 */
 int append_to_double_null(TCHAR *dn, unsigned long dnlen, TCHAR **newdn, unsigned long *newlen, TCHAR *append, size_t keylen, bool case_sensitive) {
-  if (! append || ! append[0]) return copy_double_null(dn, dnlen, newdn);
+  *newdn = 0;
+  *newlen = 0;
+  unsigned long length;
+  if (! double_null_length(dn, dnlen, &length)) return 1;
+  if (! append || ! append[0]) {
+    int ret = copy_double_null(dn, length, newdn);
+    if (! ret) *newlen = length;
+    return ret;
+  }
   size_t appendlen = _tcslen(append);
-  int (*fn)(const TCHAR *, const TCHAR *, size_t) = (case_sensitive) ? _tcsncmp : _tcsnicmp;
+  bool whole_string = ! keylen || keylen > appendlen;
+  if (whole_string) keylen = appendlen;
+  int (*fn)(const TCHAR *, const TCHAR *, size_t) = case_sensitive ? _tcsncmp : _tcsnicmp;
 
-  /* Identify the key, if any, or treat the whole string as the key. */
-  TCHAR *key = 0;
-  if (! keylen || keylen > appendlen) keylen = appendlen;
-  key = (TCHAR *) HeapAlloc(GetProcessHeap(), 0, (keylen + 1) * sizeof(TCHAR));
-  if (! key) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, _T("key"), _T("append_to_double_null()"), 0);
-    return 1;
+  /* Reserve the replacement once, regardless of how many keys match. */
+  size_t len = 1;
+  if (! add_block_entry(&len, appendlen)) return 1;
+  for (unsigned long i = 0; i < length && dn[i]; ) {
+    size_t entrylen = _tcslen(dn + i); /* The block was bounded above. */
+    bool matches = entrylen >= keylen && ! fn(dn + i, append, keylen) &&
+      (! whole_string || entrylen == appendlen);
+    if (! matches && ! add_block_entry(&len, entrylen)) return 1;
+    i += (unsigned long) entrylen + 1;
   }
-  memmove(key, append, keylen * sizeof(TCHAR));
-  key[keylen] = _T('\0');
-
-  /* Find the length of the block not including any existing key. */
-  size_t len = 0;
-  TCHAR *s;
-  for (s = dn; *s; s++) {
-    if (fn(s, key, keylen)) len += _tcslen(s) + 1;
-    for ( ; *s; s++);
-  }
-
-  /* Account for new entry. */
-  len += _tcslen(append) + 1;
-
-  /* Account for trailing NULL. */
-  len++;
-
-  /* Allocate a new block. */
-  *newdn = (TCHAR *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, len * sizeof(TCHAR));
-  if (! *newdn) {
+  TCHAR *buffer = (TCHAR *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, len * sizeof(TCHAR));
+  if (! buffer) {
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, _T("newdn"), _T("append_to_double_null()"), 0);
-    HeapFree(GetProcessHeap(), 0, key);
     return 2;
   }
 
-  /* Copy existing entries.*/
-  *newlen = (unsigned long) len;
-  TCHAR *t = *newdn;
-  TCHAR *u;
+  TCHAR *target = buffer;
   bool replaced = false;
-  for (s = dn; *s; s++) {
-    if (fn(s, key, keylen)) u = s;
-    else {
-      u = append;
+  for (unsigned long i = 0; i < length && dn[i]; ) {
+    size_t entrylen = _tcslen(dn + i);
+    bool matches = entrylen >= keylen && ! fn(dn + i, append, keylen) &&
+      (! whole_string || entrylen == appendlen);
+    if (! matches) {
+      memmove(target, dn + i, (entrylen + 1) * sizeof(TCHAR));
+      target += entrylen + 1;
+    }
+    else if (! replaced) {
+      memmove(target, append, (appendlen + 1) * sizeof(TCHAR));
+      target += appendlen + 1;
       replaced = true;
     }
-    len = _tcslen(u) + 1;
-    memmove(t, u, len * sizeof(TCHAR));
-    t += len;
-    for ( ; *s; s++);
+    i += (unsigned long) entrylen + 1;
   }
-
-  /* Add the entry if it wasn't already replaced.  The buffer was zeroed. */
-  if (! replaced) memmove(t, append, _tcslen(append) * sizeof(TCHAR));
-
-  HeapFree(GetProcessHeap(), 0, key);
+  if (! replaced) memmove(target, append, (appendlen + 1) * sizeof(TCHAR));
+  *newdn = buffer;
+  *newlen = (unsigned long) len;
   return 0;
 }
 

@@ -49,4 +49,6 @@ private:
 void test_environment_entries();
 void test_hook_commands();
 void test_startup();
+void test_registry_bounds();
+void test_multisz_bounds();
 #endif

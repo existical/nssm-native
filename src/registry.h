@@ -49,6 +49,7 @@ int create_messages();
 int create_parameters(nssm_service_t *, bool);
 int create_exit_action(TCHAR *, const TCHAR *, bool);
 int get_environment(TCHAR *, HKEY, TCHAR *, TCHAR **, unsigned long *);
+/* String capacities are bytes; successful results include a terminating TCHAR. */
 int get_string(HKEY, TCHAR *, TCHAR *, unsigned long, bool, bool, bool);
 int get_string(HKEY, TCHAR *, TCHAR *, unsigned long, bool);
 int expand_parameter(HKEY, TCHAR *, TCHAR *, unsigned long, bool, bool);
@@ -59,6 +60,7 @@ int set_expand_string(HKEY, TCHAR *, TCHAR *);
 int set_number(HKEY, TCHAR *, unsigned long);
 int get_number(HKEY, TCHAR *, unsigned long *, bool);
 int get_number(HKEY, TCHAR *, unsigned long *);
+/* Block lengths are TCHAR counts including the two terminating NULs. */
 int format_double_null(TCHAR *, unsigned long, TCHAR **, unsigned long *);
 int unformat_double_null(TCHAR *, unsigned long, TCHAR **, unsigned long *);
 int copy_double_null(TCHAR *, unsigned long, TCHAR **);

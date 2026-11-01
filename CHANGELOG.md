@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Bound registry environment expansion to the actual destination capacity.
+  [NSSM-001](docs/fixes/NSSM-001.md).
+- Replace duplicate environment keys once, preserving unrelated entry order
+  and preventing heap overwrites. [NSSM-003](docs/fixes/NSSM-003.md).
+- Validate registry string types, byte sizes and termination; reject malformed
+  data, bound retries for changing environment blocks, and release previous
+  loaded blocks. [NSSM-010](docs/fixes/NSSM-010.md).
+- Stop MULTI_SZ formatting at its bounded end marker and preserve terminated
+  output. [NSSM-011](docs/fixes/NSSM-011.md).
+- Add registry and MULTI_SZ regressions with allocation guards, protected
+  memory pages and deterministic query/expansion failures.
 - Add a prioritized [fix implementation plan](docs/remediation-plan.md),
   [records for previously merged changes](docs/fixes/implemented.md), and a
   [legacy build comparison guide](docs/comparing-builds.md). Review tasks remain

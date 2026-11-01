@@ -17,8 +17,17 @@ not a tagged release.
 | [CONT-004](implemented.md#cont-004) | Complete hook command quoting is preserved | Fixed, unreleased | [PR 3](https://github.com/existical/nssm-native/pull/3), `8fede4b` | Not yet released |
 | [CONT-005](implemented.md#cont-005) | Startup waits independently of restart throttling | Fixed, unreleased | [PR 3](https://github.com/existical/nssm-native/pull/3), `8fede4b` | Not yet released |
 
+The B01 implementation is available on its feature branch and awaits merge:
+
+| ID | Change | State | First release |
+| --- | --- | --- | --- |
+| [NSSM-001](NSSM-001.md) | Bound registry environment expansion | In progress; implementation present | Not yet released |
+| [NSSM-003](NSSM-003.md) | Replace duplicate environment keys once | In progress; implementation present | Not yet released |
+| [NSSM-010](NSSM-010.md) | Validate registry strings and environment blocks | In progress; implementation present | Not yet released |
+| [NSSM-011](NSSM-011.md) | Bound MULTI_SZ formatting | In progress; implementation present | Not yet released |
+
 The [implementation plan](../remediation-plan.md) tracks NSSM-001 through
-NSSM-034. Those IDs refer to open work, not fixes already included in a build.
+NSSM-034. Check each record's state before assuming inclusion in a build.
 NSSM-001 through NSSM-009 are P1. NSSM-034 needs confirmation; the plan explains
 the evidence for the other tasks. Add rows and individual records here as work
 starts; never reuse an ID.

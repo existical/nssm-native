@@ -66,7 +66,7 @@ environment variables and hooks.
 | `resources/` | Windows dialogs, icon, resource IDs and translated messages |
 | `cmake/` | Version generation |
 | `scripts/` | Build entry point |
-| `tests/` | Smoke and environment, hook and startup regression checks |
+| `tests/` | Smoke, environment, hook, startup, registry and MULTI_SZ checks |
 | `docs/` | Build instructions, usage, fix history, plans and upstream records |
 | `.github/workflows/` | x86/x64 Debug/Release builds and checks |
 | `build/` | Ignored generated projects, resources, symbols and executables |

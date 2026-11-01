@@ -14,6 +14,8 @@ int wmain(int argc, TCHAR **argv) {
     if (! _tcscmp(argv[1], _T("environment"))) test_environment_entries();
     else if (! _tcscmp(argv[1], _T("hooks"))) test_hook_commands();
     else if (! _tcscmp(argv[1], _T("startup"))) test_startup();
+    else if (! _tcscmp(argv[1], _T("registry"))) test_registry_bounds();
+    else if (! _tcscmp(argv[1], _T("multisz"))) test_multisz_bounds();
     else throw std::runtime_error("Unknown test group");
   }
   catch (const std::exception &error) {
