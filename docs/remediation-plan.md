@@ -40,7 +40,9 @@ are now merged and unreleased. B08 merged in
 [validation](reviews/b12-validation.md). B13 merged in
 [PR 18](https://github.com/existical/nssm-native/pull/18); see its
 [validation](reviews/b13-validation.md). All 34 review tasks are now merged
-and unreleased. B14 release preparation is in progress: lifecycle acceptance,
+and unreleased. B14 found a new startup regression, [NSSM-035](fixes/NSSM-035.md),
+repaired in [PR 20](https://github.com/existical/nssm-native/pull/20), pending merge.
+B14 release preparation in [PR 19](https://github.com/existical/nssm-native/pull/19) is in progress: lifecycle acceptance,
 clean-commit packaging, source identity and candidate documentation. See
 [release preparation](releases/README.md) and [B14 validation](reviews/b14-validation.md).
 No continuation release has been published.
@@ -77,7 +79,7 @@ work. P2 tasks share an early group only when they support the same repair.
 | B11 | GUI and accounts | 020, 025, 026, 027, 034 | Merged in PR 16; five confirmed fixes, GUI retries, account failures and hook round trips validated |
 | B12 | Dependencies | 023 | Merged in PR 17; typed resets/merges, bounded queries, validation cleanup and SCM round-trip tests pass |
 | B13 | Remaining service control waits | 024 | Merged in PR 18; action budgets, polling, diagnostics and deterministic/live tests pass |
-| B14 | Candidate release and comparison records | All completed IDs | In progress; lifecycle tests, clean-source packaging and candidate records implemented; publication remains separate |
+| B14 | Candidate release and acceptance follow-up | 035 | In progress; startup regression repair in PR 20, lifecycle and packaging in PR 19; publication separate |
 
 ## Shared implementation and test rules
 
@@ -734,6 +736,19 @@ Second part of follow-up H; GUI edit-round-trip mutation reproduced in B11.
 environment after saving, and actual hook launch.
 **Done:** editing preserves stored expressions and execution expands them at
 the intended time, or a recorded test establishes that no repair is needed.
+
+### NSSM 035
+
+**Standard-I/O byte capacity — P1, B14 acceptance follow-up.** This is a newly
+reproduced continuation startup regression, additional to the original 34
+review tasks. See [NSSM-035](fixes/NSSM-035.md). Its focused repair is a release
+prerequisite; it does not remove the registry reader's bounds checks.
+
+Pass byte capacity from get_createfile_parameters to expand_parameter. Test
+missing/short/maximum/oversized values for all three streams with canaries,
+and exercise get_parameters through that same production path. Retain the
+real wrapper lifecycle test in the release-preparation PR. Done when startup
+configuration succeeds and oversized values still fail without overwriting.
 
 ## Documentation required with every fix
 

@@ -126,7 +126,7 @@ int get_createfile_parameters(HKEY key, TCHAR *prefix, TCHAR *path, unsigned lon
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, prefix, _T("get_createfile_parameters()"));
     return 1;
   }
-  switch (expand_parameter(key, value, path, PATH_LENGTH, true, false)) {
+  switch (expand_parameter(key, value, path, PATH_LENGTH * sizeof(*path), true, false)) {
     case 0: if (! path[0]) return 0; break; /* OK. */
     default: return 2; /* Error. */
   }

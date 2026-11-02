@@ -131,8 +131,14 @@ with all four Windows CI configurations passing:
 | --- | --- | --- | --- |
 | [NSSM-024](NSSM-024.md) | Bound stop, pause and continue polling and preserve failure details | Fixed, unreleased | Not yet released |
 
+B14 acceptance found a continuation startup regression beyond the original review:
+
+| ID | Change | State | First release |
+| --- | --- | --- | --- |
+| [NSSM-035](NSSM-035.md) | Pass byte capacity to standard-I/O registry readers | In progress | Not yet released |
+
 The [implementation plan](../remediation-plan.md) tracks NSSM-001 through
-NSSM-034. Check each record's state before assuming inclusion in a build.
+NSSM-035. Check each record's state before assuming inclusion in a build.
 NSSM-001 through NSSM-009 are P1. NSSM-034 was confirmed by B11; the plan explains
 the evidence for the other tasks. Add rows and individual records here as work
 starts; never reuse an ID.

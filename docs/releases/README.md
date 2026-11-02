@@ -2,7 +2,9 @@
 
 Release preparation now has automated checks; publication is a separate step.
 No continuation tag or public release has been created. All 34 review fixes
-are merged and unreleased. See the [candidate notes](candidate.md) and
+are merged and unreleased. Acceptance additionally found NSSM-035, repaired in
+[PR 20](https://github.com/existical/nssm-native/pull/20), pending merge before
+[PR 19](https://github.com/existical/nssm-native/pull/19). See the [candidate notes](candidate.md) and
 [fix index](../fixes/README.md).
 
 From a clean checkout with full history and tags:
