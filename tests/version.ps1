@@ -61,4 +61,10 @@ try {
     [IO.File]::WriteAllText("$archive/source-info.json", ($identity | ConvertTo-Json))
     Generate $archive $true
 } finally { $env:SOURCE_DATE_EPOCH = $oldEpoch }
+# Do not leave nested Git repositories for editor repository discovery.
+$gitDirectory = [IO.Path]::GetFullPath((Join-Path $repo '.git'))
+$fixtureRoot = [IO.Path]::GetFullPath($repo) + [IO.Path]::DirectorySeparatorChar
+if (-not $gitDirectory.StartsWith($fixtureRoot, [StringComparison]::OrdinalIgnoreCase) -or
+    ((Get-Item -LiteralPath $gitDirectory -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Unexpected fixture Git path.' }
+Remove-Item -LiteralPath $gitDirectory -Recurse -Force
 Write-Output 'Legacy/stable/beta/RC/post-tag versions, archive equivalence and malformed identity rejection passed.'

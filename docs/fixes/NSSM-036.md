@@ -48,6 +48,11 @@ frames; no analyzer-clean claim is made. PR 20 carries the exact-head CI
 checks; PR 19 retains the real lifecycle acceptance scenario. Logs: build/cleanup-red-tests.log,
 build/cleanup-*-*.log, build/cleanup-asan.log and build/cleanup-analysis.log.
 The live failing trace is [CI 41542921251](https://github.com/existical/nssm-native/actions/runs/41542921251).
+All four repair-branch jobs passed at `4a03eeecbaf59059df3e1e6d82700700a28429da`
+in [CI 41544366647](https://github.com/existical/nssm-native/actions/runs/41544366647).
+The complete wrapped lifecycle and source-archive packaging then passed in
+[CI 41544419568](https://github.com/existical/nssm-native/actions/runs/41544419568);
+see [B14 validation](../reviews/b14-validation.md) for the pinned revision and scope.
 
 ```powershell
 git diff 502ba2202d56db8c1d2c955504e6324a4075b176 024bfdb59d5ad60f0b2a7d716c77330ee16260c4 -- src/service.cpp tests/launch.cpp

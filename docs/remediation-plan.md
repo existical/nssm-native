@@ -79,6 +79,7 @@ work. P2 tasks share an early group only when they support the same repair.
 | B10 | Configuration export and exit actions | 016, 030, 033 | Merged in PR 15; AppExit round trips, strict fallback values and real query-only export validated |
 | B11 | GUI and accounts | 020, 025, 026, 027, 034 | Merged in PR 16; five confirmed fixes, GUI retries, account failures and hook round trips validated |
 | B12 | Dependencies | 023 | Merged in PR 17; typed resets/merges, bounded queries, validation cleanup and SCM round-trip tests pass |
+| B13 | Remaining service control waits | 024 | Merged in PR 18; action budgets, polling, diagnostics and deterministic/live tests pass |
 | B14 | Candidate release and acceptance follow-ups | 035, 036 | In progress; startup/cleanup repairs in PR 20, lifecycle and packaging in PR 19; publication separate |
 
 ## Shared implementation and test rules

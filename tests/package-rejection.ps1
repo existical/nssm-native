@@ -27,4 +27,10 @@ Remove-Item -LiteralPath "$repo/untracked"
 Reject $commit 'clean tree'
 $null = Run-Git @('add','scripts/package.ps1')
 Reject $commit 'clean tree'
+# Do not leave nested Git repositories for editor repository discovery.
+$gitDirectory = [IO.Path]::GetFullPath((Join-Path $repo '.git'))
+$fixtureRoot = [IO.Path]::GetFullPath($repo) + [IO.Path]::DirectorySeparatorChar
+if (-not $gitDirectory.StartsWith($fixtureRoot, [StringComparison]::OrdinalIgnoreCase) -or
+    ((Get-Item -LiteralPath $gitDirectory -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Unexpected fixture Git path.' }
+Remove-Item -LiteralPath $gitDirectory -Recurse -Force
 Write-Output 'Wrong revision, untracked, unstaged and staged changes rejected before package output.'
