@@ -29,5 +29,6 @@ identified as integration-test gaps in the review and plan.
 Implementation evidence is retained separately in the
 [B01 registry validation](b01-validation.md),
 [B02 quoting validation](b02-validation.md),
-[B03 affinity/numeric validation](b03-validation.md) and
-[B04 hook/launch validation](b04-validation.md) records.
+[B03 affinity/numeric validation](b03-validation.md),
+[B04 hook/launch validation](b04-validation.md) and
+[B05 logger validation](b05-validation.md) records.

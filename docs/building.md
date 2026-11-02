@@ -70,7 +70,7 @@ The historical two-part numeric Windows version layout is
 
 ## Checks
 
-CTest runs twelve groups:
+CTest runs thirteen groups:
 
 - `nssm.smoke`: command exit status, exact version output, PE machine type and
   embedded file/product metadata.
@@ -99,6 +99,9 @@ CTest runs twelve groups:
   200 simulated service starts and 200 real suspended validator children.
 - `nssm.hook_live`: 200 real hook launches with stable handle counts, plus
   concurrent worker cleanup and hook registration.
+- `nssm.logger`: writer-close/join ordering, shared-stream EOF, trailing output,
+  blocked I/O, child-held writers, failure injection, service disposal and
+  100 repeated logger lifecycles with unchanged handle counts.
 
 The regression executable compiles the production implementations with test-only
 wrappers for the entry point, SCM, registry queries, expansion, allocations
@@ -115,7 +118,10 @@ copy of its executable under the build directory. The quoting test creates and
 removes a similar copy and an ASCII batch file there. Environment changes are local
 to each test process. Affinity tests create and destroy a hidden Windows list
 box; they do not display a service editor. No administrator rights are required.
-The live launch groups have a 60-second CTest limit and bounded waits.
+Logger tests use real temporary files, pipes and hidden child processes, with
+test-only failure/scheduling wrappers. They remove their temporary files and
+do not control an installed service. The live launch and logger groups have
+a 60-second CTest limit and bounded waits.
 
 The B01 [validation record](reviews/b01-validation.md) includes the observed
 pre-fix failures, full build matrix, static analysis and separate
@@ -126,6 +132,8 @@ The B03 [validation record](reviews/b03-validation.md) covers numeric bounds,
 affinity parsing, native-width masks and GUI row mapping.
 The B04 [validation record](reviews/b04-validation.md) covers hook ownership,
 fallback results, launch handle counts and retained analyzer diagnostics.
+The B05 [validation record](reviews/b05-validation.md) covers logger ownership,
+draining/cancellation, restart isolation and the limits of forced shutdown.
 
 The startup progress checks follow the SCM checkpoint/wait-hint contract in
 [Microsoft's SERVICE_STATUS reference](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/ns-winsvc-service_status),

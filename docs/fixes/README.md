@@ -45,13 +45,20 @@ four CI configurations passing:
 | [NSSM-029](NSSM-029.md) | Count sparse masks and map GUI rows to CPU IDs | Fixed, unreleased | Not yet released |
 | [NSSM-031](NSSM-031.md) | Reject invalid and overflowing unsigned numbers | Fixed, unreleased | Not yet released |
 
-B04 is under review in [PR 9](https://github.com/existical/nssm-native/pull/9), pending merge:
+B04 merged in [PR 9](https://github.com/existical/nssm-native/pull/9), with all
+four CI configurations passing:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |
-| [NSSM-005](NSSM-005.md) | Separate hook caller and worker ownership | In progress | Not yet released |
-| [NSSM-006](NSSM-006.md) | Return fallback results without duplicate cleanup | In progress | Not yet released |
-| [NSSM-017](NSSM-017.md) | Close launch handles and validate cleanup | In progress | Not yet released |
+| [NSSM-005](NSSM-005.md) | Separate hook caller and worker ownership | Fixed, unreleased | Not yet released |
+| [NSSM-006](NSSM-006.md) | Return fallback results without duplicate cleanup | Fixed, unreleased | Not yet released |
+| [NSSM-017](NSSM-017.md) | Close launch handles and validate cleanup | Fixed, unreleased | Not yet released |
+
+B05 has an implementation under review, pending merge:
+
+| ID | Change | State | First release |
+| --- | --- | --- | --- |
+| [NSSM-007](NSSM-007.md) | Own logger state and join before releasing thread handles | In progress | Not yet released |
 
 The [implementation plan](../remediation-plan.md) tracks NSSM-001 through
 NSSM-034. Check each record's state before assuming inclusion in a build.

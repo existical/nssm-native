@@ -29,6 +29,8 @@
 #define NSSM_ROTATE_ONLINE 1
 #define NSSM_ROTATE_ONLINE_ASAP 2
 
+struct logger_t;
+
 typedef struct {
   bool native;
   TCHAR name[SERVICE_NAME_LENGTH];
@@ -63,18 +65,16 @@ typedef struct {
   unsigned long stdout_flags;
   bool use_stdout_pipe;
   HANDLE stdout_si;
-  HANDLE stdout_pipe;
+  logger_t *stdout_logger;
   HANDLE stdout_thread;
-  unsigned long stdout_tid;
   TCHAR stderr_path[PATH_LENGTH];
   unsigned long stderr_sharing;
   unsigned long stderr_disposition;
   unsigned long stderr_flags;
   bool use_stderr_pipe;
   HANDLE stderr_si;
-  HANDLE stderr_pipe;
+  logger_t *stderr_logger;
   HANDLE stderr_thread;
-  unsigned long stderr_tid;
   bool hook_share_output_handles;
   bool rotate_files;
   bool timestamp_log;

@@ -42,6 +42,24 @@ NSSM supports application arguments, startup directories, service accounts,
 environment settings, restart policies, output redirection, log rotation and
 event hooks.
 
+## Logger shutdown and trailing output
+
+NSSM closes both parent log-pipe writers before waiting for logging workers.
+This lets shared stdout/stderr reach EOF and drain trailing output. A hook or
+descendant which still holds a writer can delay EOF.
+
+Each worker has a 1500 ms drain wait. If the wait times out or fails, NSSM
+signals stop, requests synchronous I/O cancellation when Windows supports it,
+and waits another 100 ms. These are per-worker waits, not a total service-stop
+deadline. Cancellation is best effort; unread or unwritten trailing output can
+be lost after this point.
+
+A worker that remains blocked keeps its own state, read pipe and file until
+it can exit. It cannot access freed service data or change a later restart's
+rotation state. A driver operation or rotation already in progress can still
+finish late and retain resources until completion or NSSM process exit.
+See [NSSM-007](fixes/NSSM-007.md) for compatibility and validation details.
+
 ## Hook completion and launch failures
 
 Hook result codes remain success (0), missing (1), abort (99), internal error
