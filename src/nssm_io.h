@@ -31,12 +31,19 @@ typedef struct logger_t {
   unsigned long rotate_delay;
 } logger_t;
 
+typedef struct {
+  unsigned long seconds;
+  unsigned long delay_ms;
+  ULONGLONG bytes;
+  bool copy_and_truncate;
+} rotation_options_t;
+
 void close_handle(HANDLE *);
 int get_createfile_parameters(HKEY, TCHAR *, TCHAR *, unsigned long *, unsigned long, unsigned long *, unsigned long, unsigned long *, unsigned long, bool *);
 int set_createfile_parameter(HKEY, TCHAR *, TCHAR *, unsigned long);
 int delete_createfile_parameter(HKEY, TCHAR *, TCHAR *);
 HANDLE write_to_file(TCHAR *, unsigned long, SECURITY_ATTRIBUTES *, unsigned long, unsigned long);
-void rotate_file(TCHAR *, TCHAR *, unsigned long, unsigned long, unsigned long, unsigned long, bool);
+void rotate_file(TCHAR *, TCHAR *, const rotation_options_t &);
 int get_output_handles(nssm_service_t *, STARTUPINFO *);
 int use_output_handles(nssm_service_t *, STARTUPINFO *);
 void close_output_handles(STARTUPINFO *);

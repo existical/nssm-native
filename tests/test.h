@@ -70,5 +70,6 @@ void test_hook_lifecycle();
 void test_launch_handles();
 void test_hook_live_handles();
 void test_logger_ownership();
+void test_offline_rotation();
 int logger_child(int, TCHAR **);
 #endif

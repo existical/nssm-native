@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Correct offline rotation's swapped size/delay arguments for stdout and
+  stderr. Named options preserve the full 64-bit size threshold and use only
+  the configured copy/truncate delay. [NSSM-008](docs/fixes/NSSM-008.md).
+- Add offline rotation regressions for thresholds, ages, delay requests,
+  both modes and streams, shared paths, failures and archive collisions.
 - Close both parent log-pipe writers before joining workers, retain valid
   thread handles through waits, and give each worker its own reference-counted
   state and I/O handles. Timeout/failure requests cancellation while preserving

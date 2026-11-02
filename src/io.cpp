@@ -242,8 +242,22 @@ static void rotated_filename(TCHAR *path, TCHAR *rotated, unsigned long rotated_
   _sntprintf_s(rotated, rotated_len, _TRUNCATE, _T("%s%s"), buffer, extension);
 }
 
-void rotate_file(TCHAR *service_name, TCHAR *path, unsigned long seconds, unsigned long delay, unsigned long low, unsigned long high, bool copy_and_truncate) {
+static rotation_options_t offline_rotation_options(const nssm_service_t *service, bool copy_and_truncate) {
+  rotation_options_t options;
+  options.seconds = service->rotate_seconds;
+  options.delay_ms = service->rotate_delay;
+  ULARGE_INTEGER bytes;
+  bytes.LowPart = service->rotate_bytes_low;
+  bytes.HighPart = service->rotate_bytes_high;
+  options.bytes = bytes.QuadPart;
+  options.copy_and_truncate = copy_and_truncate;
+  return options;
+}
+
+void rotate_file(TCHAR *service_name, TCHAR *path, const rotation_options_t &options) {
   unsigned long error;
+  unsigned long seconds = options.seconds;
+  ULONGLONG minimum_bytes = options.bytes;
 
   /* Now. */
   SYSTEMTIME st;
@@ -257,7 +271,8 @@ void rotate_file(TCHAR *service_name, TCHAR *path, unsigned long seconds, unsign
     /* Get file attributes. */
     if (! GetFileInformationByHandle(file, &info)) {
       /* Reuse current time for rotation timestamp. */
-      seconds = low = high = 0;
+      seconds = 0;
+      minimum_bytes = 0;
       SystemTimeToFileTime(&st, &info.ftLastWriteTime);
     }
 
@@ -268,7 +283,8 @@ void rotate_file(TCHAR *service_name, TCHAR *path, unsigned long seconds, unsign
     if (error == ERROR_FILE_NOT_FOUND) return;
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, service_name, path, _T("CreateFile()"), path, error_string(error), 0);
     /* Reuse current time for rotation timestamp. */
-    seconds = low = high = 0;
+    seconds = 0;
+    minimum_bytes = 0;
     SystemTimeToFileTime(&st, &info.ftLastWriteTime);
   }
 
@@ -287,9 +303,11 @@ void rotate_file(TCHAR *service_name, TCHAR *path, unsigned long seconds, unsign
   }
 
   /* Check file size. */
-  if (low || high) {
-    if (info.nFileSizeHigh < high) return;
-    if (info.nFileSizeHigh == high && info.nFileSizeLow < low) return;
+  if (minimum_bytes) {
+    ULARGE_INTEGER bytes;
+    bytes.LowPart = info.nFileSizeLow;
+    bytes.HighPart = info.nFileSizeHigh;
+    if (bytes.QuadPart < minimum_bytes) return;
   }
 
   /* Get new filename. */
@@ -301,11 +319,11 @@ void rotate_file(TCHAR *service_name, TCHAR *path, unsigned long seconds, unsign
   /* Rotate. */
   bool ok = true;
   TCHAR *function;
-  if (copy_and_truncate) {
+  if (options.copy_and_truncate) {
     function = _T("CopyFile()");
     if (CopyFile(path, rotated, TRUE)) {
       file = write_to_file(path, NSSM_STDOUT_SHARING, 0, NSSM_STDOUT_DISPOSITION, NSSM_STDOUT_FLAGS);
-      Sleep(delay);
+      Sleep(options.delay_ms);
       SetFilePointer(file, 0, 0, FILE_BEGIN);
       SetEndOfFile(file);
       CloseHandle(file);
@@ -348,7 +366,7 @@ int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
 
   /* stdout */
   if (service->stdout_path[0]) {
-    if (service->rotate_files) rotate_file(service->name, service->stdout_path, service->rotate_seconds, service->rotate_bytes_low, service->rotate_bytes_high, service->rotate_delay, service->stdout_copy_and_truncate);
+    if (service->rotate_files) rotate_file(service->name, service->stdout_path, offline_rotation_options(service, service->stdout_copy_and_truncate));
     HANDLE stdout_handle = write_to_file(service->stdout_path, service->stdout_sharing, 0, service->stdout_disposition, service->stdout_flags);
     if (stdout_handle == INVALID_HANDLE_VALUE) return 4;
     service->stdout_si = 0;
@@ -382,7 +400,7 @@ int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
       if (dup_handle(service->stdout_si, &service->stderr_si, _T("stdout"), _T("stderr"))) return 6;
     }
     else {
-      if (service->rotate_files) rotate_file(service->name, service->stderr_path, service->rotate_seconds, service->rotate_bytes_low, service->rotate_bytes_high, service->rotate_delay, service->stderr_copy_and_truncate);
+      if (service->rotate_files) rotate_file(service->name, service->stderr_path, offline_rotation_options(service, service->stderr_copy_and_truncate));
       HANDLE stderr_handle = write_to_file(service->stderr_path, service->stderr_sharing, 0, service->stderr_disposition, service->stderr_flags);
       if (stderr_handle == INVALID_HANDLE_VALUE) return 7;
       service->stderr_si = 0;

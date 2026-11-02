@@ -25,6 +25,7 @@ int wmain(int argc, TCHAR **argv) {
     else if (! _tcscmp(argv[1], _T("launch"))) test_launch_handles();
     else if (! _tcscmp(argv[1], _T("hook_live"))) test_hook_live_handles();
     else if (! _tcscmp(argv[1], _T("logger"))) test_logger_ownership();
+    else if (! _tcscmp(argv[1], _T("rotation"))) test_offline_rotation();
     else throw std::runtime_error("Unknown test group");
   }
   catch (const std::exception &error) {

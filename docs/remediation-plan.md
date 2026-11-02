@@ -11,7 +11,7 @@ NSSM-001 through NSSM-024 match its numbered findings. NSSM-025 through NSSM-034
 split its additional follow-ups into independent tasks. The latter ten are
 follow-ups, not ten additional reproduced high-priority defects.
 
-**Status:** B00 through B04 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
+**Status:** B00 through B05 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
 are fixed but unreleased through
 [PR 5](https://github.com/existical/nssm-native/pull/5); see the
 [fix records](fixes/README.md) and [validation](reviews/b01-validation.md).
@@ -21,8 +21,10 @@ B03 (NSSM-004, NSSM-029 and NSSM-031) is fixed but unreleased through
 [PR 8](https://github.com/existical/nssm-native/pull/8).
 B04 (NSSM-005, NSSM-006 and NSSM-017) is fixed but unreleased through
 [PR 9](https://github.com/existical/nssm-native/pull/9).
-B05 (NSSM-007) has an implementation and
-[validation](reviews/b05-validation.md) in [PR 10](https://github.com/existical/nssm-native/pull/10), pending merge. The other tasks
+B05 (NSSM-007) is fixed but unreleased through
+[PR 10](https://github.com/existical/nssm-native/pull/10).
+B06 (NSSM-008) has an implementation and
+[validation](reviews/b06-validation.md) in [PR 11](https://github.com/existical/nssm-native/pull/11), pending merge. The other tasks
 remain planned; NSSM-034 requires confirmation.
 [Previously merged changes](fixes/implemented.md) retain separate CONT IDs.
 
@@ -48,8 +50,8 @@ work. P2 tasks share an early group only when they support the same repair.
 | B02 | Safe command quoting | 002 | Merged in PR 7; bounds, dump failures and shell round trips validated |
 | B03 | Affinity and numeric parsing | 004, 029, 031 | Merged in PR 8; boundary, registry and sparse GUI-list tests pass |
 | B04 | Hook ownership and launch handles | 005, 006, 017 | Merged in PR 9; forced schedules/failures and 200-launch handle tests pass |
-| B05 | Logger lifetime | 007 | In progress, merge pending; EOF, cancellation, failure and restart ownership tests pass |
-| B06 | Offline rotation | 008 | Verify thresholds and delay independently; no real long sleeps |
+| B05 | Logger lifetime | 007 | Merged in PR 10; EOF, cancellation, failure and restart ownership tests pass |
+| B06 | Offline rotation | 008 | In progress, merge pending; size/age/delay, mode/stream and failure tests pass |
 | B07 | Process identity during cleanup | 009 | Fake PID-reuse tests, followed by isolated child-tree tests |
 | B08 | Primitive ownership and error paths | 015, 018, 019, 021, 028, 032 | Separate small commits; defined failure outputs and cleanup |
 | B09 | Redirection and logging correctness | 012, 013, 014, 022 | B05/B06; encoding, byte counts and error paths covered |
@@ -215,7 +217,7 @@ hook. Document the corrected fallback result.
 reproduced. Touch `src/io.cpp:cleanup_loggers`, `close_handle`,
 `create_logging_thread`, `log_and_rotate`, and shutdown/restart calls.
 
-**Implementation status:** in progress; see [NSSM-007](fixes/NSSM-007.md).
+**Implementation status:** merged in PR 10, unreleased; see [NSSM-007](fixes/NSSM-007.md).
 
 1. Write down ownership of each file, pipe end and thread handle. Close all
    parent-held writer ends, retain a live thread handle while joining, and
@@ -238,6 +240,14 @@ any output loss remaining under a forced timeout.
 
 **Offline rotation parameter order — P1, B06.** Review finding 8; reproduced
 with the long sleep intercepted. Touch `src/io.cpp:rotate_file` and both callers.
+
+**Implementation status:** in progress; see [NSSM-008](fixes/NSSM-008.md).
+
+The B06 audit leaves two filesystem-error follow-ups for B09's logging
+correctness work: decide whether a metadata-query failure should bypass
+configured limits, and propagate reopen/seek/truncate failures after a copy.
+Add injected failures before changing either policy; these are outside the
+parameter-order repair and are recorded in its fix record.
 
 1. Correct delay versus low/high size argument order.
 2. Replace adjacent indistinguishable arguments with named rotation options
