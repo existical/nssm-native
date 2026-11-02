@@ -11,7 +11,7 @@ NSSM-001 through NSSM-024 match its numbered findings. NSSM-025 through NSSM-034
 split its additional follow-ups into independent tasks. The latter ten are
 follow-ups, not ten additional reproduced high-priority defects.
 
-**Status:** B00 through B09 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
+**Status:** B00 through B10 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
 are fixed but unreleased through
 [PR 5](https://github.com/existical/nssm-native/pull/5); see the
 [fix records](fixes/README.md) and [validation](reviews/b01-validation.md).
@@ -31,10 +31,12 @@ are now merged and unreleased. B08 merged in
 [PR 13](https://github.com/existical/nssm-native/pull/13); see its
 [validation](reviews/b08-validation.md). B09 merged in
 [PR 14](https://github.com/existical/nssm-native/pull/14); see its
-[validation](reviews/b09-validation.md). B10 has implementation and
-[validation](reviews/b10-validation.md) in [PR 15](https://github.com/existical/nssm-native/pull/15),
-pending review and merge. Other tasks
-remain planned; NSSM-034 requires confirmation.
+[validation](reviews/b09-validation.md). B10 merged in
+[PR 15](https://github.com/existical/nssm-native/pull/15); see its
+[validation](reviews/b10-validation.md). B11 has implementation and
+[validation](reviews/b11-validation.md) in [PR 16](https://github.com/existical/nssm-native/pull/16),
+pending review and merge. NSSM-034
+is confirmed by its GUI round-trip test. B12 and B13 remain planned.
 [Previously merged changes](fixes/implemented.md) retain separate CONT IDs.
 
 The recovered legacy development baseline is
@@ -64,8 +66,8 @@ work. P2 tasks share an early group only when they support the same repair.
 | B07 | Process identity during cleanup | 009 | Merged in PR 12; PID-reuse, signalling, failure and owned child-tree tests pass |
 | B08 | Primitive ownership and error paths | 015, 018, 019, 021, 028, 032 | Merged in PR 13; six focused implementation commits, failure tests and full matrix pass |
 | B09 | Redirection and logging correctness | 012, 013, 014, 022 | Merged in PR 14; stdin, encoding, byte counts and typed event insertions validated |
-| B10 | Configuration export and exit actions | 016, 030, 033 | In progress; AppExit round trips, strict fallback values and query-only export implemented |
-| B11 | GUI and accounts | 020, 025, 026, 027, 034 | B04/B08; GUI retry tests and account API failure injection |
+| B10 | Configuration export and exit actions | 016, 030, 033 | Merged in PR 15; AppExit round trips, strict fallback values and real query-only export validated |
+| B11 | GUI and accounts | 020, 025, 026, 027, 034 | In progress; five confirmed fixes, GUI retries, account failure injection and hook round trips validated |
 | B12 | Dependencies | 023 | B01; service/group combinations round-trip through SCM |
 | B13 | Remaining service control waits | 024 | B08; zero-time and bounded-polling semantics established |
 | B14 | Candidate release and comparison records | All completed IDs | All P1 tasks closed, release criteria below satisfied |
@@ -411,7 +413,7 @@ Document the actual default written/deleted for each reset.
 
 ### NSSM 016
 
-**Implementation status:** implementation and tests present, pending merge;
+**Implementation status:** merged in PR 15, unreleased;
 see [NSSM-016](fixes/NSSM-016.md).
 
 **Correct AppExit export — P2, B10.** Review finding 16; lost numeric rule
@@ -482,6 +484,9 @@ AppThrottle and stop-delay callers.
 **Done:** no uninitialized result and no unintended sleep at zero.
 
 ### NSSM 020
+
+**Implementation status:** implementation and tests present, pending merge;
+see [NSSM-020](fixes/NSSM-020.md) and [B11 validation](reviews/b11-validation.md).
 
 **GUI borrowed service handle — P2, B11.** Review finding 20; source-traced.
 
@@ -568,6 +573,9 @@ timeout as failure, without regressing startup tests.
 
 ### NSSM 025
 
+**Implementation status:** implementation and tests present, pending merge;
+see [NSSM-025](fixes/NSSM-025.md) and [B11 validation](reviews/b11-validation.md).
+
 **Password-confirmation cleanup — P2, B11.** Review follow-up A.
 
 Use a scoped secure buffer or centralized cleanup for the GUI confirmation
@@ -580,6 +588,9 @@ to another user or process.
 
 ### NSSM 026
 
+**Implementation status:** implementation and tests present, pending merge;
+see [NSSM-026](fixes/NSSM-026.md) and [B11 validation](reviews/b11-validation.md).
+
 **Account lookup resource cleanup — P2, B11.** First part of follow-up B.
 
 Trace ownership of the policy, SID, translated names/domains and conversion
@@ -590,6 +601,9 @@ lookup and record domain-account coverage separately. Done when allocations
 and handles balance on every path.
 
 ### NSSM 027
+
+**Implementation status:** implementation and tests present, pending merge;
+see [NSSM-027](fixes/NSSM-027.md) and [B11 validation](reviews/b11-validation.md).
 
 **Counted LSA right comparison — P2, B11.** Second part of follow-up B.
 
@@ -630,7 +644,7 @@ supported masks are handled without undefined shifts or phantom CPU choices.
 
 ### NSSM 030
 
-**Implementation status:** implementation and tests present, pending merge;
+**Implementation status:** merged in PR 15, unreleased;
 see [NSSM-030](fixes/NSSM-030.md).
 
 **Read-only configuration export access — P2, B10.** Follow-up E.
@@ -675,7 +689,7 @@ and repeated error_string calls retain no stale pointer or extra allocation.
 
 ### NSSM 033
 
-**Implementation status:** implementation and tests present, pending merge;
+**Implementation status:** merged in PR 15, unreleased;
 see [NSSM-033](fixes/NSSM-033.md).
 
 **Initialized AppExit fallback — P2, B10.** First part of follow-up H.
@@ -689,8 +703,11 @@ text; validate alongside NSSM-016's export round trip.
 
 ### NSSM 034
 
-**Literal hook environment references — confirmation required, B11.**
-Second part of follow-up H; possible edit-round-trip issue.
+**Implementation status:** implementation and tests present, pending merge;
+see [NSSM-034](fixes/NSSM-034.md) and [B11 validation](reviews/b11-validation.md).
+
+**Literal hook environment references — confirmed P2, B11.**
+Second part of follow-up H; GUI edit-round-trip mutation reproduced in B11.
 
 1. Reproduce editing an unrelated GUI setting when a hook command contains
    literal %VARIABLE% references and quoted arguments.

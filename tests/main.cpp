@@ -35,6 +35,11 @@ int wmain(int argc, TCHAR **argv) {
     else if (! _tcscmp(argv[1], _T("exit_export"))) test_exit_export();
     else if (! _tcscmp(argv[1], _T("exit_fallback"))) test_exit_fallback();
     else if (! _tcscmp(argv[1], _T("export_access"))) test_export_access();
+    else if (! _tcscmp(argv[1], _T("account_lookup"))) test_account_lookup();
+    else if (! _tcscmp(argv[1], _T("account_rights"))) test_account_rights();
+    else if (! _tcscmp(argv[1], _T("gui_retry"))) test_gui_retry();
+    else if (! _tcscmp(argv[1], _T("gui_password"))) test_gui_password();
+    else if (! _tcscmp(argv[1], _T("gui_hooks"))) test_gui_hooks();
     else if (! _tcscmp(argv[1], _T("rotation"))) test_offline_rotation();
     else if (! _tcscmp(argv[1], _T("process_identity"))) test_process_identity();
     else if (! _tcscmp(argv[1], _T("process_live"))) test_process_live();

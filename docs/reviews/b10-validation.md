@@ -2,8 +2,12 @@
 
 Validation date: 2026 November 2. Scope: NSSM-016, NSSM-030 and NSSM-033.
 The [fix index](../fixes/README.md) distinguishes implementation, merge and
-release status. B10 is under review in
-[PR 15](https://github.com/existical/nssm-native/pull/15), not merged or released yet.
+release status. B10 merged in
+[PR 15](https://github.com/existical/nssm-native/pull/15) at
+`f28a43141a576033713190fe9b716fb503ac227a`; it remains unreleased.
+The merge commit subject mistakenly says PR 14; the GitHub merge and its
+second parent `7c6373def5512133b41586bde4ba455f64492c83` belong to PR 15.
+Use the PR 15 link and full merge hash when tracing this batch.
 
 Baseline: `0497d8a4d37881e89c3762c3957d1abf775a2190`, after PR 14 merged.
 Implementation: `fc029e716391d3aa9ff3399cd388b428da8e4561`.

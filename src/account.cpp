@@ -8,141 +8,117 @@
 
 extern imports_t imports;
 
-/* Open Policy object. */
-int open_lsa_policy(LSA_HANDLE *policy) {
+/* Keep each Windows allocation paired with its documented deallocator. */
+template<class T> struct account_heap_t {
+  T *value;
+  account_heap_t() : value(0) {}
+  ~account_heap_t() { if (value) HeapFree(GetProcessHeap(), 0, value); }
+private:
+  account_heap_t(const account_heap_t &);
+  account_heap_t &operator=(const account_heap_t &);
+};
+template<class T> struct account_lsa_t {
+  T *value;
+  account_lsa_t() : value(0) {}
+  ~account_lsa_t() { if (value) LsaFreeMemory(value); }
+private:
+  account_lsa_t(const account_lsa_t &);
+  account_lsa_t &operator=(const account_lsa_t &);
+};
+struct account_policy_t {
+  LSA_HANDLE value;
+  account_policy_t() : value(0) {}
+  ~account_policy_t() { if (value) LsaClose(value); }
+private:
+  account_policy_t(const account_policy_t &);
+  account_policy_t &operator=(const account_policy_t &);
+};
+
+static bool valid_lsa_string(const LSA_UNICODE_STRING &s) {
+  return !(s.Length % sizeof(wchar_t)) && s.Length <= s.MaximumLength && (! s.Length || s.Buffer);
+}
+
+/* Open Policy object. Lookup callers do not need policy modification rights. */
+int open_lsa_policy(LSA_HANDLE *policy, ACCESS_MASK access) {
+  if (! policy) return 1;
+  *policy = 0;
   LSA_OBJECT_ATTRIBUTES attributes;
   ZeroMemory(&attributes, sizeof(attributes));
-
-  NTSTATUS status = LsaOpenPolicy(0, &attributes, POLICY_ALL_ACCESS, policy);
+  NTSTATUS status = LsaOpenPolicy(0, &attributes, access, policy);
   if (status != STATUS_SUCCESS) {
+    *policy = 0;
     print_message(stderr, NSSM_MESSAGE_LSAOPENPOLICY_FAILED, error_string(LsaNtStatusToWinError(status)));
     return 1;
   }
-
   return 0;
 }
 
-/* Look up SID for an account. */
+/* Successful output belongs to the caller and must be freed with HeapFree. */
 int username_sid(const TCHAR *username, SID **sid, LSA_HANDLE *policy) {
-  LSA_HANDLE handle;
+  if (! sid) return 1;
+  *sid = 0;
+  if (! username || ! *username) return 1;
+  account_policy_t owned_policy;
   if (! policy) {
-    policy = &handle;
-    if (open_lsa_policy(policy)) return 1;
+    if (open_lsa_policy(&owned_policy.value, POLICY_LOOKUP_NAMES)) return 1;
+    policy = &owned_policy.value;
   }
 
-  /*
-    LsaLookupNames() can't look up .\username but can look up
-    %COMPUTERNAME%\username.  ChangeServiceConfig() writes .\username to the
-    registry when %COMPUTERNAME%\username is a passed as a parameter.  We
-    need to preserve .\username when calling ChangeServiceConfig() without
-    changing the username, but expand to %COMPUTERNAME%\username when calling
-    LsaLookupNames().
-  */
-  TCHAR *expanded;
-  unsigned long expandedlen;
-  if (_tcsnicmp(_T(".\\"), username, 2)) {
-    expandedlen = (unsigned long) (_tcslen(username) + 1) * sizeof(TCHAR);
-    expanded = (TCHAR *) HeapAlloc(GetProcessHeap(), 0, expandedlen);
-    if (! expanded) {
-      print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("expanded"), _T("username_sid"));
-      if (policy == &handle) LsaClose(handle);
-      return 2;
-    }
-    memmove(expanded, username, expandedlen);
+  /* LSA accepts COMPUTERNAME\user, but not the SCM's .\user spelling. */
+  account_heap_t<TCHAR> expanded;
+  const TCHAR *lookup = username;
+  if (! _tcsnicmp(_T(".\\"), username, 2)) {
+    TCHAR computername[MAX_COMPUTERNAME_LENGTH + 1] = {};
+    DWORD length = _countof(computername);
+    if (! GetComputerName(computername, &length)) return 2;
+    size_t capacity = length + _tcslen(username);
+    if (capacity > USHRT_MAX / sizeof(wchar_t)) return 4;
+    expanded.value = (TCHAR *) HeapAlloc(GetProcessHeap(), 0, capacity * sizeof(TCHAR));
+    if (! expanded.value) return 2;
+    if (_sntprintf_s(expanded.value, capacity, _TRUNCATE, _T("%s\\%s"), computername, username + 2) < 0) return 2;
+    lookup = expanded.value;
   }
-  else {
-    TCHAR computername[MAX_COMPUTERNAME_LENGTH + 1];
-    expandedlen = _countof(computername);
-    GetComputerName(computername, &expandedlen);
-    expandedlen += (unsigned long) _tcslen(username);
-
-    expanded = (TCHAR *) HeapAlloc(GetProcessHeap(), 0, expandedlen * sizeof(TCHAR));
-    if (! expanded) {
-      print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("expanded"), _T("username_sid"));
-      if (policy == &handle) LsaClose(handle);
-      return 2;
-    }
-    _sntprintf_s(expanded, expandedlen, _TRUNCATE, _T("%s\\%s"), computername, username + 2);
-  }
-
+  if (_tcslen(lookup) >= USHRT_MAX / sizeof(wchar_t)) return 4;
+  account_heap_t<wchar_t> wide;
+  unsigned long length = 0;
+  if (to_utf16(lookup, &wide.value, &length) || length >= USHRT_MAX / sizeof(wchar_t)) return 4;
   LSA_UNICODE_STRING lsa_username;
-  int ret = to_utf16(expanded, &lsa_username.Buffer, (unsigned long *) &lsa_username.Length);
-  HeapFree(GetProcessHeap(), 0, expanded);
-  if (ret) {
-    if (policy == &handle) LsaClose(handle);
-    print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("LSA_UNICODE_STRING"), _T("username_sid()"));
-    return 4;
-  }
-  lsa_username.Length *= sizeof(wchar_t);
+  lsa_username.Buffer = wide.value;
+  lsa_username.Length = (USHORT) (length * sizeof(wchar_t));
   lsa_username.MaximumLength = lsa_username.Length + sizeof(wchar_t);
 
-  LSA_REFERENCED_DOMAIN_LIST *translated_domains;
-  LSA_TRANSLATED_SID *translated_sid;
-  NTSTATUS status = LsaLookupNames(*policy, 1, &lsa_username, &translated_domains, &translated_sid);
-  HeapFree(GetProcessHeap(), 0, lsa_username.Buffer);
-  if (policy == &handle) LsaClose(handle);
+  account_lsa_t<LSA_REFERENCED_DOMAIN_LIST> domains;
+  account_lsa_t<LSA_TRANSLATED_SID> translated;
+  NTSTATUS status = LsaLookupNames(*policy, 1, &lsa_username, &domains.value, &translated.value);
   if (status != STATUS_SUCCESS) {
-    LsaFreeMemory(translated_domains);
-    LsaFreeMemory(translated_sid);
     print_message(stderr, NSSM_MESSAGE_LSALOOKUPNAMES_FAILED, username, error_string(LsaNtStatusToWinError(status)));
     return 5;
   }
-
-  if (translated_sid->Use != SidTypeUser && translated_sid->Use != SidTypeWellKnownGroup) {
-    if (translated_sid->Use != SidTypeUnknown || _tcsnicmp(NSSM_VIRTUAL_SERVICE_ACCOUNT_DOMAIN _T("\\"), username, _tcslen(NSSM_VIRTUAL_SERVICE_ACCOUNT_DOMAIN) + 1)) {
-      LsaFreeMemory(translated_domains);
-      LsaFreeMemory(translated_sid);
-      print_message(stderr, NSSM_GUI_INVALID_USERNAME, username);
-      return 6;
-    }
+  if (! translated.value || ! domains.value || ! domains.value->Domains ||
+      translated.value->DomainIndex < 0 || (ULONG) translated.value->DomainIndex >= domains.value->Entries) return 7;
+  if (translated.value->Use != SidTypeUser && translated.value->Use != SidTypeWellKnownGroup) {
+    if (translated.value->Use != SidTypeUnknown || _tcsnicmp(NSSM_VIRTUAL_SERVICE_ACCOUNT_DOMAIN _T("\\"), username, _tcslen(NSSM_VIRTUAL_SERVICE_ACCOUNT_DOMAIN) + 1)) return 6;
   }
-
-  LSA_TRUST_INFORMATION *trust = &translated_domains->Domains[translated_sid->DomainIndex];
-  if (! trust || ! IsValidSid(trust->Sid)) {
-    LsaFreeMemory(translated_domains);
-    LsaFreeMemory(translated_sid);
-    print_message(stderr, NSSM_GUI_INVALID_USERNAME, username);
-    return 7;
-  }
-
-  /* GetSidSubAuthority*() return pointers! */
-  unsigned char *n = GetSidSubAuthorityCount(trust->Sid);
-
-  /* Convert translated SID to SID. */
-  *sid = (SID *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, GetSidLengthRequired(*n + 1));
-  if (! *sid) {
-    LsaFreeMemory(translated_domains);
-    LsaFreeMemory(translated_sid);
-    print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("SID"), _T("username_sid"));
-    return 8;
-  }
-
-  unsigned long error;
-  if (! InitializeSid(*sid, GetSidIdentifierAuthority(trust->Sid), *n + 1)) {
-    error = GetLastError();
-    HeapFree(GetProcessHeap(), 0, *sid);
-    LsaFreeMemory(translated_domains);
-    LsaFreeMemory(translated_sid);
-    print_message(stderr, NSSM_MESSAGE_INITIALIZESID_FAILED, username, error_string(error));
+  PSID domain = domains.value->Domains[translated.value->DomainIndex].Sid;
+  if (! domain || ! IsValidSid(domain)) return 7;
+  unsigned char n = *GetSidSubAuthorityCount(domain);
+  if (n >= SID_MAX_SUB_AUTHORITIES) return 7;
+  account_heap_t<SID> result;
+  result.value = (SID *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, GetSidLengthRequired(n + 1));
+  if (! result.value) return 8;
+  if (! InitializeSid(result.value, GetSidIdentifierAuthority(domain), n + 1)) {
+    print_message(stderr, NSSM_MESSAGE_INITIALIZESID_FAILED, username, error_string(GetLastError()));
     return 9;
   }
-
-  for (unsigned char i = 0; i <= *n; i++) {
-    unsigned long *sub = GetSidSubAuthority(*sid, i);
-    if (i < *n) *sub = *GetSidSubAuthority(trust->Sid, i);
-    else *sub = translated_sid->RelativeId;
-  }
-
-  ret = 0;
-  if (translated_sid->Use == SidTypeWellKnownGroup && ! well_known_sid(*sid)) {
+  for (unsigned char i = 0; i < n; i++) *GetSidSubAuthority(result.value, i) = *GetSidSubAuthority(domain, i);
+  *GetSidSubAuthority(result.value, n) = translated.value->RelativeId;
+  if (translated.value->Use == SidTypeWellKnownGroup && ! well_known_sid(result.value)) {
     print_message(stderr, NSSM_GUI_INVALID_USERNAME, username);
-    ret = 10;
+    return 10;
   }
-
-  LsaFreeMemory(translated_domains);
-  LsaFreeMemory(translated_sid);
-
-  return ret;
+  *sid = result.value;
+  result.value = 0;
+  return 0;
 }
 
 int username_sid(const TCHAR *username, SID **sid) {
@@ -150,52 +126,36 @@ int username_sid(const TCHAR *username, SID **sid) {
 }
 
 int canonicalise_username(const TCHAR *username, TCHAR **canon) {
-  LSA_HANDLE policy;
-  if (open_lsa_policy(&policy)) return 1;
-
-  SID *sid;
-  if (username_sid(username, &sid, &policy)) return 2;
-  PSID sids = { sid };
-
-  LSA_REFERENCED_DOMAIN_LIST *translated_domains;
-  LSA_TRANSLATED_NAME *translated_name;
-  NTSTATUS status = LsaLookupSids(policy, 1, &sids, &translated_domains, &translated_name);
+  if (! canon) return 1;
+  *canon = 0;
+  account_policy_t policy;
+  if (open_lsa_policy(&policy.value, POLICY_LOOKUP_NAMES)) return 1;
+  account_heap_t<SID> sid;
+  if (username_sid(username, &sid.value, &policy.value)) return 2;
+  PSID sids = sid.value;
+  account_lsa_t<LSA_REFERENCED_DOMAIN_LIST> domains;
+  account_lsa_t<LSA_TRANSLATED_NAME> translated;
+  NTSTATUS status = LsaLookupSids(policy.value, 1, &sids, &domains.value, &translated.value);
   if (status != STATUS_SUCCESS) {
-    LsaFreeMemory(translated_domains);
-    LsaFreeMemory(translated_name);
     print_message(stderr, NSSM_MESSAGE_LSALOOKUPSIDS_FAILED, error_string(LsaNtStatusToWinError(status)));
     return 3;
   }
-
-  LSA_TRUST_INFORMATION *trust = &translated_domains->Domains[translated_name->DomainIndex];
-  LSA_UNICODE_STRING lsa_canon;
-  lsa_canon.Length = translated_name->Name.Length + trust->Name.Length + sizeof(wchar_t);
-  lsa_canon.MaximumLength = lsa_canon.Length + sizeof(wchar_t);
-  lsa_canon.Buffer = (wchar_t *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, lsa_canon.MaximumLength);
-  if (! lsa_canon.Buffer) {
-    LsaFreeMemory(translated_domains);
-    LsaFreeMemory(translated_name);
-    print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("lsa_canon"), _T("username_sid"));
-    return 9;
-  }
-
-  /* Buffer is wchar_t but Length is in bytes. */
-  memmove((char *) lsa_canon.Buffer, trust->Name.Buffer, trust->Name.Length);
-  memmove((char *) lsa_canon.Buffer + trust->Name.Length, L"\\", sizeof(wchar_t));
-  memmove((char *) lsa_canon.Buffer + trust->Name.Length + sizeof(wchar_t), translated_name->Name.Buffer, translated_name->Name.Length);
-
+  if (! translated.value || ! domains.value || ! domains.value->Domains ||
+      translated.value->DomainIndex < 0 || (ULONG) translated.value->DomainIndex >= domains.value->Entries) return 3;
+  const LSA_UNICODE_STRING &domain = domains.value->Domains[translated.value->DomainIndex].Name;
+  const LSA_UNICODE_STRING &name = translated.value->Name;
+  if (! valid_lsa_string(domain) || ! valid_lsa_string(name) || ! domain.Length || ! name.Length ||
+      wmemchr(domain.Buffer, 0, domain.Length / sizeof(wchar_t)) || wmemchr(name.Buffer, 0, name.Length / sizeof(wchar_t))) return 3;
+  /* Use size_t for the combined size: two USHORT lengths can overflow USHORT. */
+  size_t bytes = (size_t) domain.Length + name.Length + 2 * sizeof(wchar_t);
+  account_heap_t<wchar_t> combined;
+  combined.value = (wchar_t *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, bytes);
+  if (! combined.value) return 9;
+  memmove(combined.value, domain.Buffer, domain.Length);
+  combined.value[domain.Length / sizeof(wchar_t)] = L'\\';
+  memmove((char *) combined.value + domain.Length + sizeof(wchar_t), name.Buffer, name.Length);
   unsigned long canonlen;
-  if (from_utf16(lsa_canon.Buffer, canon, &canonlen)) {
-    LsaFreeMemory(translated_domains);
-    LsaFreeMemory(translated_name);
-    print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("canon"), _T("username_sid"));
-    return 10;
-  }
-  HeapFree(GetProcessHeap(), 0, lsa_canon.Buffer);
-
-  LsaFreeMemory(translated_domains);
-  LsaFreeMemory(translated_name);
-
+  if (from_utf16(combined.value, canon, &canonlen)) return 10;
   return 0;
 }
 
@@ -205,15 +165,15 @@ int username_equiv(const TCHAR *a, const TCHAR *b) {
   if (username_sid(a, &sid_a)) return 0;
 
   if (username_sid(b, &sid_b)) {
-    FreeSid(sid_a);
+    HeapFree(GetProcessHeap(), 0, sid_a);
     return 0;
   }
 
   int ret = 0;
   if (EqualSid(sid_a, sid_b)) ret = 1;
 
-  FreeSid(sid_a);
-  FreeSid(sid_b);
+  HeapFree(GetProcessHeap(), 0, sid_a);
+  HeapFree(GetProcessHeap(), 0, sid_b);
 
   return ret;
 }
@@ -229,7 +189,7 @@ int is_localsystem(const TCHAR *username) {
   int ret = 0;
   if (imports.IsWellKnownSid(sid, WinLocalSystemSid)) ret = 1;
 
-  FreeSid(sid);
+  HeapFree(GetProcessHeap(), 0, sid);
 
   return ret;
 }
@@ -278,81 +238,46 @@ const TCHAR *well_known_username(const TCHAR *username) {
   if (username_sid(username, &sid)) return 0;
 
   const TCHAR *well_known = well_known_sid(sid);
-  FreeSid(sid);
+  HeapFree(GetProcessHeap(), 0, sid);
 
   return well_known;
 }
 
 int grant_logon_as_service(const TCHAR *username) {
   if (! username) return 0;
+  account_policy_t policy;
+  if (open_lsa_policy(&policy.value)) return 1;
+  account_heap_t<SID> sid;
+  if (username_sid(username, &sid.value, &policy.value)) return 2;
+  if (well_known_sid(sid.value)) return 3;
 
-  /* Open Policy object. */
-  LSA_OBJECT_ATTRIBUTES attributes;
-  ZeroMemory(&attributes, sizeof(attributes));
-
-  LSA_HANDLE policy;
-  NTSTATUS status;
-
-  if (open_lsa_policy(&policy)) return 1;
-
-  /* Look up SID for the account. */
-  SID *sid;
-  if (username_sid(username, &sid, &policy)) {
-    LsaClose(policy);
-    return 2;
-  }
-
-  /*
-    Shouldn't happen because it should have been checked before callling this function.
-  */
-  if (well_known_sid(sid)) {
-    LsaClose(policy);
-    return 3;
-  }
-
-  /* Check if the SID has the "Log on as a service" right. */
   LSA_UNICODE_STRING lsa_right;
   lsa_right.Buffer = NSSM_LOGON_AS_SERVICE_RIGHT;
-  lsa_right.Length = (unsigned short) wcslen(lsa_right.Buffer) * sizeof(wchar_t);
+  lsa_right.Length = (USHORT) (wcslen(lsa_right.Buffer) * sizeof(wchar_t));
   lsa_right.MaximumLength = lsa_right.Length + sizeof(wchar_t);
-
-  LSA_UNICODE_STRING *rights;
-  unsigned long count = ~0;
-  status = LsaEnumerateAccountRights(policy, sid, &rights, &count);
+  account_lsa_t<LSA_UNICODE_STRING> rights;
+  unsigned long count = 0;
+  NTSTATUS status = LsaEnumerateAccountRights(policy.value, sid.value, &rights.value, &count);
   if (status != STATUS_SUCCESS) {
-    /*
-      If the account has no rights set LsaEnumerateAccountRights() will return
-      STATUS_OBJECT_NAME_NOT_FOUND and set count to 0.
-    */
     unsigned long error = LsaNtStatusToWinError(status);
     if (error != ERROR_FILE_NOT_FOUND) {
-      FreeSid(sid);
-      LsaClose(policy);
       print_message(stderr, NSSM_MESSAGE_LSAENUMERATEACCOUNTRIGHTS_FAILED, username, error_string(error));
       return 4;
     }
+    count = 0;
   }
-
+  if (count && ! rights.value) return 4;
   for (unsigned long i = 0; i < count; i++) {
-    if (rights[i].Length != lsa_right.Length) continue;
-    if (_wcsnicmp(rights[i].Buffer, lsa_right.Buffer, lsa_right.MaximumLength)) continue;
-    /* The SID has the right. */
-    FreeSid(sid);
-    LsaFreeMemory(rights);
-    LsaClose(policy);
-    return 0;
+    const LSA_UNICODE_STRING &right = rights.value[i];
+    if (! valid_lsa_string(right)) return 4;
+    if (right.Length != lsa_right.Length) continue;
+    if (! _wcsnicmp(right.Buffer, lsa_right.Buffer, right.Length / sizeof(wchar_t))) return 0;
   }
-  LsaFreeMemory(rights);
-
-  /* Add the right. */
-  status = LsaAddAccountRights(policy, sid, &lsa_right, 1);
-  FreeSid(sid);
-  LsaClose(policy);
+  status = LsaAddAccountRights(policy.value, sid.value, &lsa_right, 1);
   if (status != STATUS_SUCCESS) {
     print_message(stderr, NSSM_MESSAGE_LSAADDACCOUNTRIGHTS_FAILED, error_string(LsaNtStatusToWinError(status)));
     return 5;
   }
-
   print_message(stdout, NSSM_MESSAGE_GRANTED_LOGON_AS_SERVICE, username);
   return 0;
 }

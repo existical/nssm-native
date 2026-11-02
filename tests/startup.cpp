@@ -1,6 +1,7 @@
 #include "test.h"
 #include "launch_fixture.h"
 #include "install_fixture.h"
+#include "gui_fixture.h"
 namespace wait_test {
 static bool active;
 static std::vector<DWORD> requests, results;
@@ -83,6 +84,7 @@ static BOOL WINAPI query(SC_HANDLE handle, LPSERVICE_STATUS status) {
   return TRUE;
 }
 static BOOL WINAPI close(SC_HANDLE handle) {
+  if (gui_test::active) return gui_test::close(handle);
   if (install_test::active) return install_test::close(handle);
   CHECK(handle == manager_handle || handle == service_handle);
   closes++;
@@ -99,12 +101,14 @@ static void WINAPI sleep(DWORD milliseconds) {
 // The actual control_service() and polling implementation are compiled below.
 static bool fail_affinity_allocation = false;
 static LPVOID WINAPI service_allocate(HANDLE heap, DWORD flags, SIZE_T bytes) {
+  if (gui_test::active) return gui_test::allocate(heap, flags, bytes);
   if (fail_affinity_allocation) return NULL;
   void *p = install_test::allocate(heap, flags, bytes);
   if (scm::export_access && p && bytes == sizeof(nssm_service_t)) scm::export_objects.push_back(p);
   return p;
 }
 static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
+  if (gui_test::active) return gui_test::release(heap, flags, p);
   for (size_t i = 0; i < scm::export_objects.size(); i++) if (scm::export_objects[i] == p) { scm::export_objects.erase(scm::export_objects.begin() + i); break; }
   return install_test::release(heap, flags, p);
 }

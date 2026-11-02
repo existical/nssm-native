@@ -36,4 +36,5 @@ Implementation evidence is retained separately in the
 [B07 process identity validation](b07-validation.md) and
 [B08 ownership/error-path validation](b08-validation.md) and
 [B09 redirection/logging validation](b09-validation.md) and
-[B10 configuration-export validation](b10-validation.md) records.
+[B10 configuration-export validation](b10-validation.md) and
+[B11 GUI/account validation](b11-validation.md) records.

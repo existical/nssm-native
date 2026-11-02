@@ -13,7 +13,8 @@
 /* This is explicitly a wide string. */
 #define NSSM_LOGON_AS_SERVICE_RIGHT L"SeServiceLogonRight"
 
-int open_lsa_policy(LSA_HANDLE *);
+int open_lsa_policy(LSA_HANDLE *, ACCESS_MASK = POLICY_ALL_ACCESS);
+/* username_sid outputs use HeapAlloc; release them with HeapFree. */
 int username_sid(const TCHAR *, SID **, LSA_HANDLE *);
 int username_sid(const TCHAR *, SID **);
 int username_equiv(const TCHAR *, const TCHAR *);
