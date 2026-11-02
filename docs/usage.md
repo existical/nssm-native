@@ -42,6 +42,28 @@ NSSM supports application arguments, startup directories, service accounts,
 environment settings, restart policies, output redirection, log rotation and
 event hooks.
 
+## Hook completion and launch failures
+
+Hook result codes remain success (0), missing (1), abort (99), internal error
+(100), not run (101), timeout (102) and failed command (111). An asynchronous
+success means the hook was launched and registered, not that its command has
+already completed. If worker creation or tracking allocation fails, NSSM waits
+synchronously and returns the hook's actual result. A pre-start abort still
+cancels application startup in that fallback path.
+
+Workers own their command metadata and process handles. Timed-out or failed
+caller waits keep the worker tracked for later cleanup. A synchronous wait
+timeout now reports 102 instead of exposing a still-running thread's Windows
+status. Hook process-tree termination behavior remains subject to the
+separate process-identity review.
+
+Environment validation waits up to five seconds for its suspended test child
+to exit and closes both returned handles. If exit cannot be confirmed, it
+reports an internal error. An OS refusal to terminate a process is not a
+successful validation, unless exit is independently observed. Failure to
+resume an affinity-suspended application now fails startup and enters the
+existing service cleanup path.
+
 ## Numeric settings and processor affinity
 
 Unsigned numeric settings accept values from 0 through 4294967295. Decimal

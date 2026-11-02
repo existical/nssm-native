@@ -169,6 +169,11 @@ int test_environment(TCHAR *env) {
   */
   if (CreateProcess(0, path, 0, 0, 0, flags, env, 0, &si, &pi)) {
     TerminateProcess(pi.hProcess, 0);
+    /* Termination is asynchronous; never report success without observing exit. */
+    DWORD waited = WaitForSingleObject(pi.hProcess, 5000);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    if (waited != WAIT_OBJECT_0) return -1;
   }
   else {
     unsigned long error = GetLastError();

@@ -70,7 +70,7 @@ The historical two-part numeric Windows version layout is
 
 ## Checks
 
-CTest runs nine groups:
+CTest runs twelve groups:
 
 - `nssm.smoke`: command exit status, exact version output, PE machine type and
   embedded file/product metadata.
@@ -93,11 +93,21 @@ CTest runs nine groups:
 - `nssm.affinity`: range endpoints, repeated entries, mask/string round trips,
   formatter allocation failure, injected CPU masks and real hidden list-box
   row/CPU mapping.
+- `nssm.hook_lifecycle`: immediate/deferred completion, fallback results,
+  allocation and wait failures, ownership accounting and thread-list cleanup.
+- `nssm.launch`: injected service/validator launch failures, resume/abort cleanup,
+  200 simulated service starts and 200 real suspended validator children.
+- `nssm.hook_live`: 200 real hook launches with stable handle counts, plus
+  concurrent worker cleanup and hook registration.
 
 The regression executable compiles the production implementations with test-only
 wrappers for the entry point, SCM, registry queries, expansion, allocations
 and dump output. CPU masks and the affinity formatter's allocation failure
 are also injected only in the regression executable.
+Hook lifecycle tests use quarantined allocations and simulated process/thread
+handles; live hook tests use real workers and children, with tree cleanup
+limited to the fixture's own child. Service launch tests replace SCM, process
+and I/O boundaries and never control an installed service.
 Tests do not install or control real
 services. Registry access is redirected within the test process to a temporary
 HKCU key, which is deleted afterwards; the hook test also creates and removes a
@@ -105,6 +115,7 @@ copy of its executable under the build directory. The quoting test creates and
 removes a similar copy and an ASCII batch file there. Environment changes are local
 to each test process. Affinity tests create and destroy a hidden Windows list
 box; they do not display a service editor. No administrator rights are required.
+The live launch groups have a 60-second CTest limit and bounded waits.
 
 The B01 [validation record](reviews/b01-validation.md) includes the observed
 pre-fix failures, full build matrix, static analysis and separate
@@ -113,6 +124,8 @@ The B02 [validation record](reviews/b02-validation.md) records quoting bounds,
 shell round trips, caller error handling and the existing batch-file limitations.
 The B03 [validation record](reviews/b03-validation.md) covers numeric bounds,
 affinity parsing, native-width masks and GUI row mapping.
+The B04 [validation record](reviews/b04-validation.md) covers hook ownership,
+fallback results, launch handle counts and retained analyzer diagnostics.
 
 The startup progress checks follow the SCM checkpoint/wait-hint contract in
 [Microsoft's SERVICE_STATUS reference](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/ns-winsvc-service_status),

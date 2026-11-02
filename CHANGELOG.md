@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Keep hook metadata alive independently of worker completion, reserve worker
+  tracking before thread creation, and retain unfinished workers on failed or
+  timed-out waits. [NSSM-005](docs/fixes/NSSM-005.md).
+- Avoid duplicate frees when hook thread creation fails and return the actual
+  synchronous fallback result, including an abort request.
+  [NSSM-006](docs/fixes/NSSM-006.md).
+- Close primary-thread handles from hook/application launches and both handles
+  from environment-validation launches. Confirm validator exit with a bounded
+  wait, clean up pre-start-abort I/O handles, and stop after a failed application
+  resume. [NSSM-017](docs/fixes/NSSM-017.md).
+- Add forced hook schedules/failures, launch cleanup regressions, concurrent
+  cleanup/registration and 200-launch live handle-count checks.
 - Parse affinity lists directly into a checked 64-bit mask, rejecting invalid
   endpoints, reversed ranges and empty tokens without overflowing a temporary
   array. [NSSM-004](docs/fixes/NSSM-004.md).

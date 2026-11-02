@@ -20,6 +20,9 @@ int wmain(int argc, TCHAR **argv) {
     else if (! _tcscmp(argv[1], _T("quoting"))) test_quoting();
     else if (! _tcscmp(argv[1], _T("numeric"))) test_numeric();
     else if (! _tcscmp(argv[1], _T("affinity"))) { test_affinity(); test_cpu_detection(); }
+    else if (! _tcscmp(argv[1], _T("hook_lifecycle"))) test_hook_lifecycle();
+    else if (! _tcscmp(argv[1], _T("launch"))) test_launch_handles();
+    else if (! _tcscmp(argv[1], _T("hook_live"))) test_hook_live_handles();
     else throw std::runtime_error("Unknown test group");
   }
   catch (const std::exception &error) {

@@ -1,6 +1,18 @@
 #include "test.h"
+#include "launch_fixture.h"
 // Include the implementation to exercise both set and private unset paths.
+#undef CreateProcess
+#define CreateProcess launch_test::create
+#define TerminateProcess launch_test::terminate
+#define WaitForSingleObject launch_test::wait
+#define CloseHandle launch_test::close
+#define nssm_imagepath launch_test::imagepath
 #include "../src/env.cpp"
+#undef nssm_imagepath
+#undef CreateProcess
+#undef TerminateProcess
+#undef WaitForSingleObject
+#undef CloseHandle
 
 static void expect_variable(const TCHAR *name, const TCHAR *expected) {
   TCHAR value[256] = {};

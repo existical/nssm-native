@@ -15,6 +15,16 @@ inline void check(bool passed, const char *expression, int line) {
 #define CHECK(expression) check(!!(expression), #expression, __LINE__)
 #define REQUIRE(expression) do { if (! (expression)) throw std::runtime_error(#expression); } while (0)
 
+inline DWORD test_handle_count() {
+  // Test-only lookup: keep the production legacy Windows target unchanged.
+  typedef BOOL (WINAPI *get_count_t)(HANDLE, PDWORD);
+  get_count_t get_count = reinterpret_cast<get_count_t>(GetProcAddress(GetModuleHandle(_T("kernel32.dll")), "GetProcessHandleCount"));
+  REQUIRE(get_count);
+  DWORD count;
+  REQUIRE(get_count(GetCurrentProcess(), &count));
+  return count;
+}
+
 // HKLM redirection affects this test process only. All registry writes land in
 // a newly created HKCU key and are removed when the fixture exits.
 class registry_fixture {
@@ -56,4 +66,7 @@ int quoting_child(int, TCHAR **);
 void test_numeric();
 void test_affinity();
 void test_cpu_detection();
+void test_hook_lifecycle();
+void test_launch_handles();
+void test_hook_live_handles();
 #endif
