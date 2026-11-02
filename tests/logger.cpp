@@ -1,4 +1,5 @@
 #include "test.h"
+#include "rotation_fixture.h"
 
 namespace logger_test {
 static bool checking;
@@ -87,7 +88,7 @@ static DWORD WINAPI wait(HANDLE handle, DWORD timeout) {
   if (checking) CHECK(result != WAIT_FAILED);
   return result;
 }
-static void log(unsigned short, unsigned long, ...) {}
+static void log(unsigned short, unsigned long id, ...) { rotation_test::event(id); }
 static void console(nssm_service_t *) {}
 }
 
@@ -106,7 +107,19 @@ static void console(nssm_service_t *) {}
 #define CloseHandle logger_test::close
 #define WaitForSingleObject logger_test::wait
 #define log_event logger_test::log
+#undef CopyFile
+#define CopyFile rotation_test::copy
+#undef MoveFile
+#define MoveFile rotation_test::move
+#define GetFileInformationByHandle rotation_test::information
+#define Sleep rotation_test::sleep
+#define GetSystemTime rotation_test::now
 #include "../src/io.cpp"
+#undef CopyFile
+#undef MoveFile
+#undef GetFileInformationByHandle
+#undef Sleep
+#undef GetSystemTime
 #undef CloseHandle
 #undef WaitForSingleObject
 #undef log_event

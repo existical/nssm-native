@@ -70,7 +70,7 @@ The historical two-part numeric Windows version layout is
 
 ## Checks
 
-CTest runs thirteen groups:
+CTest runs fourteen groups:
 
 - `nssm.smoke`: command exit status, exact version output, PE machine type and
   embedded file/product metadata.
@@ -102,6 +102,8 @@ CTest runs thirteen groups:
 - `nssm.logger`: writer-close/join ordering, shared-stream EOF, trailing output,
   blocked I/O, child-held writers, failure injection, service disposal and
   100 repeated logger lifecycles with unchanged handle counts.
+- `nssm.rotation`: offline size/age thresholds, high size words, delay requests,
+  copy and rename modes, both streams, shared paths, failures and collisions.
 
 The regression executable compiles the production implementations with test-only
 wrappers for the entry point, SCM, registry queries, expansion, allocations
@@ -122,6 +124,9 @@ Logger tests use real temporary files, pipes and hidden child processes, with
 test-only failure/scheduling wrappers. They remove their temporary files and
 do not control an installed service. The live launch and logger groups have
 a 60-second CTest limit and bounded waits.
+Offline rotation tests use real temporary files, a fixed clock, injected
+large-file metadata and intercepted sleeps. They do not create large files
+or perform long waits, and retain the standard 20-second group limit.
 
 The B01 [validation record](reviews/b01-validation.md) includes the observed
 pre-fix failures, full build matrix, static analysis and separate
@@ -134,6 +139,8 @@ The B04 [validation record](reviews/b04-validation.md) covers hook ownership,
 fallback results, launch handle counts and retained analyzer diagnostics.
 The B05 [validation record](reviews/b05-validation.md) covers logger ownership,
 draining/cancellation, restart isolation and the limits of forced shutdown.
+The B06 [validation record](reviews/b06-validation.md) covers offline rotation
+parameters, threshold/delay behavior and legacy comparison.
 
 The startup progress checks follow the SCM checkpoint/wait-hint contract in
 [Microsoft's SERVICE_STATUS reference](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/ns-winsvc-service_status),

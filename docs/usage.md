@@ -42,6 +42,26 @@ NSSM supports application arguments, startup directories, service accounts,
 environment settings, restart policies, output redirection, log rotation and
 event hooks.
 
+## Offline log rotation
+
+With `AppRotateFiles` enabled, NSSM checks existing output files before
+launching the application. When file metadata is available, every nonzero
+limit must pass: `AppRotateSeconds` is the minimum age, and the minimum size
+is `AppRotateBytesHigh * 4294967296 + AppRotateBytes`. Equality qualifies;
+zero disables that limit.
+
+`AppStdoutCopyAndTruncate` and `AppStderrCopyAndTruncate` select copying
+followed by truncating the original. In that mode, `AppRotateDelay` is a delay
+in milliseconds between copying and truncating. Rename mode retains its
+existing no-delay behavior. Shared stdout/stderr files rotate once using
+stdout's settings.
+
+Legacy 2.24-103 source passed these arguments in the wrong order. A byte
+threshold could become a long sleep, and a delay could become a very large
+size threshold. Existing values need no format migration, but review any
+workarounds for that behavior. See [NSSM-008](fixes/NSSM-008.md) for the exact
+mapping, tests and remaining filesystem-error limitations.
+
 ## Logger shutdown and trailing output
 
 NSSM closes both parent log-pipe writers before waiting for logging workers.
