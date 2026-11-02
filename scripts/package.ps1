@@ -47,7 +47,7 @@ $evidence = Join-Path $work 'evidence'
 New-Item -ItemType Directory -Path $work, $evidence | Out-Null
 $sourceZip = Join-Path $work "nssm-native-$label-source.zip"
 Invoke-Checked git @('-C', $projectRoot, 'archive', '--format=zip', ('--output=' + $sourceZip), $Commit) (Join-Path $evidence 'archive.log')
-Add-Type -AssemblyName System.IO.Compression.FileSystem
+Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
 $zip = [IO.Compression.ZipFile]::Open($sourceZip, [IO.Compression.ZipArchiveMode]::Update)
 try {
     if ($zip.GetEntry('source-info.json')) { throw 'Tracked source-info.json would conflict with generated identity.' }
