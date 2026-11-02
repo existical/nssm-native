@@ -1,5 +1,6 @@
 #include "test.h"
 #include <map>
+#include "token_fixture.h"
 extern imports_t imports;
 namespace process_live_test { extern bool active; bool owns(DWORD); }
 
@@ -40,6 +41,7 @@ static HANDLE WINAPI open(DWORD access, BOOL inherit, DWORD pid) {
   p->opens++; p->access = access; return pin(p);
 }
 static BOOL WINAPI close(HANDLE value) {
+  if (token_test::active) return token_test::close(value);
   if (! active) return CloseHandle(value);
   handle *h = lookup(value); h->closed = true;
   if (h->object) {
@@ -239,7 +241,20 @@ struct fixture {
 #define GenerateConsoleCtrlEvent process_test::console_event
 #define FreeConsole process_test::detach
 #define await_single_handle process_test::await
+#define OpenThreadToken token_test::open
+#define ImpersonateSelf token_test::impersonate
+#undef LookupPrivilegeValue
+#define LookupPrivilegeValue token_test::lookup
+#define AdjustTokenPrivileges token_test::adjust
+#define RevertToSelf token_test::revert
+#define nssm_exit token_test::exit
 #include "../src/process.cpp"
+#undef OpenThreadToken
+#undef ImpersonateSelf
+#undef LookupPrivilegeValue
+#undef AdjustTokenPrivileges
+#undef RevertToSelf
+#undef nssm_exit
 #undef OpenProcess
 #undef CloseHandle
 #undef GetProcessTimes

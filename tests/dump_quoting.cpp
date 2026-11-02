@@ -4,6 +4,20 @@ typedef std::basic_string<TCHAR> text_t;
 static text_t dump_output;
 static text_t dump_executable = _T("C:\\Tools\\nssm.exe");
 static bool capture_dump = false;
+namespace reset_test {
+static bool active, fail_write, fail_delete;
+static unsigned allocations;
+static LPVOID WINAPI allocate(HANDLE heap, DWORD flags, SIZE_T size) {
+  if (active) { allocations++; return NULL; }
+  return HeapAlloc(heap, flags, size);
+}
+static int set(HKEY key, TCHAR *name, TCHAR *value) {
+  return active && fail_write ? 1 : set_expand_string(key, name, value);
+}
+static LSTATUS WINAPI remove(HKEY key, LPCTSTR name) {
+  return active && fail_delete ? ERROR_ACCESS_DENIED : RegDeleteValue(key, name);
+}
+}
 
 static const TCHAR *test_nssm_exe() { return dump_executable.c_str(); }
 
@@ -32,9 +46,56 @@ static int test_dump_printf(const TCHAR *format, ...) {
 #undef _tprintf
 #define _tprintf test_dump_printf
 #define nssm_exe test_nssm_exe
+#define HeapAlloc reset_test::allocate
+#define set_expand_string reset_test::set
+#undef RegDeleteValue
+#define RegDeleteValue reset_test::remove
 #include "../src/settings.cpp"
+#undef HeapAlloc
+#undef set_expand_string
+#undef RegDeleteValue
+#define RegDeleteValue RegDeleteValueW
 #undef nssm_exe
 #undef _tprintf
+
+void test_setting_ownership() {
+  registry_fixture registry;
+  HKEY key = open_registry(_T("NSSM-Test-Reset"), KEY_READ | KEY_WRITE); REQUIRE(key);
+  const TCHAR *names[] = {NSSM_REG_EXE, NSSM_REG_FLAGS, NSSM_REG_DIR, NSSM_REG_STDIN, NSSM_REG_STDOUT, NSSM_REG_STDERR};
+  for (unsigned i = 0; i < _countof(names); i++) {
+    value_t value = {};
+    REQUIRE(set_expand_string(key, const_cast<TCHAR *>(names[i]), _T("previous")) == 0);
+    CHECK(setting_set_string(_T("Reset"), key, names[i], i < 3 ? _T("") : NULL, &value, NULL) == (i < 3 ? 1 : 0));
+    CHECK(value.string == NULL);
+    TCHAR stored[32]; DWORD type, size = sizeof(stored);
+    LONG result = RegQueryValueEx(key, names[i], NULL, &type, reinterpret_cast<BYTE *>(stored), &size);
+    if (i < 3) CHECK(result == ERROR_SUCCESS && type == REG_EXPAND_SZ && size == sizeof(TCHAR) && ! stored[0]);
+    else CHECK(result == ERROR_FILE_NOT_FOUND);
+  }
+  reset_test::active = true;
+  for (unsigned scenario = 0; scenario < 3; scenario++) {
+    TCHAR *defaults[] = {NULL, _T(""), _T("default")};
+    TCHAR *def = defaults[scenario];
+    value_t value = {};
+    CHECK(setting_set_string(_T("Reset"), key, _T("Custom"), def, NULL, NULL) == (scenario == 1 ? 1 : 0));
+    CHECK(setting_set_string(_T("Reset"), key, _T("Custom"), def, &value, NULL) == (scenario == 1 ? 1 : 0));
+    CHECK(value.string == NULL);
+    TCHAR owned[] = _T("explicit"); value.string = owned;
+    CHECK(setting_set_string(_T("Reset"), key, _T("Custom"), def, &value, NULL) == 1);
+    CHECK(value.string == owned && ! _tcscmp(owned, _T("explicit")));
+    reset_test::fail_write = true;
+    CHECK(setting_set_string(_T("Reset"), key, _T("Custom"), def, &value, NULL) == -1);
+    CHECK(value.string == owned);
+    reset_test::fail_write = false; reset_test::fail_delete = true;
+    value.string = NULL;
+    if (scenario != 1) CHECK(setting_set_string(_T("Reset"), key, _T("Custom"), def, &value, NULL) == -1);
+    CHECK(value.string == NULL);
+    reset_test::fail_delete = false;
+  }
+  CHECK(reset_test::allocations == 0); // Reset remains usable even when allocations are denied.
+  reset_test::active = false;
+  RegCloseKey(key);
+}
 
 void test_dump_quoting() {
   capture_dump = true;

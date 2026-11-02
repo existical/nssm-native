@@ -68,11 +68,23 @@ all four CI configurations passing:
 | --- | --- | --- | --- |
 | [NSSM-008](NSSM-008.md) | Separate offline rotation size, age and delay options | Fixed, unreleased | Not yet released |
 
-B07 is under review in [PR 12](https://github.com/existical/nssm-native/pull/12), pending merge:
+B07 merged in [PR 12](https://github.com/existical/nssm-native/pull/12), with
+all four CI configurations passing:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |
-| [NSSM-009](NSSM-009.md) | Retain validated process identities through tree cleanup | In progress | Not yet released |
+| [NSSM-009](NSSM-009.md) | Retain validated process identities through tree cleanup | Fixed, unreleased | Not yet released |
+
+B08 is under review in [PR 13](https://github.com/existical/nssm-native/pull/13), pending merge:
+
+| ID | Change | State | First release |
+| --- | --- | --- | --- |
+| [NSSM-015](NSSM-015.md) | Preserve caller ownership during string resets | In progress | Not yet released |
+| [NSSM-018](NSSM-018.md) | Use BOOL storage for administrator membership | In progress | Not yet released |
+| [NSSM-019](NSSM-019.md) | Define zero-duration handle waits | In progress | Not yet released |
+| [NSSM-021](NSSM-021.md) | Leave install-object cleanup to its caller | In progress | Not yet released |
+| [NSSM-028](NSSM-028.md) | Restore scoped debug privilege and impersonation state | In progress | Not yet released |
+| [NSSM-032](NSSM-032.md) | Correct message capacities and thread-local ownership | In progress | Not yet released |
 
 The [implementation plan](../remediation-plan.md) tracks NSSM-001 through
 NSSM-034. Check each record's state before assuming inclusion in a build.

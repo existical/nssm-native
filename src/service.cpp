@@ -850,16 +850,16 @@ void cleanup_nssm_service(nssm_service_t *service) {
 /* About to install the service */
 int pre_install_service(int argc, TCHAR **argv) {
   nssm_service_t *service = alloc_nssm_service();
+  if (! service) {
+    print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("service"), _T("pre_install_service()"));
+    return 1;
+  }
   set_nssm_service_defaults(service);
   if (argc) _sntprintf_s(service->name, _countof(service->name), _TRUNCATE, _T("%s"), argv[0]);
 
   /* Show the dialogue box if we didn't give the service name and path */
   if (argc < 2) return nssm_gui(IDD_INSTALL, service);
 
-  if (! service) {
-    print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("service"), _T("pre_install_service()"));
-    return 1;
-  }
   _sntprintf_s(service->exe, _countof(service->exe), _TRUNCATE, _T("%s"), argv[1]);
 
   /* Arguments are optional */
@@ -870,6 +870,7 @@ int pre_install_service(int argc, TCHAR **argv) {
   if (! flagslen) flagslen = 1;
   if (flagslen > _countof(service->flags)) {
     print_message(stderr, NSSM_MESSAGE_FLAGS_TOO_LONG);
+    cleanup_nssm_service(service);
     return 2;
   }
 
@@ -1226,7 +1227,6 @@ int install_service(nssm_service_t *service) {
   SC_HANDLE services = open_service_manager(SC_MANAGER_CONNECT | SC_MANAGER_CREATE_SERVICE);
   if (! services) {
     print_message(stderr, NSSM_MESSAGE_OPEN_SERVICE_MANAGER_FAILED);
-    cleanup_nssm_service(service);
     return 2;
   }
 
@@ -2212,6 +2212,14 @@ void throttle_restart(nssm_service_t *service) {
           -1 on error.
 */
 int await_single_handle(SERVICE_STATUS_HANDLE status_handle, SERVICE_STATUS *status, HANDLE handle, TCHAR *name, TCHAR *function_name, unsigned long timeout) {
+  /* A zero delay still checks the handle once, without publishing progress. */
+  if (! timeout) {
+    switch (WaitForSingleObject(handle, 0)) {
+      case WAIT_OBJECT_0: return 0;
+      case WAIT_TIMEOUT: return 1;
+      default: return -1;
+    }
+  }
   unsigned long interval;
   unsigned long ret;
   unsigned long waited;
@@ -2345,7 +2353,8 @@ int service_process_tree(int argc, TCHAR **argv) {
     We ignore failure here so that an error will be printed later when we
     try to open a process handle.
   */
-  HANDLE token = get_debug_token();
+  debug_token_t token;
+  (void) get_debug_token(&token);
 
   TCHAR canonical_name[SERVICE_NAME_LENGTH];
   SERVICE_STATUS_PROCESS service_status;
@@ -2406,7 +2415,7 @@ int service_process_tree(int argc, TCHAR **argv) {
   }
 
   CloseServiceHandle(services);
-  if (token != INVALID_HANDLE_VALUE) CloseHandle(token);
+  release_debug_token(&token);
 
   return errors;
 }

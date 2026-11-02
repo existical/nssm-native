@@ -32,5 +32,6 @@ Implementation evidence is retained separately in the
 [B03 affinity/numeric validation](b03-validation.md),
 [B04 hook/launch validation](b04-validation.md),
 [B05 logger validation](b05-validation.md),
-[B06 offline rotation validation](b06-validation.md) and
-[B07 process identity validation](b07-validation.md) records.
+[B06 offline rotation validation](b06-validation.md),
+[B07 process identity validation](b07-validation.md) and
+[B08 ownership/error-path validation](b08-validation.md) records.

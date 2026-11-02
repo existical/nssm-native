@@ -1,7 +1,6 @@
 #include "test.h"
 
 int failures = 0;
-extern unsigned long tls_index;
 
 int wmain(int argc, TCHAR **argv) {
   if (argc >= 2 && ! _tcscmp(argv[1], _T("--tree-child"))) return process_tree_child(argc, argv);
@@ -10,11 +9,15 @@ int wmain(int argc, TCHAR **argv) {
   if (argc == 3 && ! _tcscmp(argv[1], _T("--hook-child"))) {
     return _tcscmp(argv[2], _T("final quoted argument")) ? 1 : 0;
   }
-  tls_index = TlsAlloc();
-  if (tls_index == TLS_OUT_OF_INDEXES) return 2;
   try {
     REQUIRE(argc == 2);
     if (! _tcscmp(argv[1], _T("environment"))) test_environment_entries();
+    else if (! _tcscmp(argv[1], _T("admin"))) test_admin_check();
+    else if (! _tcscmp(argv[1], _T("waits"))) test_handle_waits();
+    else if (! _tcscmp(argv[1], _T("install_ownership"))) test_install_ownership();
+    else if (! _tcscmp(argv[1], _T("debug_token"))) test_debug_token();
+    else if (! _tcscmp(argv[1], _T("error_messages"))) test_error_messages();
+    else if (! _tcscmp(argv[1], _T("setting_ownership"))) test_setting_ownership();
     else if (! _tcscmp(argv[1], _T("hooks"))) test_hook_commands();
     else if (! _tcscmp(argv[1], _T("startup"))) test_startup();
     else if (! _tcscmp(argv[1], _T("registry"))) test_registry_bounds();
@@ -35,8 +38,6 @@ int wmain(int argc, TCHAR **argv) {
     fprintf(stderr, "Test fixture failed: %s\n", error.what());
     failures++;
   }
-  LocalFree(TlsGetValue(tls_index));
-  TlsFree(tls_index);
   printf("%d failed checks\n", failures);
   return failures ? 1 : 0;
 }

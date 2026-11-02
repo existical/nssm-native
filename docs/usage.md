@@ -127,6 +127,17 @@ diagnostics and test coverage.
 
 ## Numeric settings and processor affinity
 
+String resets retain their previous registry semantics: Application,
+AppParameters and AppDirectory become empty REG_EXPAND_SZ values; AppStdin,
+AppStdout and AppStderr are deleted. The reset no longer changes ownership of
+the CLI's input pointer. Resetting Application still leaves no executable path
+to launch. See [NSSM-015](fixes/NSSM-015.md).
+
+A zero AppThrottle or stop-method delay now queries the process handle once
+without sleeping or publishing wait progress. Signalled, still-running and
+failed-wait outcomes have defined results. Positive delays retain their
+existing behavior; see [NSSM-019](fixes/NSSM-019.md).
+
 Unsigned numeric settings accept values from 0 through 4294967295. Decimal
 input is supported; the legacy base-zero syntax is retained, so `0x10` means
 16 and `010` means 8. Leading whitespace and a plus sign remain accepted.
@@ -174,3 +185,21 @@ The preserved [upstream manual](upstream/README.txt) contains the
 complete command and configuration reference, along with author and contributor
 credits. Its old compiler and Windows compatibility notes describe upstream
 releases; see [current build requirements](building.md) for this continuation.
+
+## Installation and diagnostic failures
+
+Failed administrator checks now produce a non-administrator result using the
+Windows API's correct output type. An SCM-open failure during installation
+leaves object cleanup to the CLI or GUI caller, avoiding duplicate destruction.
+Existing install error codes and elevation behavior remain in use. See
+[NSSM-018](fixes/NSSM-018.md) and [NSSM-021](fixes/NSSM-021.md).
+
+The `processes` command temporarily requests debug privilege and restores
+the caller's previous state afterward. If acquisition fails, inspection still
+uses available access. If privilege or impersonation restoration fails, the
+command reports the failure and exits with code 111. See
+[NSSM-028](fixes/NSSM-028.md).
+
+Error-message buffers now have matching byte/character capacities, correct
+fallback ownership and automatic cleanup when worker threads return. Message
+text and locale selection remain unchanged; see [NSSM-032](fixes/NSSM-032.md).

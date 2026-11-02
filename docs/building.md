@@ -70,7 +70,7 @@ The historical two-part numeric Windows version layout is
 
 ## Checks
 
-CTest runs sixteen groups:
+CTest runs twenty-two groups:
 
 - `nssm.smoke`: command exit status, exact version output, PE machine type and
   embedded file/product metadata.
@@ -108,6 +108,17 @@ CTest runs sixteen groups:
   handle ownership, failures, depth bounds and intercepted signalling.
 - `nssm.process_live`: read-only traversal and cleanup of owned seven-process
   trees, including an already-exited root, with stable handle counts.
+- `nssm.admin`: correctly sized membership output, failure results and SID cleanup.
+- `nssm.setting_ownership`: reset pointer ownership, null/default inputs and
+  allocation/registry failure behavior.
+- `nssm.waits`: zero/positive handle polls, real events, invalid handles and
+  progress updates over multiple wait intervals.
+- `nssm.install_ownership`: CLI and hidden installer-dialog cleanup through
+  fake SCM failures and success, plus CLI allocation/argument errors.
+- `nssm.debug_token`: fake privilege/impersonation acquisition, restoration,
+  access failures and intercepted fatal cleanup failures.
+- `nssm.error_messages`: message capacities, locale/numeric fallback,
+  allocation failures and buffer reclamation across returning worker threads.
 
 The regression executable compiles the production implementations with test-only
 wrappers for the entry point, SCM, registry queries, expansion, allocations
@@ -135,6 +146,10 @@ Process identity tests intercept console/window/thread signalling. Live tree
 tests launch only detached copies of the test executable and restrict snapshot
 entries and process opens/termination to their reported PIDs. Helpers have
 bounded exit waits and fixture cleanup; the live group has a 60-second CTest limit.
+B08 tests keep the standard 20-second group limit. Install tests use fake SCM
+calls and a hidden dialog; token tests replace all privilege operations. Error
+message tests use guarded API substitutions and real returning threads to
+verify thread-local cleanup, plus real system/resource formatting.
 
 The B01 [validation record](reviews/b01-validation.md) includes the observed
 pre-fix failures, full build matrix, static analysis and separate
@@ -151,6 +166,8 @@ The B06 [validation record](reviews/b06-validation.md) covers offline rotation
 parameters, threshold/delay behavior and legacy comparison.
 The B07 [validation record](reviews/b07-validation.md) covers process identity,
 held handles, signalling checks and isolated live descendant cleanup.
+The B08 [validation record](reviews/b08-validation.md) covers the six ownership
+and error-path fixes, their pre-fix assertions and retained analyzer warnings.
 
 The startup progress checks follow the SCM checkpoint/wait-hint contract in
 [Microsoft's SERVICE_STATUS reference](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/ns-winsvc-service_status),

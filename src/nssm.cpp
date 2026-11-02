@@ -1,7 +1,6 @@
 #include "nssm.h"
 #include <errno.h>
 
-extern unsigned long tls_index;
 extern bool is_admin;
 extern imports_t imports;
 
@@ -182,7 +181,8 @@ void check_admin() {
   PSID AdministratorsGroup;
   SID_IDENTIFIER_AUTHORITY NtAuthority = SECURITY_NT_AUTHORITY;
   if (! AllocateAndInitializeSid(&NtAuthority, 2, SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0, &AdministratorsGroup)) return;
-  CheckTokenMembership(0, AdministratorsGroup, /*XXX*/(PBOOL) &is_admin);
+  BOOL member = FALSE;
+  if (CheckTokenMembership(0, AdministratorsGroup, &member)) is_admin = member != FALSE;
   FreeSid(AdministratorsGroup);
 }
 
@@ -299,9 +299,6 @@ int _tmain(int argc, TCHAR **argv) {
       nssm_exit(pre_remove_service(argc - 2, argv + 2));
     }
   }
-
-  /* Thread local storage for error message buffer */
-  tls_index = TlsAlloc();
 
   /* Register messages */
   if (is_admin) create_messages();

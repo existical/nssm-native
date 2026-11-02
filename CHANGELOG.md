@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Preserve caller ownership when resetting string settings, including null
+  inputs and borrowed defaults. [NSSM-015](docs/fixes/NSSM-015.md).
+- Use correctly sized BOOL storage for administrator checks and treat API
+  failure as nonmembership. [NSSM-018](docs/fixes/NSSM-018.md).
+- Perform one nonblocking handle poll at zero timeout, with defined results
+  and no wait-progress update. [NSSM-019](docs/fixes/NSSM-019.md).
+- Leave install-object destruction to CLI/GUI callers; handle CLI allocation
+  failure before field access and release objects on oversized arguments.
+  [NSSM-021](docs/fixes/NSSM-021.md).
+- Scope debug-token ownership, check privilege assignment, and restore the
+  caller's prior privileges/impersonation after process inspection. Abort with
+  code 111 if restoration fails. [NSSM-028](docs/fixes/NSSM-028.md).
+- Correct error-message capacity units and fallback allocation; use automatic
+  thread-local ownership for reusable buffers. [NSSM-032](docs/fixes/NSSM-032.md).
+- Add six B08 regression groups covering API failures, hidden installer cleanup,
+  real event waits and returning message-worker threads.
 - Retain original process handles through descendant cleanup, validate each
   child against its immediate parent, and skip unverifiable identities.
   Check process/thread identity before signalling and close read-only tree

@@ -1,0 +1,14 @@
+#ifndef NSSM_TOKEN_FIXTURE_H
+#define NSSM_TOKEN_FIXTURE_H
+#include "test.h"
+namespace token_test {
+extern bool active;
+BOOL WINAPI open(HANDLE, DWORD, BOOL, PHANDLE);
+BOOL WINAPI impersonate(SECURITY_IMPERSONATION_LEVEL);
+BOOL WINAPI lookup(LPCTSTR, LPCTSTR, PLUID);
+BOOL WINAPI adjust(HANDLE, BOOL, PTOKEN_PRIVILEGES, DWORD, PTOKEN_PRIVILEGES, PDWORD);
+BOOL WINAPI revert();
+BOOL WINAPI close(HANDLE);
+void exit(int);
+}
+#endif
