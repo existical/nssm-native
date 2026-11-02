@@ -443,7 +443,47 @@ int logger_child(int argc, TCHAR **argv) {
   return WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), text, sizeof(text) - 1, &written, NULL) ? 0 : 1;
 }
 
+static void test_stdio_configuration() {
+  registry_fixture registry;
+  const TCHAR *name = _T("NSSM-Test-IO-Configuration");
+  HKEY key = open_registry(name, KEY_ALL_ACCESS); REQUIRE(key);
+  REQUIRE(set_string(key, NSSM_REG_EXE, _T("C:\\fixture.exe")) == 0);
+  nssm_service_t *service = alloc_nssm_service(); REQUIRE(service);
+  _tcscpy_s(service->name, name);
+  // Exercise the complete configuration reader, including absent redirection.
+  CHECK(get_parameters(service, NULL) == 0);
+  const TCHAR *streams[] = {NSSM_REG_STDIN, NSSM_REG_STDOUT, NSSM_REG_STDERR};
+  for (unsigned i = 0; i < _countof(streams); i++) {
+    std::vector<TCHAR> path(PATH_LENGTH + 2, _T('#'));
+    unsigned long sharing = 0, disposition = 0, flags = 0;
+    bool truncate = false;
+    CHECK(get_createfile_parameters(key, (TCHAR *) streams[i], path.data(), &sharing, 1,
+      &disposition, 3, &flags, 128, &truncate) == 0);
+    CHECK(path[0] == 0 && path[PATH_LENGTH] == _T('#') && path[PATH_LENGTH + 1] == _T('#'));
+    const size_t lengths[] = {12, PATH_LENGTH - 1};
+    for (size_t length : lengths) {
+      std::wstring value(length, L'x');
+      REQUIRE(set_string(key, (TCHAR *) streams[i], &value[0]) == 0);
+      CHECK(get_createfile_parameters(key, (TCHAR *) streams[i], path.data(), &sharing, 1,
+        &disposition, 3, &flags, 128, &truncate) == 0);
+      CHECK(std::wstring(path.data()) == value);
+      CHECK(path[PATH_LENGTH] == _T('#') && path[PATH_LENGTH + 1] == _T('#'));
+      CHECK(sharing == 1 && disposition == 3 && flags == 128);
+      CHECK(get_parameters(service, NULL) == 0);
+    }
+    std::wstring oversized(PATH_LENGTH, L'x');
+    REQUIRE(set_string(key, (TCHAR *) streams[i], &oversized[0]) == 0);
+    CHECK(get_createfile_parameters(key, (TCHAR *) streams[i], path.data(), &sharing, 1,
+      &disposition, 3, &flags, 128, &truncate) != 0);
+    CHECK(path[PATH_LENGTH] == _T('#') && path[PATH_LENGTH + 1] == _T('#'));
+    REQUIRE(RegDeleteValue(key, streams[i]) == ERROR_SUCCESS);
+  }
+  cleanup_nssm_service(service);
+  CHECK(RegCloseKey(key) == ERROR_SUCCESS);
+}
+
 void test_stdin() {
+  test_stdio_configuration();
   using namespace logger_test;
   normal_streams(true); // Warm up CRT/thread resources before handle accounting.
   DWORD before = 0;
