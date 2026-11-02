@@ -65,6 +65,7 @@ void test_error_messages();
 void test_setting_ownership();
 void test_hook_commands();
 void test_startup();
+void test_control_waits();
 void test_registry_bounds();
 void test_multisz_bounds();
 void test_quoting();

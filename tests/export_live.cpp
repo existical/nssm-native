@@ -1,5 +1,5 @@
-// Opt-in integration test. Only uniquely created, disabled fixture services are
-// touched; neither service is started and no emitted install command is run.
+// Opt-in integration tests. Configuration modes keep fixtures disabled.
+// Only the controls mode starts its uniquely created native test services.
 #define UNICODE
 #define _UNICODE
 #include <windows.h>
@@ -105,8 +105,11 @@ static result run(const std::wstring &exe, const std::wstring &arguments) {
 }
 
 #include "dependencies_live_cases.h"
+#include "controls_live_cases.h"
 
 int wmain(int argc, wchar_t **argv) {
+  if (argc == 4 && ! wcscmp(argv[1], L"--control-service")) return control_live::host(argv[2], argv[3]);
+  if (argc == 3 && ! wcscmp(argv[2], L"controls")) return control_live::test(argv[1]);
   if (argc == 3 && ! wcscmp(argv[2], L"dependencies")) return dependencies_live(argv[1]);
   SC_HANDLE manager = NULL;
   try {

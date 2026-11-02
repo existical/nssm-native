@@ -87,6 +87,11 @@ static BOOL WINAPI query(SC_HANDLE handle, LPSERVICE_STATUS status) {
   status->dwServiceSpecificExitCode = current.specific;
   return TRUE;
 }
+static BOOL WINAPI control(SC_HANDLE handle, DWORD, LPSERVICE_STATUS status) {
+  if (start_ok || start_error == ERROR_IO_PENDING) query(handle, status);
+  SetLastError(start_error);
+  return start_ok;
+}
 static BOOL WINAPI close(SC_HANDLE handle) {
   if (dependency_test::active) return dependency_test::close(handle);
   if (gui_test::active) return gui_test::close(handle);
@@ -129,6 +134,7 @@ static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
 #define GetServiceDisplayName scm::name
 #define GetServiceKeyName scm::name
 #define StartService scm::start
+#define ControlService scm::control
 #define QueryServiceStatus scm::query
 #undef QueryServiceConfig
 #define QueryServiceConfig dependency_test::query
@@ -201,10 +207,13 @@ static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
 #undef GetServiceDisplayName
 #undef GetServiceKeyName
 #undef StartService
+#undef ControlService
 #undef QueryServiceStatus
 #undef CloseServiceHandle
 #undef GetTickCount
 #undef Sleep
+
+#include "control_waits_cases.h"
 
 void test_export_access() {
   scm::export_access = true;
