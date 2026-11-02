@@ -970,6 +970,11 @@ int pre_edit_service(int argc, TCHAR **argv) {
   }
 
   nssm_service_t *service = alloc_nssm_service();
+  if (! service) return 2;
+  struct service_owner_t {
+    nssm_service_t *value;
+    ~service_owner_t() { cleanup_nssm_service(value); }
+  } owner = { service };
   _sntprintf_s(service->name, _countof(service->name), _TRUNCATE, _T("%s"), service_name);
 
   /* Open service manager */
@@ -981,7 +986,7 @@ int pre_edit_service(int argc, TCHAR **argv) {
 
   /* Try to open the service */
   unsigned long access = SERVICE_QUERY_CONFIG;
-  if (mode != MODE_GETTING) access |= SERVICE_CHANGE_CONFIG;
+  if (mode != MODE_GETTING && mode != MODE_DUMPING) access |= SERVICE_CHANGE_CONFIG;
   service->handle = open_service(services, service->name, access, service->name, _countof(service->name));
   if (! service->handle) {
     CloseServiceHandle(services);
@@ -991,7 +996,6 @@ int pre_edit_service(int argc, TCHAR **argv) {
   /* Get system details. */
   QUERY_SERVICE_CONFIG *qsc = query_service_config(service->name, service->handle);
   if (! qsc) {
-    CloseServiceHandle(service->handle);
     CloseServiceHandle(services);
     return 4;
   }
@@ -1000,7 +1004,6 @@ int pre_edit_service(int argc, TCHAR **argv) {
   if (! (service->type & SERVICE_WIN32_OWN_PROCESS)) {
     if (mode != MODE_GETTING && mode != MODE_DUMPING) {
       HeapFree(GetProcessHeap(), 0, qsc);
-      CloseServiceHandle(service->handle);
       CloseServiceHandle(services);
       print_message(stderr, NSSM_MESSAGE_CANNOT_EDIT, service->name, NSSM_WIN32_OWN_PROCESS, 0);
       return 3;
@@ -1010,7 +1013,6 @@ int pre_edit_service(int argc, TCHAR **argv) {
   if (get_service_startup(service->name, service->handle, qsc, &service->startup)) {
     if (mode != MODE_GETTING && mode != MODE_DUMPING) {
       HeapFree(GetProcessHeap(), 0, qsc);
-      CloseServiceHandle(service->handle);
       CloseServiceHandle(services);
       return 4;
     }
@@ -1019,7 +1021,6 @@ int pre_edit_service(int argc, TCHAR **argv) {
   if (get_service_username(service->name, qsc, &service->username, &service->usernamelen)) {
     if (mode != MODE_GETTING && mode != MODE_DUMPING) {
       HeapFree(GetProcessHeap(), 0, qsc);
-      CloseServiceHandle(service->handle);
       CloseServiceHandle(services);
       return 5;
     }
@@ -1038,7 +1039,6 @@ int pre_edit_service(int argc, TCHAR **argv) {
   /* Get extended system details. */
   if (get_service_description(service->name, service->handle, _countof(service->description), service->description)) {
     if (mode != MODE_GETTING && mode != MODE_DUMPING) {
-      CloseServiceHandle(service->handle);
       CloseServiceHandle(services);
       return 6;
     }
@@ -1046,7 +1046,6 @@ int pre_edit_service(int argc, TCHAR **argv) {
 
   if (get_service_dependencies(service->name, service->handle, &service->dependencies, &service->dependencieslen)) {
     if (mode != MODE_GETTING && mode != MODE_DUMPING) {
-      CloseServiceHandle(service->handle);
       CloseServiceHandle(services);
       return 7;
     }
@@ -1064,6 +1063,7 @@ int pre_edit_service(int argc, TCHAR **argv) {
 
   /* Editing with the GUI. */
   if (mode == MODE_EDITING) {
+    owner.value = NULL; // GUI ownership remains unchanged.
     nssm_gui(IDD_EDIT, service);
     return 0;
   }
@@ -1081,6 +1081,10 @@ int pre_edit_service(int argc, TCHAR **argv) {
       if (! key) return 4;
     }
 
+    struct registry_owner_t {
+      HKEY value;
+      ~registry_owner_t() { if (value) RegCloseKey(value); }
+    } registry_owner = { key };
     TCHAR quoted_service_name[SERVICE_NAME_LENGTH * 2];
     TCHAR quoted_exe[EXE_LENGTH * 2];
     TCHAR quoted_nssm[EXE_LENGTH * 2];
@@ -1093,11 +1097,9 @@ int pre_edit_service(int argc, TCHAR **argv) {
     for (i = 0; settings[i].name; i++) {
       setting = &settings[i];
       if (! setting->native && service->native) continue;
-      if (dump_setting(service_name, key, service->handle, setting)) ret++;
+      if (dump_setting(service_name, key, service->handle, setting, service->name)) ret++;
     }
 
-    if (! service->native) RegCloseKey(key);
-    CloseServiceHandle(service->handle);
 
     if (ret) return 1;
     return 0;
@@ -1105,7 +1107,6 @@ int pre_edit_service(int argc, TCHAR **argv) {
 
   /* Trying to manage App* parameters for a non-NSSM service. */
   if (! setting->native && service->native) {
-    CloseServiceHandle(service->handle);
     print_message(stderr, NSSM_MESSAGE_NATIVE_PARAMETER, setting->name, NSSM);
     return 1;
   }
@@ -1119,7 +1120,7 @@ int pre_edit_service(int argc, TCHAR **argv) {
     if (setting->native) ret = get_setting(service->name, service->handle, setting, &value, additional);
     else ret = get_setting(service->name, key, setting, &value, additional);
     if (ret < 0) {
-      CloseServiceHandle(service->handle);
+      if (! service->native) RegCloseKey(key);
       return 5;
     }
 
@@ -1137,7 +1138,6 @@ int pre_edit_service(int argc, TCHAR **argv) {
     }
 
     if (! service->native) RegCloseKey(key);
-    CloseServiceHandle(service->handle);
     return 0;
   }
 
@@ -1159,7 +1159,6 @@ int pre_edit_service(int argc, TCHAR **argv) {
     value.string = (TCHAR *) HeapAlloc(GetProcessHeap(), 0, len * sizeof(TCHAR));
     if (! value.string) {
       print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("value"), _T("edit_service()"));
-      CloseServiceHandle(service->handle);
       return 2;
     }
 
@@ -1192,12 +1191,10 @@ int pre_edit_service(int argc, TCHAR **argv) {
   if (value.string) HeapFree(GetProcessHeap(), 0, value.string);
   if (ret < 0) {
     if (! service->native) RegCloseKey(key);
-    CloseServiceHandle(service->handle);
     return 6;
   }
 
   if (! service->native) RegCloseKey(key);
-  CloseServiceHandle(service->handle);
 
   return 0;
 }

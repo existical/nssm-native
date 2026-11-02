@@ -32,6 +32,9 @@ int wmain(int argc, TCHAR **argv) {
     else if (! _tcscmp(argv[1], _T("stdin"))) test_stdin();
     else if (! _tcscmp(argv[1], _T("log_bytes"))) test_log_bytes();
     else if (! _tcscmp(argv[1], _T("event_insertions"))) test_event_insertions();
+    else if (! _tcscmp(argv[1], _T("exit_export"))) test_exit_export();
+    else if (! _tcscmp(argv[1], _T("exit_fallback"))) test_exit_fallback();
+    else if (! _tcscmp(argv[1], _T("export_access"))) test_export_access();
     else if (! _tcscmp(argv[1], _T("rotation"))) test_offline_rotation();
     else if (! _tcscmp(argv[1], _T("process_identity"))) test_process_identity();
     else if (! _tcscmp(argv[1], _T("process_live"))) test_process_live();

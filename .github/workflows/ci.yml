@@ -24,6 +24,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Enable isolated SCM export test on the disposable runner
+        if: matrix.architecture == 'x64' && matrix.configuration == 'Release'
+        shell: pwsh
+        run: cmake --preset windows-x64 -DNSSM_ENABLE_SCM_TESTS=ON
       - name: Configure, compile and check executable
         shell: pwsh
         run: ./scripts/build.ps1 -Architecture '${{ matrix.architecture }}' -Configuration '${{ matrix.configuration }}'

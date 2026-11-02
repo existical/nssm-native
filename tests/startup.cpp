@@ -25,6 +25,10 @@ static std::vector<sample> samples;
 static DWORD elapsed, clock_origin, query_failure_at, start_error;
 static unsigned queries, closes;
 static bool start_ok, progressing, changing_hint;
+static bool export_access;
+static DWORD requested_access;
+static DWORD requested_manager_access;
+static std::vector<void *> export_objects;
 static int manager_token, service_token;
 static SC_HANDLE manager_handle = reinterpret_cast<SC_HANDLE>(&manager_token);
 static SC_HANDLE service_handle = reinterpret_cast<SC_HANDLE>(&service_token);
@@ -36,8 +40,14 @@ static void reset(std::initializer_list<sample> states) {
   start_ok = true;
   progressing = changing_hint = false;
 }
-static SC_HANDLE WINAPI open_manager(LPCTSTR, LPCTSTR, DWORD) { return install_test::active ? install_test::manager() : manager_handle; }
-static SC_HANDLE WINAPI open_service(SC_HANDLE, LPCTSTR, DWORD) { return service_handle; }
+static SC_HANDLE WINAPI open_manager(LPCTSTR, LPCTSTR, DWORD access) {
+  if (export_access) requested_manager_access = access;
+  return install_test::active ? install_test::manager() : manager_handle;
+}
+static SC_HANDLE WINAPI open_service(SC_HANDLE, LPCTSTR, DWORD access) {
+  if (export_access) { requested_access = access; SetLastError(ERROR_ACCESS_DENIED); return NULL; }
+  return service_handle;
+}
 static BOOL WINAPI name(SC_HANDLE, LPCTSTR, LPTSTR output, LPDWORD length) {
   return _tcscpy_s(output, *length, _T("NSSM-Test-Startup")) == 0;
 }
@@ -90,7 +100,13 @@ static void WINAPI sleep(DWORD milliseconds) {
 static bool fail_affinity_allocation = false;
 static LPVOID WINAPI service_allocate(HANDLE heap, DWORD flags, SIZE_T bytes) {
   if (fail_affinity_allocation) return NULL;
-  return install_test::allocate(heap, flags, bytes);
+  void *p = install_test::allocate(heap, flags, bytes);
+  if (scm::export_access && p && bytes == sizeof(nssm_service_t)) scm::export_objects.push_back(p);
+  return p;
+}
+static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
+  for (size_t i = 0; i < scm::export_objects.size(); i++) if (scm::export_objects[i] == p) { scm::export_objects.erase(scm::export_objects.begin() + i); break; }
+  return install_test::release(heap, flags, p);
 }
 #undef OpenSCManager
 #undef OpenService
@@ -107,7 +123,7 @@ static LPVOID WINAPI service_allocate(HANDLE heap, DWORD flags, SIZE_T bytes) {
 #define GetTickCount scm::ticks
 #define Sleep scm::sleep
 #define HeapAlloc service_allocate
-#define HeapFree install_test::release
+#define HeapFree service_release
 #undef CreateService
 #undef ChangeServiceConfig
 #undef ChangeServiceConfig2
@@ -174,6 +190,24 @@ static LPVOID WINAPI service_allocate(HANDLE heap, DWORD flags, SIZE_T bytes) {
 #undef CloseServiceHandle
 #undef GetTickCount
 #undef Sleep
+
+void test_export_access() {
+  scm::export_access = true;
+  TCHAR *args[] = {_T("dump"), _T("NSSM-Test-Access"), _T("AppParameters"), _T("value"), NULL};
+  const TCHAR *verbs[] = {_T("dump"), _T("get"), _T("set"), _T("reset"), _T("edit")};
+  for (unsigned i = 0; i < _countof(verbs); i++) {
+    args[0] = const_cast<TCHAR *>(verbs[i]);
+    CHECK(pre_edit_service(i == 2 ? 4 : (i == 1 || i == 3 ? 3 : 2), args) == 3);
+    CHECK(scm::requested_access == (SERVICE_QUERY_CONFIG | (i < 2 ? 0 : SERVICE_CHANGE_CONFIG)));
+    CHECK(scm::requested_manager_access == (SC_MANAGER_CONNECT | SC_MANAGER_ENUMERATE_SERVICE));
+    CHECK(scm::export_objects.empty());
+  }
+  fail_affinity_allocation = true;
+  CHECK(pre_edit_service(2, args) == 2);
+  fail_affinity_allocation = false;
+  CHECK(scm::export_objects.empty());
+  scm::export_access = false;
+}
 
 void test_handle_waits() {
   using namespace wait_test;

@@ -70,6 +70,8 @@ void override_milliseconds(TCHAR *, HKEY, TCHAR *, unsigned long *, unsigned lon
 int get_io_parameters(nssm_service_t *, HKEY);
 int get_parameters(nssm_service_t *, STARTUPINFO *);
 int get_exit_action(const TCHAR *, unsigned long *, TCHAR *, bool *);
+/* Read one explicit REG_SZ action. Output is Restart on any error. */
+long query_exit_action(HKEY, const TCHAR *, TCHAR *);
 int set_hook(const TCHAR *, const TCHAR *, const TCHAR *, TCHAR *);
 int get_hook(const TCHAR *, const TCHAR *, const TCHAR *, TCHAR *, unsigned long);
 

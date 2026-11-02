@@ -45,6 +45,6 @@ int set_setting(const TCHAR *, HKEY, settings_t *, value_t *, const TCHAR *);
 int set_setting(const TCHAR *, SC_HANDLE, settings_t *, value_t *, const TCHAR *);
 int get_setting(const TCHAR *, HKEY, settings_t *, value_t *, const TCHAR *);
 int get_setting(const TCHAR *, SC_HANDLE, settings_t *, value_t *, const TCHAR *);
-int dump_setting(const TCHAR *, HKEY, SC_HANDLE, settings_t *);
+int dump_setting(const TCHAR *, HKEY, SC_HANDLE, settings_t *, const TCHAR * = NULL);
 
 #endif
