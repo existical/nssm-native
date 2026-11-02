@@ -850,16 +850,16 @@ void cleanup_nssm_service(nssm_service_t *service) {
 /* About to install the service */
 int pre_install_service(int argc, TCHAR **argv) {
   nssm_service_t *service = alloc_nssm_service();
+  if (! service) {
+    print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("service"), _T("pre_install_service()"));
+    return 1;
+  }
   set_nssm_service_defaults(service);
   if (argc) _sntprintf_s(service->name, _countof(service->name), _TRUNCATE, _T("%s"), argv[0]);
 
   /* Show the dialogue box if we didn't give the service name and path */
   if (argc < 2) return nssm_gui(IDD_INSTALL, service);
 
-  if (! service) {
-    print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("service"), _T("pre_install_service()"));
-    return 1;
-  }
   _sntprintf_s(service->exe, _countof(service->exe), _TRUNCATE, _T("%s"), argv[1]);
 
   /* Arguments are optional */
@@ -870,6 +870,7 @@ int pre_install_service(int argc, TCHAR **argv) {
   if (! flagslen) flagslen = 1;
   if (flagslen > _countof(service->flags)) {
     print_message(stderr, NSSM_MESSAGE_FLAGS_TOO_LONG);
+    cleanup_nssm_service(service);
     return 2;
   }
 
@@ -1226,7 +1227,6 @@ int install_service(nssm_service_t *service) {
   SC_HANDLE services = open_service_manager(SC_MANAGER_CONNECT | SC_MANAGER_CREATE_SERVICE);
   if (! services) {
     print_message(stderr, NSSM_MESSAGE_OPEN_SERVICE_MANAGER_FAILED);
-    cleanup_nssm_service(service);
     return 2;
   }
 
