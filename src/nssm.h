@@ -102,6 +102,11 @@ const TCHAR *nssm_exe();
 /* Maximum CLI wait for START_PENDING, independent of restart throttling. */
 #define NSSM_STARTUP_TIMEOUT 60000
 
+/* CLI polling policies; independent of restart throttling and START. */
+#define NSSM_CONTROL_TIMEOUT 60000
+#define NSSM_STOP_TIMEOUT 180000
+#define NSSM_STOP_TIMEOUT_MAX 86400000
+
 /*
   How many milliseconds to wait for the application to die after sending
   a Control-C event to its console.  Override in registry.

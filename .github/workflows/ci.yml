@@ -24,7 +24,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Enable isolated SCM configuration tests on the disposable runner
+      - name: Enable isolated SCM configuration and control tests on the disposable runner
         if: matrix.architecture == 'x64' && matrix.configuration == 'Release'
         shell: pwsh
         run: cmake --preset windows-x64 -DNSSM_ENABLE_SCM_TESTS=ON

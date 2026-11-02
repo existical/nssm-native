@@ -3,11 +3,12 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P2; B12 |
-| State | In progress; merge pending |
+| State | Fixed, unreleased |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a` |
 | Reproduced against | `f969dd985039a8d2fe77a0ed0a24e077894c2bef` |
 | Fix PR | [PR 17](https://github.com/existical/nssm-native/pull/17) |
 | Implementation commit | `856abf321fc56f890ef0e6ea17b7def04e02c53a` |
+| Merge commit | `89c918c6d33a3f7548d4899a718e55e4f61c5be4` |
 | First release | Not yet released |
 
 Resetting DependOnService or DependOnGroup when the other type was absent

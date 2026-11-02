@@ -1,8 +1,10 @@
 # B12 dependency validation
 
 Validation date: 2026 November 2. Scope: [NSSM-023](../fixes/NSSM-023.md).
-B12 is implemented in [PR 17](https://github.com/existical/nssm-native/pull/17),
-pending review and merge, and unreleased. The
+B12 merged in [PR 17](https://github.com/existical/nssm-native/pull/17) on
+2026 November 3 at `89c918c6d33a3f7548d4899a718e55e4f61c5be4` and is unreleased.
+The final PR head `55272ce13fa2ca23d82a79e9b0bf99e4f98da60b` passed all four jobs in
+[CI run 41532928549](https://github.com/existical/nssm-native/actions/runs/41532928549). The
 [fix index](../fixes/README.md) records implementation and release status.
 
 Baseline: `f969dd985039a8d2fe77a0ed0a24e077894c2bef`, after PR 16 merged.

@@ -11,7 +11,7 @@ NSSM-001 through NSSM-024 match its numbered findings. NSSM-025 through NSSM-034
 split its additional follow-ups into independent tasks. The latter ten are
 follow-ups, not ten additional reproduced high-priority defects.
 
-**Status:** B00 through B11 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
+**Status:** B00 through B12 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
 are fixed but unreleased through
 [PR 5](https://github.com/existical/nssm-native/pull/5); see the
 [fix records](fixes/README.md) and [validation](reviews/b01-validation.md).
@@ -35,10 +35,14 @@ are now merged and unreleased. B08 merged in
 [PR 15](https://github.com/existical/nssm-native/pull/15); see its
 [validation](reviews/b10-validation.md). B11 merged in
 [PR 16](https://github.com/existical/nssm-native/pull/16); see its
-[validation](reviews/b11-validation.md). B12 has implementation and
-[validation](reviews/b12-validation.md) in [PR 17](https://github.com/existical/nssm-native/pull/17),
-pending review and merge. NSSM-034
-was confirmed by its GUI round-trip test. B13 remains planned.
+[validation](reviews/b11-validation.md). B12 merged in
+[PR 17](https://github.com/existical/nssm-native/pull/17); see its
+[validation](reviews/b12-validation.md). B13 has implementation and
+[validation](reviews/b13-validation.md) in [PR 18](https://github.com/existical/nssm-native/pull/18),
+pending review and merge. All 34 review
+tasks now have implementations; 33 are merged, and NSSM-024 is pending.
+NSSM-034 was confirmed by its GUI round-trip test. B14 release acceptance and
+packaging remain; no continuation release has been published.
 [Previously merged changes](fixes/implemented.md) retain separate CONT IDs.
 
 The recovered legacy development baseline is
@@ -70,8 +74,8 @@ work. P2 tasks share an early group only when they support the same repair.
 | B09 | Redirection and logging correctness | 012, 013, 014, 022 | Merged in PR 14; stdin, encoding, byte counts and typed event insertions validated |
 | B10 | Configuration export and exit actions | 016, 030, 033 | Merged in PR 15; AppExit round trips, strict fallback values and real query-only export validated |
 | B11 | GUI and accounts | 020, 025, 026, 027, 034 | Merged in PR 16; five confirmed fixes, GUI retries, account failures and hook round trips validated |
-| B12 | Dependencies | 023 | In progress; typed resets/merges, bounded queries, validation cleanup and SCM round-trip tests implemented |
-| B13 | Remaining service control waits | 024 | B08; zero-time and bounded-polling semantics established |
+| B12 | Dependencies | 023 | Merged in PR 17; typed resets/merges, bounded queries, validation cleanup and SCM round-trip tests pass |
+| B13 | Remaining service control waits | 024 | In progress; action budgets, bounded polling, diagnostics and deterministic/live tests implemented |
 | B14 | Candidate release and comparison records | All completed IDs | All P1 tasks closed, release criteria below satisfied |
 
 ## Shared implementation and test rules
@@ -538,7 +542,7 @@ The broader wrapper can be a follow-up commit after the direct fixes.
 
 ### NSSM 023
 
-**Implementation status:** implementation and tests present, pending merge;
+**Implementation status:** merged in PR 17, unreleased;
 see [NSSM-023](fixes/NSSM-023.md) and [B12 validation](reviews/b12-validation.md).
 
 **Dependency reset and merge semantics — P2, B12.** Review finding 23;
@@ -555,6 +559,9 @@ unit tests and query a disposable service after real SCM updates.
 **Done:** only requested dependencies change; an explicit reset really clears.
 
 ### NSSM 024
+
+**Implementation status:** implementation and tests present, pending merge;
+see [NSSM-024](fixes/NSSM-024.md) and [B13 validation](reviews/b13-validation.md).
 
 **Bounded stop, pause and continue waits — P2, B13.** Review finding 24;
 source-traced.

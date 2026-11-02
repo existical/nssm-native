@@ -36,6 +36,7 @@ int wmain(int argc, TCHAR **argv) {
     else if (! _tcscmp(argv[1], _T("exit_fallback"))) test_exit_fallback();
     else if (! _tcscmp(argv[1], _T("export_access"))) test_export_access();
     else if (! _tcscmp(argv[1], _T("dependencies"))) test_dependencies();
+    else if (! _tcscmp(argv[1], _T("control_waits"))) test_control_waits();
     else if (! _tcscmp(argv[1], _T("account_lookup"))) test_account_lookup();
     else if (! _tcscmp(argv[1], _T("account_rights"))) test_account_rights();
     else if (! _tcscmp(argv[1], _T("gui_retry"))) test_gui_retry();

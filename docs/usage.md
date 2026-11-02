@@ -38,6 +38,48 @@ A polling timeout does not stop the service; use `nssm status MyService` to chec
 its current state. `SERVICE_RUNNING` describes the Windows service state and
 does not guarantee that the wrapped application's endpoints are ready.
 
+`nssm stop`, `pause` and `continue` also wait for their target SCM state:
+STOPPED, PAUSED and RUNNING respectively. A stopped service with a nonzero
+shutdown exit code is a failure. Query errors and service-specific codes are
+reported; successful API calls ignore stale last-error values.
+
+| Control | Maximum polling allowance |
+| --- | --- |
+| START | 60,000 ms, unchanged |
+| PAUSE / CONTINUE | 60,000 ms each |
+| STOP, native service or unavailable NSSM settings | 180,000 ms |
+| STOP, readable NSSM settings | `min(86,400,000, max(180,000, 133,000 + D))` ms |
+
+For STOP, `D` is the sum of AppStopMethodConsole, AppStopMethodWindow and
+AppStopMethodThreads for methods enabled by AppStopMethodSkip. Each absent or
+malformed DWORD uses its 1,500 ms default; zero is valid. A readable Application
+string value identifies NSSM configuration for this calculation. The fixed
+133,000 ms reserves 20,000 for Stop/Pre, 80,000 for outstanding hooks, 3,000 for
+two logger drain waits, and 30,000 for cleanup/SCM overhead. This is a
+conservative client policy: it does not multiply allowances by the unknown
+number of descendants or outstanding hook threads. Default settings produce
+180 seconds. For example, AppStopMethodConsole=240000 with other defaults
+allows 376 seconds. The sum uses 64-bit arithmetic and saturates at 24 hours.
+Registry reads are optional and require no configuration-write rights.
+
+Each action can fail sooner when progress stalls: the wait hint at the last
+checkpoint increase or state change sets the progress window, with a 10-second
+default, a one-second minimum, and the action allowance as its maximum.
+Changing the hint without progress does not renew that window. Poll intervals
+are 100–1,000 ms, shortened for the remaining deadline. Continuous progress
+never extends the total allowance. Stalled-progress and total-limit diagnostics
+both return a nonzero command status; a final successful poll can complete at
+the deadline. AppThrottle has no effect on any of these limits.
+
+These limits govern polling after the Windows control call returns. Windows
+API call time and scheduling can add elapsed time; ControlService itself may
+block for 30 seconds, as documented by
+[Microsoft](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-controlservice).
+A CLI timeout does not cancel the control or kill the service. Very large
+process trees, multiple outstanding hooks, changed runtime settings or
+configured delays above the cap may outlive the client wait. Check status
+before retrying or taking further action. See [NSSM-024](fixes/NSSM-024.md).
+
 NSSM supports application arguments, startup directories, service accounts,
 environment settings, restart policies, output redirection, log rotation and
 event hooks.
