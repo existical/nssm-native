@@ -92,7 +92,11 @@ struct observer {
     } while (GetTickCount64() - started < 15000);
     require(false, "Observe owned application/descendant readiness");
   }
-  void exited() { require(WaitForSingleObject(handle, 5000) == WAIT_OBJECT_0, "Owned process exited during NSSM cleanup"); }
+  void exited(const char *phase) {
+    DWORD result = WaitForSingleObject(handle, 5000);
+    if (result != WAIT_OBJECT_0) fprintf(stderr, "Still live: %s, PID %lu, wait %lu\n", phase, pid, result);
+    require(result == WAIT_OBJECT_0, "Owned process exited during NSSM cleanup");
+  }
 };
 struct fixture : service_fixture {
   std::wstring dir;
@@ -103,6 +107,11 @@ struct fixture : service_fixture {
     try { write(file(dir, L"release"), "release"); } catch (...) { cleanup_failed = true; }
     SERVICE_STATUS status = {}; ControlService(service, SERVICE_CONTROL_STOP, &status);
     if (! control_live::wait_state(service, SERVICE_STOPPED, 35000)) cleanup_failed = true;
+    if (std::uncaught_exception()) {
+      try {
+        fprintf(stderr, "Fixture stdout:\n%s\nFixture stderr:\n%s\n", read(file(dir, L"stdout.log")).c_str(), read(file(dir, L"stderr.log")).c_str());
+      } catch (...) { cleanup_failed = true; }
+    }
   }
 };
 static void command(const std::wstring &nssm, const std::wstring &args) {
@@ -152,11 +161,11 @@ static int test(const std::wstring &nssm) {
         observer first, first_child; first.attach(file(dir.path, L"app.pid")); first_child.attach(file(dir.path, L"child.pid"));
         write(file(dir.path, L"crash"), "crash");
         observer restarted, restarted_child; restarted.attach(file(dir.path, L"app.pid"), first.pid); restarted_child.attach(file(dir.path, L"child.pid"), first_child.pid);
-        first.exited(); first_child.exited();
-        command(nssm, L"stop " + quoted(owned.name)); restarted.exited(); restarted_child.exited();
+        first.exited("crashed root"); first_child.exited("crashed root descendant");
+        command(nssm, L"stop " + quoted(owned.name)); restarted.exited("restart root"); restarted_child.exited("restart descendant");
         command(nssm, L"start " + quoted(owned.name));
         observer second, second_child; second.attach(file(dir.path, L"app.pid"), restarted.pid); second_child.attach(file(dir.path, L"child.pid"), restarted_child.pid);
-        command(nssm, L"stop " + quoted(owned.name)); second.exited(); second_child.exited();
+        command(nssm, L"stop " + quoted(owned.name)); second.exited("second root"); second_child.exited("second descendant");
         std::string out = read(file(dir.path, L"stdout.log")), err = read(file(dir.path, L"stderr.log"));
         const char *tokens[] = {"stdin-and-environment-ok", "stdout-final-tail", "hook-start-quoted-ok", "hook-stop-quoted-ok", "hook-exit-quoted-ok"};
         for (const char *token : tokens) require(out.find(token) != std::string::npos, "Captured application and hook output");
