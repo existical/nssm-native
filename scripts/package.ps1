@@ -16,8 +16,13 @@ function Write-JsonFile($Value, [string]$Path) {
     [IO.File]::WriteAllText($Path, ($Value | ConvertTo-Json -Depth 12) + "`n", (New-Object Text.UTF8Encoding($false)))
 }
 function Invoke-Checked([string]$Program, [string[]]$Arguments, [string]$Log) {
-    & $Program @Arguments *> $Log
-    if ($LASTEXITCODE -ne 0) { Get-Content -LiteralPath $Log -Tail 35; throw "$Program failed; see $Log" }
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $Program @Arguments *> $Log
+        $code = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $previousPreference }
+    if ($code -ne 0) { Get-Content -LiteralPath $Log -Tail 35; throw "$Program failed; see $Log" }
 }
 
 if ((Git-Text @('rev-parse', 'HEAD')) -ne $Commit) { throw 'Commit must be the full current HEAD hash.' }

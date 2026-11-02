@@ -10,8 +10,15 @@ function Git-Test([string[]]$Arguments) {
     return ($result -join "`n").Trim()
 }
 function Generate([string]$Directory, [bool]$Fails = $false) {
-    & cmake "-DNSSM_SOURCE_DIR=$Directory" "-DNSSM_VERSION_HEADER=$Directory/version.h" -P "$SourceDirectory/cmake/Version.cmake" *> "$fixture/generate.log"
-    if (($LASTEXITCODE -ne 0) -ne $Fails) { Get-Content "$fixture/generate.log"; throw 'Unexpected version generator result.' }
+    # Windows PowerShell 5.1 turns redirected native stderr into ErrorRecords.
+    # Inspect the exit code, including deliberately invalid identity cases.
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & cmake "-DNSSM_SOURCE_DIR=$Directory" "-DNSSM_VERSION_HEADER=$Directory/version.h" -P "$SourceDirectory/cmake/Version.cmake" *> "$fixture/generate.log"
+        $code = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $previousPreference }
+    if (($code -ne 0) -ne $Fails) { Get-Content "$fixture/generate.log"; throw 'Unexpected version generator result.' }
     if (-not $Fails) { return [IO.File]::ReadAllText("$Directory/version.h") }
 }
 [IO.File]::WriteAllText("$repo/VERSION", "2.24`n")
