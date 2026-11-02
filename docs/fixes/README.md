@@ -97,7 +97,8 @@ four Windows CI configurations passing:
 | [NSSM-014](NSSM-014.md) | Account for actual log writes and rotation | Fixed, unreleased | Not yet released |
 | [NSSM-022](NSSM-022.md) | Use counted string-only event insertions | Fixed, unreleased | Not yet released |
 
-B10 has implementation and tests, pending review and merge:
+B10 has implementation and tests in [PR 15](https://github.com/existical/nssm-native/pull/15),
+pending review and merge:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |

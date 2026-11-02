@@ -2,7 +2,8 @@
 
 Validation date: 2026 November 2. Scope: NSSM-016, NSSM-030 and NSSM-033.
 The [fix index](../fixes/README.md) distinguishes implementation, merge and
-release status. B10 is not merged or released yet.
+release status. B10 is under review in
+[PR 15](https://github.com/existical/nssm-native/pull/15), not merged or released yet.
 
 Baseline: `0497d8a4d37881e89c3762c3957d1abf775a2190`, after PR 14 merged.
 Implementation: `fc029e716391d3aa9ff3399cd388b428da8e4561`.
@@ -41,7 +42,13 @@ Local tools: Visual Studio 2022, MSVC toolset 14.44.35207 (compiler
 | x86 Debug | All 28 standard CTest groups passed |
 | x64 AddressSanitizer | exit_export, exit_fallback, export_access, registry, numeric, quoting, setting_ownership and install_ownership passed |
 | MSVC `/analyze` Release | Build completed; remaining diagnostics retained |
-| Real SCM integration | Enabled for the disposable x64 Release CI runner; result pending |
+| Real SCM integration | Passed on the disposable x64 Release CI runner; all 29 CTest groups passed |
+
+All four Windows jobs passed in
+[CI run 41522713622](https://github.com/existical/nssm-native/actions/runs/41522713622)
+at commit `e72a63f0a570c4e13c9ce834c005ece8928076c3`. The x64 Release log
+records `nssm.export_live` passing as test 29 of 29. The other three jobs
+passed all 28 standard groups.
 
 The local session is not elevated, so the real SCM test was compiled but not
 run locally. It is disabled by default. CI explicitly opts in to

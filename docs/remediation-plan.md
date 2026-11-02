@@ -32,7 +32,8 @@ are now merged and unreleased. B08 merged in
 [validation](reviews/b08-validation.md). B09 merged in
 [PR 14](https://github.com/existical/nssm-native/pull/14); see its
 [validation](reviews/b09-validation.md). B10 has implementation and
-[validation](reviews/b10-validation.md), pending review and merge. Other tasks
+[validation](reviews/b10-validation.md) in [PR 15](https://github.com/existical/nssm-native/pull/15),
+pending review and merge. Other tasks
 remain planned; NSSM-034 requires confirmation.
 [Previously merged changes](fixes/implemented.md) retain separate CONT IDs.
 
