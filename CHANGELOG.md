@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Bound stop, pause and continue polling with independent progress and total
+  limits; derive the stop budget from enabled shutdown delays and hook waits.
+  Preserve SCM query/terminal errors and service-specific shutdown codes,
+  distinguish stalled progress from total timeout, and ignore stale last-error
+  values after successful controls. Close status-query handles on every path.
+  Add deterministic and opt-in live SCM regressions.
+  [NSSM-024](docs/fixes/NSSM-024.md).
+
 - Reset/remove service and group dependencies without retaining or discarding
   the wrong entries. Build typed updates from one snapshot, use explicit empty
   lists, preserve unrelated entries, validate bounded query/group data and

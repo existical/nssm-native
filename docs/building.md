@@ -127,7 +127,7 @@ CTest runs twenty-two groups:
   failures, zero/null insertions and event-source registration failure.
 
 CMake checks that string event arguments compile and integer arguments do not.
-There are 34 standard CTest groups including smoke. B09 groups retain 20-second limits;
+There are 35 standard CTest groups including smoke. B09 groups retain 20-second limits;
 their files and children belong only to the fixture. Event Log calls are intercepted.
 The [B09 validation record](reviews/b09-validation.md) documents results and limits.
 
@@ -143,12 +143,17 @@ host and are disabled by default. The export test creates two uniquely named dis
 services, tests query-only export and AppExit import, and deletes both. The
 dependency test creates four disabled fixtures, reads existing group names,
 and tests set/get/reset/remove, failed updates and dependency export replay.
-Both suites delete their fixtures and never start a service or run an emitted
-install command. Enable it with
+Both configuration suites delete their fixtures and never start a service or
+run an emitted install command. The additional `nssm.controls_live` suite
+creates three uniquely named native test services and starts only those
+fixtures. It checks real CLI start/pause/continue/stop, a stalled pause and a
+service-specific shutdown failure, then stops and deletes its services.
+Each fixture has an independent 30-second watchdog and bounded cleanup.
+Enable the opt-in suites with
 `cmake --preset windows-x64 -DNSSM_ENABLE_SCM_TESTS=ON`; build Release and run
-`ctest --test-dir build/windows-x64 -C Release -R '^nssm.(export_live|dependencies_live)$' --output-on-failure`.
+`ctest --test-dir build/windows-x64 -C Release -R '^nssm.(export_live|dependencies_live|controls_live)$' --output-on-failure`.
 Disable it afterward with `-DNSSM_ENABLE_SCM_TESTS=OFF`. CI opts in only for its
-disposable x64 Release runner, where the test count becomes 36.
+disposable x64 Release runner, where the test count becomes 38, including `nssm.controls_live`.
 
 - `nssm.account_lookup`: policy/LSA/heap ownership, conversion/API/allocation
   failures, malformed names and repeated read-only lookup of the local account.
@@ -172,6 +177,15 @@ account lookup from live domain-account coverage.
 The [B12 validation record](reviews/b12-validation.md) records local checks and
 actual CI results. The standard group has a 20-second timeout; the opt-in SCM
 round-trip group has a 120-second timeout and does not run locally by default.
+
+- `nssm.control_waits`: normal/initial/pending states, stall and total deadlines,
+  changing hints/checkpoints, query and terminal errors, clock rollover, long
+  configured stops, overflow-safe budgets and status-query handle cleanup.
+
+The [B13 validation record](reviews/b13-validation.md) records deterministic,
+ASan and live SCM evidence. The standard group uses a fake clock and the
+20-second limit; `nssm.controls_live` has a 120-second CTest limit. The live
+fixture covers native SCM controls, not full NSSM-wrapped application teardown.
 
 The regression executable compiles the production implementations with test-only
 wrappers for the entry point, SCM, registry queries, expansion, allocations

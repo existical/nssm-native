@@ -117,12 +117,18 @@ four Windows CI configurations passing:
 | [NSSM-027](NSSM-027.md) | Bound LSA right comparisons by counted characters | Fixed, unreleased | Not yet released |
 | [NSSM-034](NSSM-034.md) | Preserve literal hook references and registry types in GUI edits | Fixed, unreleased | Not yet released |
 
-B12 has implementation and tests in [PR 17](https://github.com/existical/nssm-native/pull/17),
-pending review and merge:
+B12 merged in [PR 17](https://github.com/existical/nssm-native/pull/17),
+with all four Windows CI configurations passing:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |
-| [NSSM-023](NSSM-023.md) | Correct dependency resets, typed merges and validation cleanup | In progress | Not yet released |
+| [NSSM-023](NSSM-023.md) | Correct dependency resets, typed merges and validation cleanup | Fixed, unreleased | Not yet released |
+
+B13 has implementation and tests, pending review and merge:
+
+| ID | Change | State | First release |
+| --- | --- | --- | --- |
+| [NSSM-024](NSSM-024.md) | Bound stop, pause and continue polling and preserve failure details | In progress | Not yet released |
 
 The [implementation plan](../remediation-plan.md) tracks NSSM-001 through
 NSSM-034. Check each record's state before assuming inclusion in a build.
