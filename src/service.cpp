@@ -828,6 +828,7 @@ nssm_service_t *alloc_nssm_service() {
 /* Free memory for a service. */
 void cleanup_nssm_service(nssm_service_t *service) {
   if (! service) return;
+  cleanup_loggers(service);
   if (service->username) HeapFree(GetProcessHeap(), 0, service->username);
   if (service->password) {
     SecureZeroMemory(service->password, service->passwordlen * sizeof(TCHAR));
@@ -1794,8 +1795,7 @@ unsigned long WINAPI service_control_handler(unsigned long control, unsigned lon
       service->last_control = control;
       log_service_control(service->name, control, true);
       (void) nssm_hook(&hook_threads, service, NSSM_HOOK_EVENT_ROTATE, NSSM_HOOK_ACTION_PRE, &control, NSSM_HOOK_DEADLINE, false);
-      if (service->rotate_stdout_online == NSSM_ROTATE_ONLINE) service->rotate_stdout_online = NSSM_ROTATE_ONLINE_ASAP;
-      if (service->rotate_stderr_online == NSSM_ROTATE_ONLINE) service->rotate_stderr_online = NSSM_ROTATE_ONLINE_ASAP;
+      set_logger_rotation(service, true);
       (void) nssm_hook(&hook_threads, service, NSSM_HOOK_EVENT_ROTATE, NSSM_HOOK_ACTION_POST, &control);
       return NO_ERROR;
 
@@ -1987,6 +1987,7 @@ int stop_service(nssm_service_t *service, unsigned long exitcode, bool graceful,
   }
 
   service->rotate_stdout_online = service->rotate_stderr_online = NSSM_ROTATE_OFFLINE;
+  set_logger_rotation(service, false);
 
   if (default_action && ! exitcode && ! graceful) {
     log_event(EVENTLOG_INFORMATION_TYPE, NSSM_EVENT_GRACEFUL_SUICIDE, service->name, service->exe, exit_action_strings[NSSM_EXIT_UNCLEAN], exit_action_strings[NSSM_EXIT_UNCLEAN], exit_action_strings[NSSM_EXIT_UNCLEAN], exit_action_strings[NSSM_EXIT_REALLY], 0);
@@ -2041,6 +2042,7 @@ void CALLBACK end_service(void *arg, unsigned char why) {
   service->stopping = true;
 
   service->rotate_stdout_online = service->rotate_stderr_online = NSSM_ROTATE_OFFLINE;
+  set_logger_rotation(service, false);
 
   /* Use now as a dummy exit time. */
   GetSystemTimeAsFileTime(&service->exit_time);

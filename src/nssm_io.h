@@ -11,24 +11,26 @@
 #define NSSM_STDERR_DISPOSITION OPEN_ALWAYS
 #define NSSM_STDERR_FLAGS FILE_ATTRIBUTE_NORMAL
 
-typedef struct {
-  TCHAR *service_name;
-  TCHAR *path;
+typedef struct logger_t {
+  /* One reference for the service, one for the worker. No service pointers. */
+  volatile LONG references;
+  volatile LONG rotate_online;
+  volatile LONG draining;
+  HANDLE stop_event;
+  TCHAR service_name[SERVICE_NAME_LENGTH];
+  TCHAR path[PATH_LENGTH];
   unsigned long sharing;
   unsigned long disposition;
   unsigned long flags;
   HANDLE read_handle;
   HANDLE write_handle;
   __int64 size;
-  unsigned long *tid_ptr;
-  unsigned long *rotate_online;
   bool timestamp_log;
   __int64 line_length;
   bool copy_and_truncate;
   unsigned long rotate_delay;
 } logger_t;
 
-void close_handle(HANDLE *, HANDLE *);
 void close_handle(HANDLE *);
 int get_createfile_parameters(HKEY, TCHAR *, TCHAR *, unsigned long *, unsigned long, unsigned long *, unsigned long, unsigned long *, unsigned long, bool *);
 int set_createfile_parameter(HKEY, TCHAR *, TCHAR *, unsigned long);
@@ -39,6 +41,7 @@ int get_output_handles(nssm_service_t *, STARTUPINFO *);
 int use_output_handles(nssm_service_t *, STARTUPINFO *);
 void close_output_handles(STARTUPINFO *);
 void cleanup_loggers(nssm_service_t *);
+void set_logger_rotation(nssm_service_t *, bool);
 unsigned long WINAPI log_and_rotate(void *);
 
 #endif

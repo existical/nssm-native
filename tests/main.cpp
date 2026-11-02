@@ -5,6 +5,7 @@ extern unsigned long tls_index;
 
 int wmain(int argc, TCHAR **argv) {
   if (argc >= 2 && ! _tcscmp(argv[1], _T("--quote-child"))) return quoting_child(argc, argv);
+  if (argc >= 2 && ! _tcscmp(argv[1], _T("--logger-child"))) return logger_child(argc, argv);
   if (argc == 3 && ! _tcscmp(argv[1], _T("--hook-child"))) {
     return _tcscmp(argv[2], _T("final quoted argument")) ? 1 : 0;
   }
@@ -23,6 +24,7 @@ int wmain(int argc, TCHAR **argv) {
     else if (! _tcscmp(argv[1], _T("hook_lifecycle"))) test_hook_lifecycle();
     else if (! _tcscmp(argv[1], _T("launch"))) test_launch_handles();
     else if (! _tcscmp(argv[1], _T("hook_live"))) test_hook_live_handles();
+    else if (! _tcscmp(argv[1], _T("logger"))) test_logger_ownership();
     else throw std::runtime_error("Unknown test group");
   }
   catch (const std::exception &error) {

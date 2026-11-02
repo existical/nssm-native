@@ -6,6 +6,27 @@
 #define TIMESTAMP_FORMAT "%04u-%02u-%02u %02u:%02u:%02u.%03u: "
 #define TIMESTAMP_LEN 25
 
+/* Serialize service-side registration, hook duplication, rotation and cleanup. */
+class logger_lock {
+  CRITICAL_SECTION *section;
+public:
+  explicit logger_lock(nssm_service_t *service) : section(service->hook_section_initialised ? &service->hook_section : NULL) {
+    if (section) EnterCriticalSection(section);
+  }
+  ~logger_lock() { if (section) LeaveCriticalSection(section); }
+};
+
+static void release_logger(logger_t *logger) {
+  if (logger && ! InterlockedDecrement(&logger->references)) {
+    close_handle(&logger->stop_event);
+    HeapFree(GetProcessHeap(), 0, logger);
+  }
+}
+
+static bool logger_stopping(logger_t *logger, unsigned long delay = 0) {
+  return WaitForSingleObject(logger->stop_event, delay) != WAIT_TIMEOUT;
+}
+
 static int dup_handle(HANDLE source_handle, HANDLE *dest_handle_ptr, TCHAR *source_description, TCHAR *dest_description, unsigned long flags) {
   if (! dest_handle_ptr) return 1;
 
@@ -25,51 +46,61 @@ static int dup_handle(HANDLE source_handle, HANDLE *dest_handle_ptr, TCHAR *sour
   pipe_handle:  stdout of application
   write_handle: to file
 */
-static HANDLE create_logging_thread(TCHAR *service_name, TCHAR *path, unsigned long sharing, unsigned long disposition, unsigned long flags, HANDLE *read_handle_ptr, HANDLE *pipe_handle_ptr, HANDLE *write_handle_ptr, unsigned long rotate_bytes_low, unsigned long rotate_bytes_high, unsigned long rotate_delay, unsigned long *tid_ptr, unsigned long *rotate_online, bool timestamp_log, bool copy_and_truncate) {
-  *tid_ptr = 0;
-
-  /* Pipe between application's stdout/stderr and our logging handle. */
-  if (read_handle_ptr && ! *read_handle_ptr) {
-    if (pipe_handle_ptr && ! *pipe_handle_ptr) {
-      if (CreatePipe(read_handle_ptr, pipe_handle_ptr, 0, 0)) {
-        SetHandleInformation(*pipe_handle_ptr, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
-      }
-      else {
-        log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_CREATEPIPE_FAILED, service_name, path, error_string(GetLastError()));
-        return (HANDLE) 0;
-      }
-    }
-  }
-
+static HANDLE create_logging_thread(TCHAR *service_name, TCHAR *path, unsigned long sharing, unsigned long disposition, unsigned long flags, HANDLE *pipe_handle_ptr, HANDLE *write_handle_ptr, unsigned long rotate_bytes_low, unsigned long rotate_bytes_high, unsigned long rotate_delay, logger_t **owner, unsigned long rotate_online, bool timestamp_log, bool copy_and_truncate) {
+  *owner = NULL;
+  *pipe_handle_ptr = NULL;
   logger_t *logger = (logger_t *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(logger_t));
   if (! logger) {
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, _T("logger"), _T("create_logging_thread()"), 0);
     return (HANDLE) 0;
   }
 
+  logger->references = 1;
+  logger->stop_event = CreateEvent(NULL, TRUE, FALSE, NULL);
+  if (! logger->stop_event) {
+    release_logger(logger);
+    return NULL;
+  }
+  /* Only the duplicated STARTUPINFO handles are inheritable. */
+  if (! CreatePipe(&logger->read_handle, pipe_handle_ptr, NULL, 0)) {
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_CREATEPIPE_FAILED, service_name, path, error_string(GetLastError()), 0);
+    release_logger(logger);
+    return NULL;
+  }
+
   ULARGE_INTEGER size;
   size.LowPart = rotate_bytes_low;
   size.HighPart = rotate_bytes_high;
 
-  logger->service_name = service_name;
-  logger->path = path;
+  _sntprintf_s(logger->service_name, _countof(logger->service_name), _TRUNCATE, _T("%s"), service_name);
+  _sntprintf_s(logger->path, _countof(logger->path), _TRUNCATE, _T("%s"), path);
   logger->sharing = sharing;
   logger->disposition = disposition;
   logger->flags = flags;
-  logger->read_handle = *read_handle_ptr;
   logger->write_handle = *write_handle_ptr;
   logger->size = (__int64) size.QuadPart;
-  logger->tid_ptr = tid_ptr;
   logger->timestamp_log = timestamp_log;
   logger->line_length = 0;
   logger->rotate_online = rotate_online;
   logger->rotate_delay = rotate_delay;
   logger->copy_and_truncate = copy_and_truncate;
 
-  HANDLE thread_handle = CreateThread(NULL, 0, log_and_rotate, (void *) logger, 0, logger->tid_ptr);
+  /* The worker may finish before CreateThread returns. Retain the service ref. */
+  InterlockedIncrement(&logger->references);
+  unsigned long tid;
+  HANDLE thread_handle = CreateThread(NULL, 0, log_and_rotate, (void *) logger, 0, &tid);
   if (! thread_handle) {
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_CREATETHREAD_FAILED, error_string(GetLastError()), 0);
-    HeapFree(GetProcessHeap(), 0, logger);
+    close_handle(&logger->read_handle);
+    close_handle(pipe_handle_ptr);
+    /* The caller still owns the file and can fall back to direct output. */
+    /* Drop the unused worker reference, then the service reference. */
+    release_logger(logger);
+    release_logger(logger);
+  }
+  else {
+    *owner = logger;
+    *write_handle_ptr = NULL;
   }
 
   return thread_handle;
@@ -87,17 +118,10 @@ static inline void write_bom(logger_t *logger, unsigned long *out) {
   }
 }
 
-void close_handle(HANDLE *handle, HANDLE *remember) {
-  if (remember) *remember = INVALID_HANDLE_VALUE;
-  if (! handle) return;
-  if (! *handle) return;
-  CloseHandle(*handle);
-  if (remember) *remember = *handle;
-  *handle = 0;
-}
-
 void close_handle(HANDLE *handle) {
-  close_handle(handle, NULL);
+  if (! handle) return;
+  if (*handle && *handle != INVALID_HANDLE_VALUE) CloseHandle(*handle);
+  *handle = 0;
 }
 
 /* Get path, share mode, creation disposition and flags for a stream. */
@@ -305,6 +329,7 @@ void rotate_file(TCHAR *service_name, TCHAR *path, unsigned long seconds, unsign
 
 int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
   if (! si) return 1;
+  logger_lock lock(service);
   bool inherit_handles = false;
 
   /* Allocate a new console so we get a fresh stdin, stdout and stderr. */
@@ -329,12 +354,7 @@ int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
     service->stdout_si = 0;
 
     if (service->use_stdout_pipe) {
-      service->stdout_pipe = si->hStdOutput = 0;
-      service->stdout_thread = create_logging_thread(service->name, service->stdout_path, service->stdout_sharing, service->stdout_disposition, service->stdout_flags, &service->stdout_pipe, &service->stdout_si, &stdout_handle, service->rotate_bytes_low, service->rotate_bytes_high, service->rotate_delay, &service->stdout_tid, &service->rotate_stdout_online, service->timestamp_log, service->stdout_copy_and_truncate);
-      if (! service->stdout_thread) {
-        CloseHandle(service->stdout_pipe);
-        CloseHandle(service->stdout_si);
-      }
+      service->stdout_thread = create_logging_thread(service->name, service->stdout_path, service->stdout_sharing, service->stdout_disposition, service->stdout_flags, &service->stdout_si, &stdout_handle, service->rotate_bytes_low, service->rotate_bytes_high, service->rotate_delay, &service->stdout_logger, service->rotate_stdout_online, service->timestamp_log, service->stdout_copy_and_truncate);
     }
     else service->stdout_thread = 0;
 
@@ -343,7 +363,7 @@ int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
       service->rotate_stdout_online = NSSM_ROTATE_OFFLINE;
     }
 
-    if (dup_handle(service->stdout_si, &si->hStdOutput, _T("stdout_si"), _T("stdout"))) close_handle(&service->stdout_thread);
+    if (dup_handle(service->stdout_si, &si->hStdOutput, _T("stdout_si"), _T("stdout"))) return 4;
 
     inherit_handles = true;
   }
@@ -368,12 +388,7 @@ int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
       service->stderr_si = 0;
 
       if (service->use_stderr_pipe) {
-        service->stderr_pipe = si->hStdError = 0;
-        service->stderr_thread = create_logging_thread(service->name, service->stderr_path, service->stderr_sharing, service->stderr_disposition, service->stderr_flags, &service->stderr_pipe, &service->stderr_si, &stderr_handle, service->rotate_bytes_low, service->rotate_bytes_high, service->rotate_delay, &service->stderr_tid, &service->rotate_stderr_online, service->timestamp_log, service->stderr_copy_and_truncate);
-        if (! service->stderr_thread) {
-          CloseHandle(service->stderr_pipe);
-          CloseHandle(service->stderr_si);
-        }
+        service->stderr_thread = create_logging_thread(service->name, service->stderr_path, service->stderr_sharing, service->stderr_disposition, service->stderr_flags, &service->stderr_si, &stderr_handle, service->rotate_bytes_low, service->rotate_bytes_high, service->rotate_delay, &service->stderr_logger, service->rotate_stderr_online, service->timestamp_log, service->stderr_copy_and_truncate);
       }
       else service->stderr_thread = 0;
 
@@ -383,7 +398,7 @@ int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
       }
     }
 
-    if (dup_handle(service->stderr_si, &si->hStdError, _T("stderr_si"), _T("stderr"))) close_handle(&service->stderr_thread);
+    if (dup_handle(service->stderr_si, &si->hStdError, _T("stderr_si"), _T("stderr"))) return 7;
 
     inherit_handles = true;
   }
@@ -399,6 +414,7 @@ int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
 
 /* Reuse output handles for a hook. */
 int use_output_handles(nssm_service_t *service, STARTUPINFO *si) {
+  logger_lock lock(service);
   si->dwFlags &= ~STARTF_USESTDHANDLES;
 
   if (service->stdout_si) {
@@ -410,7 +426,7 @@ int use_output_handles(nssm_service_t *service, STARTUPINFO *si) {
     if (dup_handle(service->stderr_si, &si->hStdError, _T("stderr_pipe"), _T("hStdError"))) {
       if (si->hStdOutput) {
         si->dwFlags &= ~STARTF_USESTDHANDLES;
-        CloseHandle(si->hStdOutput);
+        close_handle(&si->hStdOutput);
       }
       return 2;
     }
@@ -421,27 +437,54 @@ int use_output_handles(nssm_service_t *service, STARTUPINFO *si) {
 }
 
 void close_output_handles(STARTUPINFO *si) {
-  if (si->hStdInput) CloseHandle(si->hStdInput);
-  if (si->hStdOutput) CloseHandle(si->hStdOutput);
-  if (si->hStdError) CloseHandle(si->hStdError);
+  close_handle(&si->hStdInput);
+  close_handle(&si->hStdOutput);
+  close_handle(&si->hStdError);
+}
+
+/* Optional on pre-Vista Windows; cancellation is a request, not completion. */
+static void cancel_logger_io(HANDLE thread) {
+  typedef BOOL (WINAPI *cancel_t)(HANDLE);
+  HMODULE kernel32 = GetModuleHandle(_T("kernel32.dll"));
+  if (! kernel32) return;
+  cancel_t cancel = (cancel_t) GetProcAddress(kernel32, "CancelSynchronousIo");
+  if (cancel) cancel(thread);
+}
+
+static void join_logger(HANDLE *thread, logger_t **owner) {
+  logger_t *logger = *owner;
+  *owner = NULL;
+  if (*thread) {
+    DWORD result = WaitForSingleObject(*thread, NSSM_CLEANUP_LOGGERS_DEADLINE);
+    if (result != WAIT_OBJECT_0 && logger) {
+      SetEvent(logger->stop_event);
+      cancel_logger_io(*thread);
+      /* Never close the worker's I/O handles, even if this wait also fails. */
+      WaitForSingleObject(*thread, 100);
+    }
+    close_handle(thread);
+  }
+  release_logger(logger);
+}
+
+void set_logger_rotation(nssm_service_t *service, bool requested) {
+  logger_lock lock(service);
+  logger_t *loggers[] = { service->stdout_logger, service->stderr_logger };
+  for (unsigned i = 0; i < _countof(loggers); i++) {
+    if (! loggers[i]) continue;
+    if (requested) InterlockedCompareExchange(&loggers[i]->rotate_online, NSSM_ROTATE_ONLINE_ASAP, NSSM_ROTATE_ONLINE);
+    else InterlockedExchange(&loggers[i]->draining, 1);
+  }
 }
 
 void cleanup_loggers(nssm_service_t *service) {
-  unsigned long interval = NSSM_CLEANUP_LOGGERS_DEADLINE;
-  HANDLE thread_handle = INVALID_HANDLE_VALUE;
-
-  close_handle(&service->stdout_thread, &thread_handle);
-  /* Close write end of the data pipe so logging thread can finalise read. */
+  logger_lock lock(service);
+  set_logger_rotation(service, false);
+  /* Close BOTH writers before joining: stderr may share stdout's pipe. */
   close_handle(&service->stdout_si);
-  /* Await logging thread then close read end. */
-  if (thread_handle != INVALID_HANDLE_VALUE) WaitForSingleObject(thread_handle, interval);
-  close_handle(&service->stdout_pipe);
-
-  thread_handle = INVALID_HANDLE_VALUE;
-  close_handle(&service->stderr_thread, &thread_handle);
   close_handle(&service->stderr_si);
-  if (thread_handle != INVALID_HANDLE_VALUE) WaitForSingleObject(thread_handle, interval);
-  close_handle(&service->stderr_pipe);
+  join_logger(&service->stdout_thread, &service->stdout_logger);
+  join_logger(&service->stderr_thread, &service->stderr_logger);
 }
 
 /*
@@ -454,6 +497,8 @@ static int try_read(logger_t *logger, void *address, unsigned long bufsize, unsi
   int ret = 1;
   unsigned long error;
   for (int tries = 0; tries < 5; tries++) {
+    *in = 0;
+    if (logger_stopping(logger)) return -1;
     if (ReadFile(logger->read_handle, address, bufsize, in, 0)) return 0;
 
     error = GetLastError();
@@ -465,7 +510,7 @@ static int try_read(logger_t *logger, void *address, unsigned long bufsize, unsi
 
       /* Couldn't lock the buffer. */
       case ERROR_NOT_ENOUGH_QUOTA:
-        Sleep(2000 + tries * 3000);
+        if (logger_stopping(logger, 2000 + tries * 3000)) return -1;
         ret = 1;
         continue;
 
@@ -481,7 +526,7 @@ static int try_read(logger_t *logger, void *address, unsigned long bufsize, unsi
 
 complain_read:
   /* Ignore the error if we've been requested to exit anyway. */
-  if (*logger->rotate_online != NSSM_ROTATE_ONLINE) return ret;
+  if (InterlockedCompareExchange(&logger->draining, 0, 0) || InterlockedCompareExchange(&logger->rotate_online, 0, 0) != NSSM_ROTATE_ONLINE) return ret;
   if (! (*complained & COMPLAINED_READ)) log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_READFILE_FAILED, logger->service_name, logger->path, error_string(error), 0);
   *complained |= COMPLAINED_READ;
   return ret;
@@ -497,6 +542,8 @@ static int try_write(logger_t *logger, void *address, unsigned long bufsize, uns
   int ret = 1;
   unsigned long error;
   for (int tries = 0; tries < 5; tries++) {
+    *out = 0;
+    if (logger_stopping(logger)) return -1;
     if (WriteFile(logger->write_handle, address, bufsize, out, 0)) return 0;
 
     error = GetLastError();
@@ -515,7 +562,7 @@ static int try_write(logger_t *logger, void *address, unsigned long bufsize, uns
       case ERROR_NOT_ENOUGH_QUOTA:
       /* Out of disk space. */
       case ERROR_DISK_FULL:
-        Sleep(2000 + tries * 3000);
+        if (logger_stopping(logger, 2000 + tries * 3000)) return -1;
         ret = 1;
         continue;
 
@@ -594,12 +641,19 @@ static int write_with_timestamp(logger_t *logger, void *address, unsigned long b
   else return try_write(logger, address, bufsize, out, complained);
 }
 
+static unsigned long finish_logger(logger_t *logger, unsigned long result) {
+  close_handle(&logger->read_handle);
+  close_handle(&logger->write_handle);
+  release_logger(logger);
+  return result;
+}
+
 /* Wrapper to be called in a new thread for logging. */
 unsigned long WINAPI log_and_rotate(void *arg) {
   logger_t *logger = (logger_t *) arg;
   if (! logger) return 1;
 
-  __int64 size;
+  __int64 size = 0;
   BY_HANDLE_FILE_INFORMATION info;
 
   /* Find initial file size. */
@@ -620,18 +674,18 @@ unsigned long WINAPI log_and_rotate(void *arg) {
   int complained = 0;
 
   while (true) {
+    if (logger_stopping(logger)) break;
+    in = out = 0;
     /* Read data from the pipe. */
     address = &buffer;
     ret = try_read(logger, address, sizeof(buffer), &in, &complained);
     if (ret < 0) {
-      close_handle(&logger->read_handle);
-      close_handle(&logger->write_handle);
-      HeapFree(GetProcessHeap(), 0, logger);
-      return 2;
+      return finish_logger(logger, 2);
     }
     else if (ret) continue;
 
-    if (*logger->rotate_online == NSSM_ROTATE_ONLINE_ASAP || (logger->size && size + (__int64) in >= logger->size)) {
+    if (logger_stopping(logger)) break;
+    if (! InterlockedCompareExchange(&logger->draining, 0, 0) && (InterlockedCompareExchange(&logger->rotate_online, 0, 0) == NSSM_ROTATE_ONLINE_ASAP || (logger->size && size + (__int64) in >= logger->size))) {
       /* Look for newline. */
       unsigned long i;
       for (i = 0; i < in; i++) {
@@ -642,15 +696,13 @@ unsigned long WINAPI log_and_rotate(void *arg) {
           /* Write up to the newline. */
           ret = try_write(logger, address, i, &out, &complained);
           if (ret < 0) {
-            close_handle(&logger->read_handle);
-            close_handle(&logger->write_handle);
-            HeapFree(GetProcessHeap(), 0, logger);
-            return 3;
+            return finish_logger(logger, 3);
           }
           size += (__int64) out;
 
           /* Rotate. */
-          *logger->rotate_online = NSSM_ROTATE_ONLINE;
+          if (logger_stopping(logger)) return finish_logger(logger, 0);
+          InterlockedCompareExchange(&logger->rotate_online, NSSM_ROTATE_ONLINE, NSSM_ROTATE_ONLINE_ASAP);
           TCHAR rotated[PATH_LENGTH];
           rotated_filename(logger->path, rotated, _countof(rotated), 0);
 
@@ -667,7 +719,10 @@ unsigned long WINAPI log_and_rotate(void *arg) {
             function = _T("CopyFile()");
             if (CopyFile(logger->path, rotated, TRUE)) {
               HANDLE file = write_to_file(logger->path, NSSM_STDOUT_SHARING, 0, NSSM_STDOUT_DISPOSITION, NSSM_STDOUT_FLAGS);
-              Sleep(logger->rotate_delay);
+              if (logger_stopping(logger, logger->rotate_delay)) {
+                close_handle(&file);
+                return finish_logger(logger, 0);
+              }
               SetFilePointer(file, 0, 0, FILE_BEGIN);
               SetEndOfFile(file);
               CloseHandle(file);
@@ -693,15 +748,13 @@ unsigned long WINAPI log_and_rotate(void *arg) {
           }
 
           /* Reopen. */
+          if (logger_stopping(logger)) return finish_logger(logger, 0);
           logger->write_handle = write_to_file(logger->path, logger->sharing, 0, logger->disposition, logger->flags);
           if (logger->write_handle == INVALID_HANDLE_VALUE) {
             error = GetLastError();
             log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_CREATEFILE_FAILED, logger->path, error_string(error), 0);
             /* Oh dear.  Now we can't log anything further. */
-            close_handle(&logger->read_handle);
-            close_handle(&logger->write_handle);
-            HeapFree(GetProcessHeap(), 0, logger);
-            return 4;
+            return finish_logger(logger, 4);
           }
 
           /* Resume writing after the newline. */
@@ -724,15 +777,9 @@ unsigned long WINAPI log_and_rotate(void *arg) {
     ret = write_with_timestamp(logger, address, in, &out, &complained, charsize);
     size += (__int64) out;
     if (ret < 0) {
-      close_handle(&logger->read_handle);
-      close_handle(&logger->write_handle);
-      HeapFree(GetProcessHeap(), 0, logger);
-      return 3;
+      return finish_logger(logger, 3);
     }
   }
 
-  close_handle(&logger->read_handle);
-  close_handle(&logger->write_handle);
-  HeapFree(GetProcessHeap(), 0, logger);
-  return 0;
+  return finish_logger(logger, 0);
 }

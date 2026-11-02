@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Close both parent log-pipe writers before joining workers, retain valid
+  thread handles through waits, and give each worker its own reference-counted
+  state and I/O handles. Timeout/failure requests cancellation while preserving
+  ownership until the worker exits. [NSSM-007](docs/fixes/NSSM-007.md).
+- Keep parent pipe writers non-inheritable, clean up partial output setup and
+  service disposal, and add logger EOF, blocked-I/O, failure and restart tests.
 - Keep hook metadata alive independently of worker completion, reserve worker
   tracking before thread creation, and retain unfinished workers on failed or
   timed-out waits. [NSSM-005](docs/fixes/NSSM-005.md).

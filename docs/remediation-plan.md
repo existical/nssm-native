@@ -11,7 +11,7 @@ NSSM-001 through NSSM-024 match its numbered findings. NSSM-025 through NSSM-034
 split its additional follow-ups into independent tasks. The latter ten are
 follow-ups, not ten additional reproduced high-priority defects.
 
-**Status:** B00 through B03 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
+**Status:** B00 through B04 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
 are fixed but unreleased through
 [PR 5](https://github.com/existical/nssm-native/pull/5); see the
 [fix records](fixes/README.md) and [validation](reviews/b01-validation.md).
@@ -19,8 +19,10 @@ are fixed but unreleased through
 [PR 7](https://github.com/existical/nssm-native/pull/7).
 B03 (NSSM-004, NSSM-029 and NSSM-031) is fixed but unreleased through
 [PR 8](https://github.com/existical/nssm-native/pull/8).
-B04 (NSSM-005, NSSM-006 and NSSM-017) has an implementation and
-[validation](reviews/b04-validation.md) in [PR 9](https://github.com/existical/nssm-native/pull/9), pending merge. The other tasks
+B04 (NSSM-005, NSSM-006 and NSSM-017) is fixed but unreleased through
+[PR 9](https://github.com/existical/nssm-native/pull/9).
+B05 (NSSM-007) has an implementation and
+[validation](reviews/b05-validation.md) in [PR 10](https://github.com/existical/nssm-native/pull/10), pending merge. The other tasks
 remain planned; NSSM-034 requires confirmation.
 [Previously merged changes](fixes/implemented.md) retain separate CONT IDs.
 
@@ -45,8 +47,8 @@ work. P2 tasks share an early group only when they support the same repair.
 | B01 | Registry and environment bounds | 001, 003, 010, 011 | Merged in PR 5; regression, sanitizer and four-configuration checks passed |
 | B02 | Safe command quoting | 002 | Merged in PR 7; bounds, dump failures and shell round trips validated |
 | B03 | Affinity and numeric parsing | 004, 029, 031 | Merged in PR 8; boundary, registry and sparse GUI-list tests pass |
-| B04 | Hook ownership and launch handles | 005, 006, 017 | In progress, merge pending; forced schedules/failures and 200-launch handle tests pass |
-| B05 | Logger lifetime | 007 | Close/join ordering and restart isolation established |
+| B04 | Hook ownership and launch handles | 005, 006, 017 | Merged in PR 9; forced schedules/failures and 200-launch handle tests pass |
+| B05 | Logger lifetime | 007 | In progress, merge pending; EOF, cancellation, failure and restart ownership tests pass |
 | B06 | Offline rotation | 008 | Verify thresholds and delay independently; no real long sleeps |
 | B07 | Process identity during cleanup | 009 | Fake PID-reuse tests, followed by isolated child-tree tests |
 | B08 | Primitive ownership and error paths | 015, 018, 019, 021, 028, 032 | Separate small commits; defined failure outputs and cleanup |
@@ -174,7 +176,7 @@ Document accepted syntax and treatment of CPUs outside the active group.
 forcing completion before CreateThread returns.
 Touch `src/hook.cpp:nssm_hook`, `await_hook`, and thread-list ownership.
 
-**Implementation status:** in progress; see [NSSM-005](fixes/NSSM-005.md).
+**Implementation status:** merged in PR 9, unreleased; see [NSSM-005](fixes/NSSM-005.md).
 
 1. Define which object owns the hook name, process handle, worker handle and
    completion result. Keep caller metadata alive independently of worker data.
@@ -193,7 +195,7 @@ all forced schedules. Preserve existing hook result codes.
 **Hook thread-creation fallback — P1, B04.** Review finding 6; two duplicate
 frees reproduced. Touch `src/hook.cpp:nssm_hook`.
 
-**Implementation status:** in progress; see [NSSM-006](fixes/NSSM-006.md).
+**Implementation status:** merged in PR 9, unreleased; see [NSSM-006](fixes/NSSM-006.md).
 
 1. Let synchronous `await_hook` retain sole ownership of its cleanup when
    CreateThread fails, removing the caller's duplicate frees.
@@ -212,6 +214,8 @@ hook. Document the corrected fallback result.
 **Logger shutdown ownership — P1, B05.** Review finding 7; invalid wait
 reproduced. Touch `src/io.cpp:cleanup_loggers`, `close_handle`,
 `create_logging_thread`, `log_and_rotate`, and shutdown/restart calls.
+
+**Implementation status:** in progress; see [NSSM-007](fixes/NSSM-007.md).
 
 1. Write down ownership of each file, pipe end and thread handle. Close all
    parent-held writer ends, retain a live thread handle while joining, and
@@ -337,6 +341,10 @@ one-byte chunks, split newlines/code units, empty lines, and rotation.
 
 ### NSSM 014
 
+B05 initializes basic read/write outputs and the initial observed file size
+as part of safe shutdown, but this task remains planned for the complete
+timestamp, threshold, partial-write and byte-accounting repair.
+
 **Initialized logger accounting — P2, B09.** Review finding 14; source-traced
 and analyzer-supported. Touch timestamp, write and rotation helpers.
 
@@ -394,7 +402,7 @@ source-inspected; B03's AppExit integration tests cover canonical decimal IDs.
 **Launch handle cleanup — P2, B04.** Review finding 17; hook leak reproduced.
 Touch service/hook CreateProcess paths and `env.cpp:test_environment`.
 
-**Implementation status:** in progress; see [NSSM-017](fixes/NSSM-017.md).
+**Implementation status:** merged in PR 9, unreleased; see [NSSM-017](fixes/NSSM-017.md).
 
 1. Close primary-thread handles after any required ResumeThread operation.
 2. Close process and thread handles from environment-validation children,
@@ -456,7 +464,8 @@ failures through both callers.
 **Safe error-log insertions — P2, B09.** Review finding 22; source-traced.
 
 B03 includes the missing sentinel on the invalid-affinity warning, needed for
-its stricter rejection path. The remaining calls and typed wrapper below are
+its stricter rejection path. B05 adds the missing sentinel on the pipe-creation
+failure message while repairing that setup path. The remaining calls and typed wrapper below are
 still planned; NSSM-022 is not complete.
 
 1. Pass the formatted return-code string and add missing null terminators at
