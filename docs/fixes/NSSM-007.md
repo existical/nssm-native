@@ -7,8 +7,8 @@
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`, `v2.24-103-gdee49fc` |
 | Reproduced against | `7fa9ca9e99e2a862b04b524b3ed312d81b987630` |
 | Evidence | Invalid waits reproduced; controlled failure schedules and real pipe/worker/child tests |
-| Fix PR | Pending creation on branch `fix/b05-logger-lifetime` |
-| Implementation commit | Pending merge |
+| Fix PR | [PR 10](https://github.com/existical/nssm-native/pull/10) |
+| Implementation commit | `6dd5f6382cfaca5a39347f75d0a8bc856ac82256` (merge pending) |
 | First release | Not yet released |
 
 The legacy cleanup closed the logger's thread handle, remembered its numeric

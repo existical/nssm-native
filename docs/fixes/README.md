@@ -54,7 +54,7 @@ four CI configurations passing:
 | [NSSM-006](NSSM-006.md) | Return fallback results without duplicate cleanup | Fixed, unreleased | Not yet released |
 | [NSSM-017](NSSM-017.md) | Close launch handles and validate cleanup | Fixed, unreleased | Not yet released |
 
-B05 has an implementation under review, pending merge:
+B05 is under review in [PR 10](https://github.com/existical/nssm-native/pull/10), pending merge:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |
