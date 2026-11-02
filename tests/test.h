@@ -51,4 +51,6 @@ void test_hook_commands();
 void test_startup();
 void test_registry_bounds();
 void test_multisz_bounds();
+void test_quoting();
+int quoting_child(int, TCHAR **);
 #endif

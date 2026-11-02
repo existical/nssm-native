@@ -75,17 +75,63 @@ static bool needs_quote(const TCHAR c) {
   return needs_escape(c);
 }
 
-/* https://blogs.msdn.microsoft.com/twistylittlepassagesallalike/2011/04/23/everyone-quotes-command-line-arguments-the-wrong-way/ */
-/* http://www.robvanderwoude.com/escapechars.php */
+/* Count and write through the same bounded emitter, including the final NUL. */
+class quote_buffer {
+  TCHAR *buffer;
+  size_t capacity;
+  size_t length;
+public:
+  quote_buffer(TCHAR *destination, size_t count) : buffer(destination), capacity(count), length(0) {}
+
+  bool append(TCHAR c) {
+    if (length == capacity) return false;
+    if (buffer) buffer[length] = c;
+    length++;
+    return true;
+  }
+
+  bool escaped(TCHAR c, bool escape) {
+    if (escape && ! append(_T('^'))) return false;
+    return append(c);
+  }
+
+  bool slashes(size_t count, bool escape) {
+    for (size_t i = 0; i < count; i++) if (! escaped(_T('\\'), escape)) return false;
+    return true;
+  }
+};
+
+/* Preserve the legacy cmd.exe escaping and C runtime backslash/quote rules. */
+static bool quote_emit(const TCHAR *unquoted, size_t len, bool escape, quote_buffer &output) {
+  if (! output.escaped(_T('"'), escape)) return false;
+  for (size_t i = 0; ; i++) {
+    size_t slashes = 0;
+    while (i < len && unquoted[i] == _T('\\')) {
+      i++;
+      slashes++;
+    }
+
+    if (! output.slashes(slashes, escape)) return false;
+    /* Double backslashes before a quote or the closing delimiter. */
+    if (i == len || unquoted[i] == _T('"')) {
+      if (! output.slashes(slashes, escape)) return false;
+    }
+    if (i == len) break;
+    if (unquoted[i] == _T('"') && ! output.escaped(_T('\\'), escape)) return false;
+    if (! output.escaped(unquoted[i], escape && needs_escape(unquoted[i]))) return false;
+  }
+  return output.escaped(_T('"'), escape) && output.append(_T('\0'));
+}
+
+/* buflen is in TCHARs including NUL. Failure leaves the destination unchanged. */
 int quote(const TCHAR *unquoted, TCHAR *buffer, size_t buflen) {
-  size_t i, j, n;
+  if (! unquoted || ! buffer || ! buflen || buflen > ((size_t) -1) / sizeof(TCHAR)) return 1;
   size_t len = _tcslen(unquoted);
-  if (len > buflen - 1) return 1;
+  if (len >= buflen) return 1;
 
   bool escape = false;
   bool quotes = false;
-
-  for (i = 0; i < len; i++) {
+  for (size_t i = 0; i < len; i++) {
     if (needs_escape(unquoted[i])) {
       escape = quotes = true;
       break;
@@ -97,68 +143,10 @@ int quote(const TCHAR *unquoted, TCHAR *buffer, size_t buflen) {
     return 0;
   }
 
-  /* "" */
-  size_t quoted_len = 2;
-  if (escape) quoted_len += 2;
-  for (i = 0; ; i++) {
-    n = 0;
-
-    while (i != len && unquoted[i] == _T('\\')) {
-      i++;
-      n++;
-    }
-
-    if (i == len) {
-      quoted_len += n * 2;
-      break;
-    }
-    else if (unquoted[i] == _T('"')) quoted_len += n * 2 + 2;
-    else quoted_len += n + 1;
-    if (needs_escape(unquoted[i])) quoted_len += n;
-  }
-  if (quoted_len > buflen - 1) return 1;
-
-  TCHAR *s = buffer;
-  if (escape) *s++ = _T('^');
-  *s++ = _T('"');
-
-  for (i = 0; ; i++) {
-    n = 0;
-
-    while (i != len && unquoted[i] == _T('\\')) {
-      i++;
-      n++;
-    }
-
-    if (i == len) {
-      for (j = 0; j < n * 2; j++) {
-        if (escape) *s++ = _T('^');
-        *s++ = _T('\\');
-      }
-      break;
-    }
-    else if (unquoted[i] == _T('"')) {
-      for (j = 0; j < n * 2 + 1; j++) {
-        if (escape) *s++ = _T('^');
-        *s++ = _T('\\');
-      }
-      if (escape && needs_escape(unquoted[i])) *s++ = _T('^');
-      *s++ = unquoted[i];
-    }
-    else {
-      for (j = 0; j < n; j++) {
-        if (escape) *s++ = _T('^');
-        *s++ = _T('\\');
-      }
-      if (escape && needs_escape(unquoted[i])) *s++ = _T('^');
-      *s++ = unquoted[i];
-    }
-  }
-  if (escape) *s++ = _T('^');
-  *s++ = _T('"');
-  *s++ = _T('\0');
-
-  return 0;
+  quote_buffer count(NULL, buflen);
+  if (! quote_emit(unquoted, len, escape, count)) return 1;
+  quote_buffer output(buffer, buflen);
+  return quote_emit(unquoted, len, escape, output) ? 0 : 1;
 }
 
 /* Remove basename of a path. */

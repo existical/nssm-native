@@ -4,6 +4,7 @@ int failures = 0;
 extern unsigned long tls_index;
 
 int wmain(int argc, TCHAR **argv) {
+  if (argc >= 2 && ! _tcscmp(argv[1], _T("--quote-child"))) return quoting_child(argc, argv);
   if (argc == 3 && ! _tcscmp(argv[1], _T("--hook-child"))) {
     return _tcscmp(argv[2], _T("final quoted argument")) ? 1 : 0;
   }
@@ -16,6 +17,7 @@ int wmain(int argc, TCHAR **argv) {
     else if (! _tcscmp(argv[1], _T("startup"))) test_startup();
     else if (! _tcscmp(argv[1], _T("registry"))) test_registry_bounds();
     else if (! _tcscmp(argv[1], _T("multisz"))) test_multisz_bounds();
+    else if (! _tcscmp(argv[1], _T("quoting"))) test_quoting();
     else throw std::runtime_error("Unknown test group");
   }
   catch (const std::exception &error) {

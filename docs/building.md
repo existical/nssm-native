@@ -70,7 +70,7 @@ The historical two-part numeric Windows version layout is
 
 ## Checks
 
-CTest runs six groups:
+CTest runs seven groups:
 
 - `nssm.smoke`: command exit status, exact version output, PE machine type and
   embedded file/product metadata.
@@ -85,18 +85,25 @@ CTest runs six groups:
   allocation/API failures and bounded retries for concurrent value changes.
 - `nssm.multisz`: duplicate updates, complete-key matching, bounded formatting,
   round trips and input blocks ending at a protected memory page.
+- `nssm.quoting`: zero/exact/insufficient capacities, generated escaping cases,
+  dump failure output, and actual child arguments through cmd.exe and a batch
+  file with delayed expansion disabled.
 
 The regression executable compiles the production implementations with test-only
-wrappers for the entry point, SCM, registry queries, expansion and allocations.
+wrappers for the entry point, SCM, registry queries, expansion, allocations
+and dump output.
 Tests do not install or control real
 services. Registry access is redirected within the test process to a temporary
 HKCU key, which is deleted afterwards; the hook test also creates and removes a
-copy of its executable under the build directory. Environment changes are local
+copy of its executable under the build directory. The quoting test creates and
+removes a similar copy and an ASCII batch file there. Environment changes are local
 to each test process. No administrator rights are required.
 
 The B01 [validation record](reviews/b01-validation.md) includes the observed
 pre-fix failures, full build matrix, static analysis and separate
 AddressSanitizer commands.
+The B02 [validation record](reviews/b02-validation.md) records quoting bounds,
+shell round trips, caller error handling and the existing batch-file limitations.
 
 The startup progress checks follow the SCM checkpoint/wait-hint contract in
 [Microsoft's SERVICE_STATUS reference](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/ns-winsvc-service_status),

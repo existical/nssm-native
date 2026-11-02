@@ -29,6 +29,13 @@ All four Windows CI configurations passed. These fixes are not yet released:
 | [NSSM-010](NSSM-010.md) | Validate registry strings and environment blocks | Fixed, unreleased | Not yet released |
 | [NSSM-011](NSSM-011.md) | Bound MULTI_SZ formatting | Fixed, unreleased | Not yet released |
 
+B02 is under review in [PR 7](https://github.com/existical/nssm-native/pull/7);
+it is not yet merged or released:
+
+| ID | Change | State | First release |
+| --- | --- | --- | --- |
+| [NSSM-002](NSSM-002.md) | Bound command-quoting output | In progress, merge pending | Not yet released |
+
 The [implementation plan](../remediation-plan.md) tracks NSSM-001 through
 NSSM-034. Check each record's state before assuming inclusion in a build.
 NSSM-001 through NSSM-009 are P1. NSSM-034 needs confirmation; the plan explains
