@@ -2,45 +2,60 @@
 
 extern imports_t imports;
 
-HANDLE get_debug_token() {
-  long error;
-  HANDLE token;
-  if (! OpenThreadToken(GetCurrentThread(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, false, &token)) {
+void release_debug_token(debug_token_t *scope) {
+  if (! scope) return;
+  DWORD error = ERROR_SUCCESS;
+  if (scope->token && scope->adjusted) {
+    SetLastError(ERROR_SUCCESS);
+    BOOL restored = AdjustTokenPrivileges(scope->token, false, &scope->previous, 0, NULL, NULL);
+    DWORD result = GetLastError();
+    if (! restored || result != ERROR_SUCCESS) error = result ? result : ERROR_ACCESS_DENIED;
+  }
+  if (scope->impersonated && ! RevertToSelf()) {
+    DWORD result = GetLastError();
+    error = result ? result : ERROR_ACCESS_DENIED;
+  }
+  if (scope->token) CloseHandle(scope->token);
+  ZeroMemory(scope, sizeof(*scope));
+  /* Never continue with an identity/privilege state we failed to restore. */
+  if (error) {
+    _ftprintf(stderr, _T("Failed to restore debug-token state: %s\n"), error_string(error));
+    nssm_exit(111);
+  }
+}
+
+bool get_debug_token(debug_token_t *scope) {
+  if (! scope) { SetLastError(ERROR_INVALID_PARAMETER); return false; }
+  ZeroMemory(scope, sizeof(*scope));
+  DWORD error, size = sizeof(scope->previous);
+  TOKEN_PRIVILEGES requested;
+  ZeroMemory(&requested, sizeof(requested));
+  if (! OpenThreadToken(GetCurrentThread(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, false, &scope->token)) {
     error = GetLastError();
-    if (error == ERROR_NO_TOKEN) {
-      (void) ImpersonateSelf(SecurityImpersonation);
-      (void) OpenThreadToken(GetCurrentThread(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, false, &token);
+    scope->token = NULL;
+    if (error != ERROR_NO_TOKEN) return false;
+    if (! ImpersonateSelf(SecurityImpersonation)) return false;
+    scope->impersonated = true;
+    if (! OpenThreadToken(GetCurrentThread(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, false, &scope->token)) {
+      scope->token = NULL;
+      goto failed;
     }
   }
-  if (! token) return INVALID_HANDLE_VALUE;
 
-  TOKEN_PRIVILEGES privileges, old;
-  unsigned long size = sizeof(TOKEN_PRIVILEGES);
-  LUID luid;
-  if (! LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &luid)) {
-    CloseHandle(token);
-    return INVALID_HANDLE_VALUE;
-  }
+  if (! LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &requested.Privileges[0].Luid)) goto failed;
+  requested.PrivilegeCount = 1;
+  requested.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+  SetLastError(ERROR_SUCCESS);
+  if (! AdjustTokenPrivileges(scope->token, false, &requested, size, &scope->previous, &size)) goto failed;
+  scope->adjusted = scope->previous.PrivilegeCount != 0;
+  if (GetLastError() != ERROR_SUCCESS) goto failed;
+  return true;
 
-  privileges.PrivilegeCount = 1;
-  privileges.Privileges[0].Luid = luid;
-  privileges.Privileges[0].Attributes = 0;
-
-  if (! AdjustTokenPrivileges(token, false, &privileges, size, &old, &size)) {
-    CloseHandle(token);
-    return INVALID_HANDLE_VALUE;
-  }
-
-  old.PrivilegeCount = 1;
-  old.Privileges[0].Luid = luid;
-  old.Privileges[0].Attributes |= SE_PRIVILEGE_ENABLED;
-
-  if (! AdjustTokenPrivileges(token, false, &old, size, NULL, NULL)) {
-    CloseHandle(token);
-    return INVALID_HANDLE_VALUE;
-  }
-
-  return token;
+failed:
+  error = GetLastError();
+  release_debug_token(scope);
+  SetLastError(error);
+  return false;
 }
 
 void service_kill_t(nssm_service_t *service, kill_t *k) {

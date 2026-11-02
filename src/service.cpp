@@ -2353,7 +2353,8 @@ int service_process_tree(int argc, TCHAR **argv) {
     We ignore failure here so that an error will be printed later when we
     try to open a process handle.
   */
-  HANDLE token = get_debug_token();
+  debug_token_t token;
+  (void) get_debug_token(&token);
 
   TCHAR canonical_name[SERVICE_NAME_LENGTH];
   SERVICE_STATUS_PROCESS service_status;
@@ -2414,7 +2415,7 @@ int service_process_tree(int argc, TCHAR **argv) {
   }
 
   CloseServiceHandle(services);
-  if (token != INVALID_HANDLE_VALUE) CloseHandle(token);
+  release_debug_token(&token);
 
   return errors;
 }

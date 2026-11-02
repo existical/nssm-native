@@ -23,7 +23,15 @@ typedef struct {
 
 typedef int (*walk_function_t)(nssm_service_t *, kill_t *);
 
-HANDLE get_debug_token();
+typedef struct {
+  HANDLE token;
+  TOKEN_PRIVILEGES previous;
+  bool impersonated;
+  bool adjusted;
+} debug_token_t;
+/* Acquire/release on the same thread. Restoration failure exits with code 111. */
+bool get_debug_token(debug_token_t *);
+void release_debug_token(debug_token_t *);
 void service_kill_t(nssm_service_t *, kill_t *);
 int get_process_creation_time(HANDLE, FILETIME *);
 int get_process_exit_time(HANDLE, FILETIME *);
