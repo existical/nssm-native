@@ -40,7 +40,8 @@ are now merged and unreleased. B08 merged in
 [validation](reviews/b12-validation.md). B13 merged in
 [PR 18](https://github.com/existical/nssm-native/pull/18); see its
 [validation](reviews/b13-validation.md). All 34 review tasks are now merged
-and unreleased. B14 found a new startup regression, [NSSM-035](fixes/NSSM-035.md),
+and unreleased. B14 found two release blockers, [NSSM-035](fixes/NSSM-035.md) and
+[NSSM-036](fixes/NSSM-036.md),
 repaired in [PR 20](https://github.com/existical/nssm-native/pull/20), pending merge.
 B14 release preparation in [PR 19](https://github.com/existical/nssm-native/pull/19) is in progress: lifecycle acceptance,
 clean-commit packaging, source identity and candidate documentation. See
@@ -78,8 +79,7 @@ work. P2 tasks share an early group only when they support the same repair.
 | B10 | Configuration export and exit actions | 016, 030, 033 | Merged in PR 15; AppExit round trips, strict fallback values and real query-only export validated |
 | B11 | GUI and accounts | 020, 025, 026, 027, 034 | Merged in PR 16; five confirmed fixes, GUI retries, account failures and hook round trips validated |
 | B12 | Dependencies | 023 | Merged in PR 17; typed resets/merges, bounded queries, validation cleanup and SCM round-trip tests pass |
-| B13 | Remaining service control waits | 024 | Merged in PR 18; action budgets, polling, diagnostics and deterministic/live tests pass |
-| B14 | Candidate release and acceptance follow-up | 035 | In progress; startup regression repair in PR 20, lifecycle and packaging in PR 19; publication separate |
+| B14 | Candidate release and acceptance follow-ups | 035, 036 | In progress; startup/cleanup repairs in PR 20, lifecycle and packaging in PR 19; publication separate |
 
 ## Shared implementation and test rules
 
@@ -749,6 +749,19 @@ missing/short/maximum/oversized values for all three streams with canaries,
 and exercise get_parameters through that same production path. Retain the
 real wrapper lifecycle test in the release-preparation PR. Done when startup
 configuration succeeds and oversized values still fail without overwriting.
+
+### NSSM 036
+
+**Concurrent exit/stop cleanup — P1, B14 acceptance follow-up.** The live
+wrapper test observed STOPPED with a descendant still running. The focused
+[repair](fixes/NSSM-036.md) is in [PR 20](https://github.com/existical/nssm-native/pull/20).
+
+Serialize explicit STOP with an in-flight end_service cleanup using the existing
+service-side hook/logger critical section. Release it before restart actions;
+workers must not need it while being joined. Force the overlap with real events
+and verify one cleanup, no premature STOPPED, and eventual completion. Retain
+the actual SCM lifecycle check in PR 19. This is an additional finding beyond
+the original 34-task review and is a release prerequisite.
 
 ## Documentation required with every fix
 

@@ -6,10 +6,10 @@ All original tags and history are preserved. The legacy development comparison
 baseline is v2.24-103-gdee49fc (`dee49fc1a0804f06687299b8e9612a3fce1c5e9a`),
 distinct from the original v2.24 release.
 
-Included work: CONT-001 through CONT-005 and NSSM-001 through NSSM-035.
+Included work: CONT-001 through CONT-005 and NSSM-001 through NSSM-036.
 The [fix records](../fixes/README.md) link every issue to its implementation,
-tests and behavior differences. The original 34 tasks are merged. NSSM-035
-is the startup regression newly found and repaired during B14 acceptance;
+tests and behavior differences. The original 34 tasks are merged. NSSM-035 and NSSM-036
+are the startup and cleanup blockers found and repaired during B14 acceptance;
 merge its focused PR 20 before PR 19. No review task remains unimplemented. New
 findings and release acceptance gaps remain possible; completion of this review
 is not a claim that all bugs have been eliminated.

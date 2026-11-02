@@ -1,6 +1,9 @@
 #include "launch_fixture.h"
 
 namespace launch_test {
+static bool cleanup_race;
+static volatile LONG cleanup_calls;
+static HANDLE cleanup_entered, cleanup_release, stop_entered, cleanup_stopped;
 static bool active, create_ok, terminate_ok, resume_ok, abort_hook, stopped;
 static bool process_closed, thread_closed, resumed, affinity_ok = true;
 static unsigned closes, output_closes, creates, resumes, waits, tree_calls;
@@ -67,12 +70,22 @@ BOOL WINAPI affinity(HANDLE h, PDWORD_PTR process, PDWORD_PTR system) {
   *process = *system = 1; return TRUE;
 }
 BOOL WINAPI set_affinity(HANDLE h, DWORD_PTR mask) { if (! active) return SetProcessAffinityMask(h, mask); if (! affinity_ok) SetLastError(ERROR_ACCESS_DENIED); return affinity_ok; }
-BOOL WINAPI status(SERVICE_STATUS_HANDLE h, LPSERVICE_STATUS value) { return active ? TRUE : SetServiceStatus(h, value); }
+BOOL WINAPI status(SERVICE_STATUS_HANDLE h, LPSERVICE_STATUS value) {
+  if (cleanup_race && value->dwCurrentState == SERVICE_STOPPED) SetEvent(cleanup_stopped);
+  return active ? TRUE : SetServiceStatus(h, value);
+}
 BOOL WINAPI free_console() { return active ? TRUE : FreeConsole(); }
 int parameters(nssm_service_t *service, STARTUPINFO *si) { return active ? 0 : get_parameters(service, si); }
 int output(nssm_service_t *service, STARTUPINFO *si) { return active ? 0 : get_output_handles(service, si); }
 void close_output(STARTUPINFO *si) { if (active) output_closes++; else close_output_handles(si); }
-void cleanup(nssm_service_t *service) { if (! active) cleanup_loggers(service); }
+void cleanup(nssm_service_t *service) {
+  if (cleanup_race) {
+    InterlockedIncrement(&cleanup_calls);
+    SetEvent(cleanup_entered);
+    REQUIRE(WaitForSingleObject(cleanup_release, 5000) == WAIT_OBJECT_0);
+  }
+  if (! active) cleanup_loggers(service);
+}
 void environment(TCHAR *env) { if (! active) duplicate_environment_strings(env); }
 int time(HANDLE h, FILETIME *value) { if (! active) return get_process_creation_time(h, value); ZeroMemory(value, sizeof(*value)); return 0; }
 int exit_time(HANDLE h, FILETIME *value) { if (! active) return get_process_exit_time(h, value); ZeroMemory(value, sizeof(*value)); return 0; }
@@ -155,7 +168,43 @@ void test_launch_events() {
   CHECK(found); affinity_ok = true; event_test::active = false;
 }
 
+static DWORD WINAPI exit_cleanup_thread(void *service) {
+  end_service(service, true);
+  return 0;
+}
+static DWORD WINAPI stop_cleanup_thread(void *service) {
+  SetEvent(launch_test::stop_entered);
+  return stop_service(static_cast<nssm_service_t *>(service), 0, true, true);
+}
+static void test_cleanup_overlap() {
+  using namespace launch_test;
+  reset(); cleanup_race = true; cleanup_calls = 0;
+  cleanup_entered = CreateEvent(NULL, TRUE, FALSE, NULL);
+  cleanup_release = CreateEvent(NULL, TRUE, FALSE, NULL);
+  stop_entered = CreateEvent(NULL, TRUE, FALSE, NULL);
+  cleanup_stopped = CreateEvent(NULL, TRUE, FALSE, NULL);
+  REQUIRE(cleanup_entered && cleanup_release && stop_entered && cleanup_stopped);
+  nssm_service_t *service = new nssm_service_t();
+  _tcscpy_s(service->name, _T("Cleanup overlap test"));
+  InitializeCriticalSection(&service->hook_section); service->hook_section_initialised = true;
+  HANDLE exiting = CreateThread(NULL, 0, exit_cleanup_thread, service, 0, NULL); REQUIRE(exiting);
+  REQUIRE(WaitForSingleObject(cleanup_entered, 5000) == WAIT_OBJECT_0);
+  HANDLE stopping = CreateThread(NULL, 0, stop_cleanup_thread, service, 0, NULL); REQUIRE(stopping);
+  REQUIRE(WaitForSingleObject(stop_entered, 5000) == WAIT_OBJECT_0);
+  CHECK(WaitForSingleObject(stopping, 200) == WAIT_TIMEOUT);
+  CHECK(WaitForSingleObject(cleanup_stopped, 0) == WAIT_TIMEOUT);
+  SetEvent(cleanup_release);
+  REQUIRE(WaitForSingleObject(exiting, 5000) == WAIT_OBJECT_0);
+  REQUIRE(WaitForSingleObject(stopping, 5000) == WAIT_OBJECT_0);
+  CHECK(cleanup_calls == 1 && WaitForSingleObject(cleanup_stopped, 0) == WAIT_OBJECT_0);
+  CloseHandle(exiting); CloseHandle(stopping);
+  CloseHandle(cleanup_entered); CloseHandle(cleanup_release); CloseHandle(stop_entered); CloseHandle(cleanup_stopped);
+  DeleteCriticalSection(&service->hook_section); delete service;
+  cleanup_race = active = false;
+}
+
 void test_launch_handles() {
+  test_cleanup_overlap();
   launch_test::environment_case(true, true, WAIT_OBJECT_0, 0);
   launch_test::environment_case(true, false, WAIT_FAILED, -1);
   launch_test::environment_case(true, true, WAIT_TIMEOUT, -1);

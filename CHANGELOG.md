@@ -8,6 +8,10 @@
   NSSM-wrapped lifecycle acceptance test and packaging validation in CI.
   See [release preparation](docs/releases/README.md). No release is published.
 
+- Serialize explicit STOP with exit-callback cleanup so STOPPED is not reported
+  before in-flight descendant/hook/logger cleanup completes. Add a forced
+  overlap regression. [NSSM-036](docs/fixes/NSSM-036.md).
+
 - Correct the standard-I/O registry caller's byte capacity. B14 acceptance
   exposed a continuation startup regression after strict byte validation was
   introduced: Unicode service startup failed even without redirection.
