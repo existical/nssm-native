@@ -1,6 +1,7 @@
 #ifndef NSSM_LAUNCH_FIXTURE_H
 #define NSSM_LAUNCH_FIXTURE_H
 #include "test.h"
+#include "event_capture.h"
 namespace launch_test {
 const TCHAR *imagepath();
 BOOL WINAPI create(LPCTSTR, LPTSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCTSTR, LPSTARTUPINFO, LPPROCESS_INFORMATION);
@@ -25,7 +26,7 @@ unsigned long kill_tree(kill_t *, unsigned long);
 int hook(hook_thread_t *, nssm_service_t *, TCHAR *, TCHAR *, unsigned long *, unsigned long, bool);
 int hook(hook_thread_t *, nssm_service_t *, TCHAR *, TCHAR *, unsigned long *, unsigned long);
 int hook(hook_thread_t *, nssm_service_t *, TCHAR *, TCHAR *, unsigned long *);
-void log(unsigned short, unsigned long, ...);
+using event_test::log;
 }
 void test_launch_handles();
 #endif

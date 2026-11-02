@@ -76,7 +76,7 @@ static bool reserve_thread_handle(hook_thread_t *hook_threads) {
   if (count > ((size_t) -1) / sizeof(hook_thread_data_t)) return false;
   hook_thread_data_t *data = (hook_thread_data_t *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, count * sizeof(*data));
   if (! data) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, _T("hook_thread_t"), _T("reserve_thread_handle()"), 0);
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, _T("hook_thread_t"), _T("reserve_thread_handle()"));
     return false;
   }
   if (hook_threads->num_threads) memmove(data, hook_threads->data, hook_threads->num_threads * sizeof(*data));
@@ -191,7 +191,7 @@ int nssm_hook(hook_thread_t *hook_threads, nssm_service_t *service, TCHAR *hook_
 
   hook_t *hook = (hook_t *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(hook_t));
   if (! hook) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, _T("hook"), _T("nssm_hook()"), 0);
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, _T("hook"), _T("nssm_hook()"));
     return NSSM_HOOK_STATUS_ERROR;
   }
 
@@ -290,7 +290,7 @@ int nssm_hook(hook_thread_t *hook_threads, nssm_service_t *service, TCHAR *hook_
 
   TCHAR cmd[CMD_LENGTH];
   if (get_hook(service->name, hook_event, hook_action, cmd, sizeof(cmd))) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_GET_HOOK_FAILED, hook_event, hook_action, service->name, 0);
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_GET_HOOK_FAILED, hook_event, hook_action, service->name);
     unset_service_environment(service);
     LeaveCriticalSection(&service->hook_section);
     HeapFree(GetProcessHeap(), 0, hook);
@@ -337,7 +337,7 @@ int nssm_hook(hook_thread_t *hook_threads, nssm_service_t *service, TCHAR *hook_
       unsigned long tid;
       entry.thread_handle = CreateThread(NULL, 0, await_hook, (void *) hook, 0, &tid);
       if (! entry.thread_handle) {
-        log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_CREATETHREAD_FAILED, error_string(GetLastError()), 0);
+        log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_CREATETHREAD_FAILED, error_string(GetLastError()));
         ret = (int) await_hook(hook);
       }
       else {
@@ -363,7 +363,7 @@ int nssm_hook(hook_thread_t *hook_threads, nssm_service_t *service, TCHAR *hook_
     }
   }
   else {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_HOOK_CREATEPROCESS_FAILED, hook_event, hook_action, service->name, cmd, error_string(GetLastError()), 0);
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_HOOK_CREATEPROCESS_FAILED, hook_event, hook_action, service->name, cmd, error_string(GetLastError()));
     HeapFree(GetProcessHeap(), 0, hook);
     close_output_handles(&si);
   }

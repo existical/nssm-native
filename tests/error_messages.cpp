@@ -1,6 +1,25 @@
 #include "test.h"
 #include <map>
 #include <mutex>
+#include "event_capture.h"
+
+namespace event_test {
+bool active;
+std::vector<record> records;
+static bool fail_registration;
+static unsigned opened, closed, reported;
+void capture(unsigned short type, unsigned long id, unsigned short count, const TCHAR * const *strings) {
+  if (! active) return;
+  record entry; entry.type = type; entry.id = id;
+  for (unsigned short i = 0; i < count; i++) entry.strings.push_back(strings[i] ? strings[i] : _T(""));
+  records.push_back(entry);
+}
+static HANDLE WINAPI open(LPCTSTR, LPCTSTR) { opened++; return fail_registration ? NULL : reinterpret_cast<HANDLE>(1); }
+static BOOL WINAPI report(HANDLE, WORD type, WORD, DWORD id, PSID, WORD count, DWORD, LPCTSTR *strings, LPVOID) {
+  reported++; capture(type, id, count, strings); return TRUE;
+}
+static BOOL WINAPI close(HANDLE) { closed++; return TRUE; }
+}
 
 namespace message_test {
 struct allocation { SIZE_T bytes; bool local; };
@@ -64,7 +83,15 @@ static int fallback(TCHAR *buffer, size_t count, size_t truncate, const TCHAR *f
 #define FormatMessage message_test::format
 #undef _sntprintf_s
 #define _sntprintf_s message_test::fallback
+#undef RegisterEventSource
+#undef ReportEvent
+#define RegisterEventSource event_test::open
+#define ReportEvent event_test::report
+#define DeregisterEventSource event_test::close
 #include "../src/event.cpp"
+#undef RegisterEventSource
+#undef ReportEvent
+#undef DeregisterEventSource
 #undef LocalAlloc
 #undef LocalFree
 #undef HeapAlloc
@@ -100,6 +127,24 @@ struct workers_fixture {
     for (unsigned i = 0; i < 2; i++) REQUIRE(WaitForSingleObject(workers[i].ready, 5000) == WAIT_OBJECT_0);
   }
 };
+}
+
+void test_event_insertions() {
+  using namespace event_test;
+  active = true; records.clear(); opened = closed = reported = 0;
+  log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OPENSCMANAGER_FAILED);
+  log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_START_SERVICE_FAILED, _T("app.exe"), _T("Test"), _T("3"));
+  log_event(EVENTLOG_WARNING_TYPE, NSSM_EVENT_CREATEPIPE_FAILED, _T("Test"), _T("test.log"), static_cast<const TCHAR *>(NULL));
+  REQUIRE(records.size() == 3);
+  CHECK(records[0].strings.empty());
+  CHECK(records[1].strings == std::vector<std::basic_string<TCHAR> >({_T("app.exe"), _T("Test"), _T("3")}));
+  CHECK(records[2].strings.size() == 3 && records[2].strings[2].empty());
+  CHECK(opened == 3 && closed == 3 && reported == 3);
+  fail_registration = true;
+  log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OPENSCMANAGER_FAILED);
+  CHECK(opened == 4 && closed == 3 && reported == 3);
+  fail_registration = false; active = false;
+  test_launch_events(); test_pipe_events();
 }
 
 void test_error_messages() {
