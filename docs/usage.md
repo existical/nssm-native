@@ -92,8 +92,7 @@ cancels application startup in that fallback path.
 Workers own their command metadata and process handles. Timed-out or failed
 caller waits keep the worker tracked for later cleanup. A synchronous wait
 timeout now reports 102 instead of exposing a still-running thread's Windows
-status. Hook process-tree termination behavior remains subject to the
-separate process-identity review.
+status. Hook process-tree termination uses the identity checks described below.
 
 Environment validation waits up to five seconds for its suspended test child
 to exit and closes both returned handles. If exit cannot be confirmed, it
@@ -101,6 +100,30 @@ reports an internal error. An OS refusal to terminate a process is not a
 successful validation, unless exit is independently observed. Failure to
 resume an affinity-suspended application now fails startup and enters the
 existing service cleanup path.
+
+## Process-tree cleanup
+
+Application and hook cleanup retain the original process handle while walking
+descendants. Each candidate child is opened once, its current parent and
+creation time are checked, and that same handle is used for cleanup. Child
+times are checked against the immediate parent, including when the root has
+already exited. `processes` uses read-only process rights and returns nonzero
+when traversal fails.
+
+Missing, inaccessible or unverified identities are skipped and reported rather
+than reopened by PID. This can leave a subtree running. Cleanup also skips
+depth 128 and deeper; concurrent process creation, disappearing intermediate
+parents and clock changes can limit snapshot-based discovery. A successful
+service stop is not proof that every descendant exited.
+
+The existing stop-method ordering and settings remain available. Thread
+signalling validates a retained thread handle and its owner. Window ownership
+is rechecked before each post, but Windows cannot make a foreign-window check
+and message atomic. Ctrl+C still reaches processes sharing the attached
+console. Optional identity APIs are resolved dynamically; unavailable process
+identity support causes cleanup to skip, and unavailable thread-owner support
+skips thread signalling. See [NSSM-009](fixes/NSSM-009.md) for compatibility,
+diagnostics and test coverage.
 
 ## Numeric settings and processor affinity
 

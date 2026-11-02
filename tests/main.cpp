@@ -4,6 +4,7 @@ int failures = 0;
 extern unsigned long tls_index;
 
 int wmain(int argc, TCHAR **argv) {
+  if (argc >= 2 && ! _tcscmp(argv[1], _T("--tree-child"))) return process_tree_child(argc, argv);
   if (argc >= 2 && ! _tcscmp(argv[1], _T("--quote-child"))) return quoting_child(argc, argv);
   if (argc >= 2 && ! _tcscmp(argv[1], _T("--logger-child"))) return logger_child(argc, argv);
   if (argc == 3 && ! _tcscmp(argv[1], _T("--hook-child"))) {
@@ -26,6 +27,8 @@ int wmain(int argc, TCHAR **argv) {
     else if (! _tcscmp(argv[1], _T("hook_live"))) test_hook_live_handles();
     else if (! _tcscmp(argv[1], _T("logger"))) test_logger_ownership();
     else if (! _tcscmp(argv[1], _T("rotation"))) test_offline_rotation();
+    else if (! _tcscmp(argv[1], _T("process_identity"))) test_process_identity();
+    else if (! _tcscmp(argv[1], _T("process_live"))) test_process_live();
     else throw std::runtime_error("Unknown test group");
   }
   catch (const std::exception &error) {

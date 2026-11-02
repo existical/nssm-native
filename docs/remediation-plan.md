@@ -11,7 +11,7 @@ NSSM-001 through NSSM-024 match its numbered findings. NSSM-025 through NSSM-034
 split its additional follow-ups into independent tasks. The latter ten are
 follow-ups, not ten additional reproduced high-priority defects.
 
-**Status:** B00 through B05 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
+**Status:** B00 through B06 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
 are fixed but unreleased through
 [PR 5](https://github.com/existical/nssm-native/pull/5); see the
 [fix records](fixes/README.md) and [validation](reviews/b01-validation.md).
@@ -23,8 +23,10 @@ B04 (NSSM-005, NSSM-006 and NSSM-017) is fixed but unreleased through
 [PR 9](https://github.com/existical/nssm-native/pull/9).
 B05 (NSSM-007) is fixed but unreleased through
 [PR 10](https://github.com/existical/nssm-native/pull/10).
-B06 (NSSM-008) has an implementation and
-[validation](reviews/b06-validation.md) in [PR 11](https://github.com/existical/nssm-native/pull/11), pending merge. The other tasks
+B06 (NSSM-008) is fixed but unreleased through
+[PR 11](https://github.com/existical/nssm-native/pull/11).
+B07 (NSSM-009) has an implementation and
+[validation](reviews/b07-validation.md) in [PR 12](https://github.com/existical/nssm-native/pull/12), pending merge. Other tasks
 remain planned; NSSM-034 requires confirmation.
 [Previously merged changes](fixes/implemented.md) retain separate CONT IDs.
 
@@ -51,8 +53,8 @@ work. P2 tasks share an early group only when they support the same repair.
 | B03 | Affinity and numeric parsing | 004, 029, 031 | Merged in PR 8; boundary, registry and sparse GUI-list tests pass |
 | B04 | Hook ownership and launch handles | 005, 006, 017 | Merged in PR 9; forced schedules/failures and 200-launch handle tests pass |
 | B05 | Logger lifetime | 007 | Merged in PR 10; EOF, cancellation, failure and restart ownership tests pass |
-| B06 | Offline rotation | 008 | In progress, merge pending; size/age/delay, mode/stream and failure tests pass |
-| B07 | Process identity during cleanup | 009 | Fake PID-reuse tests, followed by isolated child-tree tests |
+| B06 | Offline rotation | 008 | Merged in PR 11; size/age/delay, mode/stream and failure tests pass |
+| B07 | Process identity during cleanup | 009 | In progress, merge pending; PID-reuse, signalling, failure and owned child-tree tests pass |
 | B08 | Primitive ownership and error paths | 015, 018, 019, 021, 028, 032 | Separate small commits; defined failure outputs and cleanup |
 | B09 | Redirection and logging correctness | 012, 013, 014, 022 | B05/B06; encoding, byte counts and error paths covered |
 | B10 | Configuration export and exit actions | 016, 030, 033 | B01/B02; export/import comparison and query-only access |
@@ -267,6 +269,11 @@ previously appeared to work because of the swapped arguments.
 source-traced, not a demonstrated unrelated-process kill.
 Touch `src/process.cpp:check_parent`, `walk_process_tree`, termination
 callbacks, and `src/service.cpp:end_service`.
+
+**Implementation status:** implementation and tests present in PR 12, pending merge;
+see the [fix record](fixes/NSSM-009.md) for legacy comparison, identity checks,
+failure policy and Windows signalling limitations. PID reuse is now reproduced
+with simulated API schedules; live tests target only fixture-owned descendants.
 
 1. Preserve the root's process identity/handle through cleanup.
 2. Acquire each child handle once with required rights, validate its
