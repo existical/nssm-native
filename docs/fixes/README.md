@@ -36,14 +36,22 @@ four CI configurations passing:
 | --- | --- | --- | --- |
 | [NSSM-002](NSSM-002.md) | Bound command-quoting output | Fixed, unreleased | Not yet released |
 
-B03 is under review in [PR 8](https://github.com/existical/nssm-native/pull/8),
-pending merge:
+B03 merged in [PR 8](https://github.com/existical/nssm-native/pull/8), with all
+four CI configurations passing:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |
-| [NSSM-004](NSSM-004.md) | Bound affinity tokens and CPU ranges | In progress | Not yet released |
-| [NSSM-029](NSSM-029.md) | Count sparse masks and map GUI rows to CPU IDs | In progress | Not yet released |
-| [NSSM-031](NSSM-031.md) | Reject invalid and overflowing unsigned numbers | In progress | Not yet released |
+| [NSSM-004](NSSM-004.md) | Bound affinity tokens and CPU ranges | Fixed, unreleased | Not yet released |
+| [NSSM-029](NSSM-029.md) | Count sparse masks and map GUI rows to CPU IDs | Fixed, unreleased | Not yet released |
+| [NSSM-031](NSSM-031.md) | Reject invalid and overflowing unsigned numbers | Fixed, unreleased | Not yet released |
+
+B04 is under review in [PR 9](https://github.com/existical/nssm-native/pull/9), pending merge:
+
+| ID | Change | State | First release |
+| --- | --- | --- | --- |
+| [NSSM-005](NSSM-005.md) | Separate hook caller and worker ownership | In progress | Not yet released |
+| [NSSM-006](NSSM-006.md) | Return fallback results without duplicate cleanup | In progress | Not yet released |
+| [NSSM-017](NSSM-017.md) | Close launch handles and validate cleanup | In progress | Not yet released |
 
 The [implementation plan](../remediation-plan.md) tracks NSSM-001 through
 NSSM-034. Check each record's state before assuming inclusion in a build.

@@ -1881,6 +1881,7 @@ int start_service(nssm_service_t *service) {
       TCHAR code[16];
       _sntprintf_s(code, _countof(code), _TRUNCATE, _T("%lu"), NSSM_HOOK_STATUS_ABORT);
       log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_PRESTART_HOOK_ABORT, NSSM_HOOK_EVENT_START, NSSM_HOOK_ACTION_PRE, service->name, code, 0);
+      close_output_handles(&si);
       unset_service_environment(service);
       return stop_service(service, 5, true, true);
     }
@@ -1935,8 +1936,17 @@ int start_service(nssm_service_t *service) {
         log_event(EVENTLOG_WARNING_TYPE, NSSM_EVENT_SETPROCESSAFFINITYMASK_FAILED, service->name, error_string(GetLastError()), 0);
       }
 
-      ResumeThread(pi.hThread);
+      if (ResumeThread(pi.hThread) == (DWORD) -1) {
+        unsigned long error = GetLastError();
+        CloseHandle(pi.hThread);
+        TCHAR code[16];
+        _sntprintf_s(code, _countof(code), _TRUNCATE, _T("%lu"), error);
+        log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_START_SERVICE_FAILED, service->exe, service->name, code, 0);
+        unset_service_environment(service);
+        return stop_service(service, 3, true, true);
+      }
     }
+    CloseHandle(pi.hThread);
   }
 
   /* Restore our environment. */

@@ -1,4 +1,5 @@
 #include "test.h"
+#include "launch_fixture.h"
 
 namespace scm {
 struct sample {
@@ -89,7 +90,46 @@ static LPVOID WINAPI service_allocate(HANDLE heap, DWORD flags, SIZE_T bytes) {
 #define GetTickCount scm::ticks
 #define Sleep scm::sleep
 #define HeapAlloc service_allocate
+#undef CreateProcess
+#define CreateProcess launch_test::create
+#define CloseHandle launch_test::close
+#define WaitForSingleObject launch_test::wait
+#define ResumeThread launch_test::resume
+#define GetExitCodeProcess launch_test::code
+#define GetProcessAffinityMask launch_test::affinity
+#define SetProcessAffinityMask launch_test::set_affinity
+#define SetServiceStatus launch_test::status
+#define FreeConsole launch_test::free_console
+#define get_parameters launch_test::parameters
+#define get_output_handles launch_test::output
+#define close_output_handles launch_test::close_output
+#define cleanup_loggers launch_test::cleanup
+#define duplicate_environment_strings launch_test::environment
+#define get_process_creation_time launch_test::time
+#define get_process_exit_time launch_test::exit_time
+#define kill_process launch_test::kill
+#define nssm_hook launch_test::hook
+#define log_event launch_test::log
 #include "../src/service.cpp"
+#undef CreateProcess
+#undef CloseHandle
+#undef WaitForSingleObject
+#undef ResumeThread
+#undef GetExitCodeProcess
+#undef GetProcessAffinityMask
+#undef SetProcessAffinityMask
+#undef SetServiceStatus
+#undef FreeConsole
+#undef get_parameters
+#undef get_output_handles
+#undef close_output_handles
+#undef cleanup_loggers
+#undef duplicate_environment_strings
+#undef get_process_creation_time
+#undef get_process_exit_time
+#undef kill_process
+#undef nssm_hook
+#undef log_event
 #undef HeapAlloc
 #undef OpenSCManager
 #undef OpenService

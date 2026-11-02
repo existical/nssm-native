@@ -1,10 +1,10 @@
 # Compile the production code with test-only wrappers for the entry point and
 # SCM/registry calls and allocations. No replacement APIs enter the shipped executable.
 set(regression_sources ${nssm_sources})
-list(REMOVE_ITEM regression_sources src/nssm.cpp src/env.cpp src/service.cpp src/registry.cpp src/settings.cpp)
+list(REMOVE_ITEM regression_sources src/nssm.cpp src/env.cpp src/service.cpp src/registry.cpp src/settings.cpp src/hook.cpp)
 list(TRANSFORM regression_sources PREPEND "${PROJECT_SOURCE_DIR}/")
 add_executable(nssm_regressions ${regression_sources}
-  main.cpp nssm_entry.cpp environment.cpp hooks.cpp startup.cpp registry.cpp quoting.cpp dump_quoting.cpp parsing.cpp)
+  main.cpp nssm_entry.cpp environment.cpp hooks.cpp startup.cpp registry.cpp quoting.cpp dump_quoting.cpp parsing.cpp hook_lifecycle.cpp launch.cpp)
 add_dependencies(nssm_regressions nssm_messages nssm_version)
 foreach(property INCLUDE_DIRECTORIES COMPILE_DEFINITIONS COMPILE_OPTIONS LINK_LIBRARIES)
   get_target_property(value nssm ${property})
@@ -12,7 +12,8 @@ foreach(property INCLUDE_DIRECTORIES COMPILE_DEFINITIONS COMPILE_OPTIONS LINK_LI
 endforeach()
 target_compile_features(nssm_regressions PRIVATE cxx_std_11)
 target_compile_options(nssm_regressions PRIVATE /EHsc)
-foreach(group environment hooks startup registry multisz quoting numeric affinity)
+foreach(group environment hooks startup registry multisz quoting numeric affinity hook_lifecycle launch hook_live)
   add_test(NAME nssm.${group} COMMAND nssm_regressions ${group})
   set_tests_properties(nssm.${group} PROPERTIES TIMEOUT 20)
 endforeach()
+set_tests_properties(nssm.launch nssm.hook_live PROPERTIES TIMEOUT 60)

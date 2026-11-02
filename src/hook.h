@@ -67,6 +67,8 @@ typedef struct {
 } hook_thread_t;
 
 bool valid_hook_name(const TCHAR *, const TCHAR *, bool);
+/* Caller holds service->hook_section; nssm_hook acquires it internally.
+   Workers own their snapshots and retain no pointers into the service. */
 void await_hook_threads(hook_thread_t *, SERVICE_STATUS_HANDLE, SERVICE_STATUS *, unsigned long);
 int nssm_hook(hook_thread_t *, nssm_service_t *, TCHAR *, TCHAR *, unsigned long *, unsigned long, bool);
 int nssm_hook(hook_thread_t *, nssm_service_t *, TCHAR *, TCHAR *, unsigned long *, unsigned long);

@@ -3,12 +3,13 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P2; follow-up D in the 2026 November 2 review |
-| State | In progress; implementation present, merge pending |
+| State | Fixed, unreleased; merged in PR 8 |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`, `v2.24-103-gdee49fc` |
 | Reproduced against | `a3c6260b23b1c229cb9c74a2b172655e41c30c55` |
 | Evidence | Injected API masks and failures; actual hidden Windows list-box checks; GUI caller inspection |
 | Fix PR | [PR 8](https://github.com/existical/nssm-native/pull/8), branch `fix/b03-affinity-parsing` |
-| Implementation commit | Pending merge |
+| Implementation commit | [5ffd1ce84e177074e29881dd57c374f155a376d2](https://github.com/existical/nssm-native/commit/5ffd1ce84e177074e29881dd57c374f155a376d2) |
+| Merge commit | [3982016dcd89358feafb156d19a91e4f7598c1f2](https://github.com/existical/nssm-native/commit/3982016dcd89358feafb156d19a91e4f7598c1f2) |
 | First release | Not yet released |
 
 The old `num_cpus` counted consecutive low bits, so a system mask of `0b101`
