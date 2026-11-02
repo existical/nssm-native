@@ -61,7 +61,7 @@ all four CI configurations passing:
 | --- | --- | --- | --- |
 | [NSSM-007](NSSM-007.md) | Own logger state and join before releasing thread handles | Fixed, unreleased | Not yet released |
 
-B06 has an implementation under review, pending merge:
+B06 is under review in [PR 11](https://github.com/existical/nssm-native/pull/11), pending merge:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |
