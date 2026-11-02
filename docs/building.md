@@ -127,9 +127,25 @@ CTest runs twenty-two groups:
   failures, zero/null insertions and event-source registration failure.
 
 CMake checks that string event arguments compile and integer arguments do not.
-There are 25 CTest groups including smoke. B09 groups retain 20-second limits;
+There are 28 standard CTest groups including smoke. B09 groups retain 20-second limits;
 their files and children belong only to the fixture. Event Log calls are intercepted.
 The [B09 validation record](reviews/b09-validation.md) documents results and limits.
+
+- `nssm.exit_export`: explicit AppExit rules, numeric aliases, enumeration errors,
+  emitted-command replay, renamed exports and repeated allocation/handle checks.
+- `nssm.exit_fallback`: missing and malformed AppExit values, raw registry byte
+  boundaries, allowed actions, query/open errors and initialized outputs.
+- `nssm.export_access`: requested service/SCM rights and CLI failure cleanup.
+
+The [B10 validation record](reviews/b10-validation.md) records results and limits.
+The optional `nssm.export_live` test requires an elevated disposable Windows
+host and is disabled by default. It creates two uniquely named disabled
+services, tests query-only export and AppExit import, and deletes both. It
+never starts either service or runs an emitted install command. Enable it with
+`cmake --preset windows-x64 -DNSSM_ENABLE_SCM_TESTS=ON`; build Release and run
+`ctest --test-dir build/windows-x64 -C Release -R '^nssm.export_live$' --output-on-failure`.
+Disable it afterward with `-DNSSM_ENABLE_SCM_TESTS=OFF`. CI opts in only for its
+disposable x64 Release runner, where the test count becomes 29.
 
 The regression executable compiles the production implementations with test-only
 wrappers for the entry point, SCM, registry queries, expansion, allocations
@@ -139,8 +155,8 @@ Hook lifecycle tests use quarantined allocations and simulated process/thread
 handles; live hook tests use real workers and children, with tree cleanup
 limited to the fixture's own child. Service launch tests replace SCM, process
 and I/O boundaries and never control an installed service.
-Tests do not install or control real
-services. Registry access is redirected within the test process to a temporary
+The standard tests do not install or control real
+services; only the explicitly enabled SCM test creates disabled fixtures. Registry access is redirected within the test process to a temporary
 HKCU key, which is deleted afterwards; the hook test also creates and removes a
 copy of its executable under the build directory. The quoting test creates and
 removes a similar copy and an ASCII batch file there. Environment changes are local

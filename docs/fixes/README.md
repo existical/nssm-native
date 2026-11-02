@@ -87,14 +87,23 @@ four CI configurations passing:
 | [NSSM-028](NSSM-028.md) | Restore scoped debug privilege and impersonation state | Fixed, unreleased | Not yet released |
 | [NSSM-032](NSSM-032.md) | Correct message capacities and thread-local ownership | Fixed, unreleased | Not yet released |
 
-B09 is under review in [PR 14](https://github.com/existical/nssm-native/pull/14), pending merge:
+B09 merged in [PR 14](https://github.com/existical/nssm-native/pull/14), with all
+four Windows CI configurations passing:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |
-| [NSSM-012](NSSM-012.md) | Inherit configured stdin in the child | In progress | Not yet released |
-| [NSSM-013](NSSM-013.md) | Preserve UTF-16 units and timestamp bytes | In progress | Not yet released |
-| [NSSM-014](NSSM-014.md) | Account for actual log writes and rotation | In progress | Not yet released |
-| [NSSM-022](NSSM-022.md) | Use counted string-only event insertions | In progress | Not yet released |
+| [NSSM-012](NSSM-012.md) | Inherit configured stdin in the child | Fixed, unreleased | Not yet released |
+| [NSSM-013](NSSM-013.md) | Preserve UTF-16 units and timestamp bytes | Fixed, unreleased | Not yet released |
+| [NSSM-014](NSSM-014.md) | Account for actual log writes and rotation | Fixed, unreleased | Not yet released |
+| [NSSM-022](NSSM-022.md) | Use counted string-only event insertions | Fixed, unreleased | Not yet released |
+
+B10 has implementation and tests, pending review and merge:
+
+| ID | Change | State | First release |
+| --- | --- | --- | --- |
+| [NSSM-016](NSSM-016.md) | Preserve explicit AppExit export rules | In progress | Not yet released |
+| [NSSM-030](NSSM-030.md) | Export with read-only service access | In progress | Not yet released |
+| [NSSM-033](NSSM-033.md) | Initialize and validate AppExit fallbacks | In progress | Not yet released |
 
 The [implementation plan](../remediation-plan.md) tracks NSSM-001 through
 NSSM-034. Check each record's state before assuming inclusion in a build.

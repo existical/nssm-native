@@ -1,7 +1,7 @@
 # B09 redirection and logging validation
 
 Validation date: 2026 November 2. Scope: NSSM-012, NSSM-013, NSSM-014,
-NSSM-022. Implementation is in [PR 14](https://github.com/existical/nssm-native/pull/14), pending merge.
+NSSM-022. Implementation merged in [PR 14](https://github.com/existical/nssm-native/pull/14).
 Implementation/merge/release state is tracked in the
 [fix index](../fixes/README.md).
 
