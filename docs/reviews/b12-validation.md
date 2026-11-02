@@ -1,7 +1,8 @@
 # B12 dependency validation
 
 Validation date: 2026 November 2. Scope: [NSSM-023](../fixes/NSSM-023.md).
-B12 is implemented, pending review and merge, and unreleased. The
+B12 is implemented in [PR 17](https://github.com/existical/nssm-native/pull/17),
+pending review and merge, and unreleased. The
 [fix index](../fixes/README.md) records implementation and release status.
 
 Baseline: `f969dd985039a8d2fe77a0ed0a24e077894c2bef`, after PR 16 merged.
@@ -48,7 +49,12 @@ Local tools: Visual Studio 2022, MSVC toolset 14.44.35207 (compiler
 | x86 Debug | All 34 standard CTest groups passed |
 | x64 AddressSanitizer | All seven selected groups passed: dependencies, registry, multisz, exit_export, export_access, install_ownership and gui_retry |
 | MSVC `/analyze` Release | Build completed; remaining diagnostics retained |
-| GitHub Windows/real SCM checks | Pending PR workflow |
+| GitHub Windows/real SCM checks | All four jobs passed; x64 Release passed both real SCM groups, 36 total, and each other job passed all 34 |
+
+All four jobs passed at commit `82870f60e176146b34f19db7eb853c64f90cd422`
+in [CI run 41532556274](https://github.com/existical/nssm-native/actions/runs/41532556274).
+The x64 Release log records `nssm.export_live` and `nssm.dependencies_live`
+passing as groups 35 and 36.
 
 The new merge/validation/getter bodies have no analysis diagnostics in this
 build. Existing warnings remain, including ignored sizing-query and other
