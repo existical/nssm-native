@@ -12,6 +12,21 @@ const TCHAR *priority_strings[] = { _T("REALTIME_PRIORITY_CLASS"), _T("HIGH_PRIO
 
 static hook_thread_t hook_threads = { NULL, 0 };
 
+/* Serialize exit cleanup and explicit STOP with the existing service-side
+   hook/logger lock. Workers own snapshots and do not acquire this lock.
+   Critical sections are recursive: STOP may call end_service while owning it. */
+class service_cleanup_lock {
+  CRITICAL_SECTION *section;
+public:
+  explicit service_cleanup_lock(nssm_service_t *service) : section(service->hook_section_initialised ? &service->hook_section : NULL) {
+    if (section) EnterCriticalSection(section);
+  }
+  ~service_cleanup_lock() { if (section) LeaveCriticalSection(section); }
+private:
+  service_cleanup_lock(const service_cleanup_lock &);
+  service_cleanup_lock &operator=(const service_cleanup_lock &);
+};
+
 typedef struct {
   int first;
   int last;
@@ -1964,6 +1979,7 @@ int start_service(nssm_service_t *service) {
 /* Stop the service */
 int stop_service(nssm_service_t *service, unsigned long exitcode, bool graceful, bool default_action) {
   service->allow_restart = false;
+  service_cleanup_lock cleanup(service);
   if (service->wait_handle) {
     UnregisterWait(service->wait_handle);
     service->wait_handle = 0;
@@ -2020,53 +2036,58 @@ int stop_service(nssm_service_t *service, unsigned long exitcode, bool graceful,
 void CALLBACK end_service(void *arg, unsigned char why) {
   nssm_service_t *service = (nssm_service_t *) arg;
 
-  if (service->stopping) return;
-
-  service->stopping = true;
-
-  service->rotate_stdout_online = service->rotate_stderr_online = NSSM_ROTATE_OFFLINE;
-  set_logger_rotation(service, false);
-
-  /* Use now as a dummy exit time. */
-  GetSystemTimeAsFileTime(&service->exit_time);
-
-  /* Check exit code */
   unsigned long exitcode = 0;
   TCHAR code[16];
-  if (service->process_handle) {
-    GetExitCodeProcess(service->process_handle, &exitcode);
-    service->exitcode = exitcode;
-    /* Check real exit time. */
-    if (exitcode != STILL_ACTIVE) get_process_exit_time(service->process_handle, &service->exit_time);
+  {
+    service_cleanup_lock cleanup(service);
+    if (service->stopping) return;
+
+    service->stopping = true;
+
+    service->rotate_stdout_online = service->rotate_stderr_online = NSSM_ROTATE_OFFLINE;
+    set_logger_rotation(service, false);
+
+    /* Use now as a dummy exit time. */
+    GetSystemTimeAsFileTime(&service->exit_time);
+
+    /* Check exit code */
+    if (service->process_handle) {
+      GetExitCodeProcess(service->process_handle, &exitcode);
+      service->exitcode = exitcode;
+      /* Check real exit time. */
+      if (exitcode != STILL_ACTIVE) get_process_exit_time(service->process_handle, &service->exit_time);
+    }
+
+    /*
+      Log that the service ended BEFORE logging about killing the process
+      tree.  See below for the possible values of the why argument.
+    */
+    if (! why) {
+      _sntprintf_s(code, _countof(code), _TRUNCATE, _T("%lu"), exitcode);
+      log_event(EVENTLOG_INFORMATION_TYPE, NSSM_EVENT_ENDED_SERVICE, service->exe, service->name, code);
+    }
+
+    /* Clean up. */
+    if (exitcode == STILL_ACTIVE) exitcode = 0;
+    if (service->pid && service->kill_process_tree) {
+      kill_t k;
+      service_kill_t(service, &k);
+      kill_process_tree(&k, service->pid);
+    }
+    /* Keep the root identity pinned until descendant cleanup has finished. */
+    if (service->process_handle) CloseHandle(service->process_handle);
+    service->process_handle = 0;
+    service->pid = 0;
+
+    /* Exit hook. */
+    service->exit_count++;
+    (void) nssm_hook(&hook_threads, service, NSSM_HOOK_EVENT_EXIT, NSSM_HOOK_ACTION_POST, NULL, NSSM_HOOK_DEADLINE, true);
+
+    /* Exit logging threads. */
+    cleanup_loggers(service);
+
   }
-
-  /*
-    Log that the service ended BEFORE logging about killing the process
-    tree.  See below for the possible values of the why argument.
-  */
-  if (! why) {
-    _sntprintf_s(code, _countof(code), _TRUNCATE, _T("%lu"), exitcode);
-    log_event(EVENTLOG_INFORMATION_TYPE, NSSM_EVENT_ENDED_SERVICE, service->exe, service->name, code);
-  }
-
-  /* Clean up. */
-  if (exitcode == STILL_ACTIVE) exitcode = 0;
-  if (service->pid && service->kill_process_tree) {
-    kill_t k;
-    service_kill_t(service, &k);
-    kill_process_tree(&k, service->pid);
-  }
-  /* Keep the root identity pinned until descendant cleanup has finished. */
-  if (service->process_handle) CloseHandle(service->process_handle);
-  service->process_handle = 0;
-  service->pid = 0;
-
-  /* Exit hook. */
-  service->exit_count++;
-  (void) nssm_hook(&hook_threads, service, NSSM_HOOK_EVENT_EXIT, NSSM_HOOK_ACTION_POST, NULL, NSSM_HOOK_DEADLINE, true);
-
-  /* Exit logging threads. */
-  cleanup_loggers(service);
+  /* Restart and exit actions run after releasing cleanup ownership. */
 
   /*
     The why argument is true if our wait timed out or false otherwise.
