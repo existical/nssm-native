@@ -7,8 +7,8 @@
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`, `v2.24-103-gdee49fc` |
 | Reproduced against | `3982016dcd89358feafb156d19a91e4f7598c1f2` |
 | Evidence | Forced completion before thread creation returns; quarantined allocations, checked handles and real concurrency tests |
-| Fix PR | Pending creation on branch `fix/b04-hook-ownership` |
-| Implementation commit | Pending merge |
+| Fix PR | [PR 9](https://github.com/existical/nssm-native/pull/9) |
+| Implementation commit | `e406363257cb6edd553006c55cd518b77f139876` (merge pending) |
 | First release | Not yet released |
 
 The hook worker could finish and free its state before `CreateThread` returned.

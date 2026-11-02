@@ -20,7 +20,7 @@ are fixed but unreleased through
 B03 (NSSM-004, NSSM-029 and NSSM-031) is fixed but unreleased through
 [PR 8](https://github.com/existical/nssm-native/pull/8).
 B04 (NSSM-005, NSSM-006 and NSSM-017) has an implementation and
-[validation](reviews/b04-validation.md), pending merge. The other tasks
+[validation](reviews/b04-validation.md) in [PR 9](https://github.com/existical/nssm-native/pull/9), pending merge. The other tasks
 remain planned; NSSM-034 requires confirmation.
 [Previously merged changes](fixes/implemented.md) retain separate CONT IDs.
 

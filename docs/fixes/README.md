@@ -45,7 +45,7 @@ four CI configurations passing:
 | [NSSM-029](NSSM-029.md) | Count sparse masks and map GUI rows to CPU IDs | Fixed, unreleased | Not yet released |
 | [NSSM-031](NSSM-031.md) | Reject invalid and overflowing unsigned numbers | Fixed, unreleased | Not yet released |
 
-B04 has an implementation under review, pending merge:
+B04 is under review in [PR 9](https://github.com/existical/nssm-native/pull/9), pending merge:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |
