@@ -69,6 +69,11 @@ static void WINAPI sleep(DWORD milliseconds) {
 
 // Replace only operating-system boundaries in this test translation unit.
 // The actual control_service() and polling implementation are compiled below.
+static bool fail_affinity_allocation = false;
+static LPVOID WINAPI service_allocate(HANDLE heap, DWORD flags, SIZE_T bytes) {
+  if (fail_affinity_allocation) return NULL;
+  return HeapAlloc(heap, flags, bytes);
+}
 #undef OpenSCManager
 #undef OpenService
 #undef GetServiceDisplayName
@@ -83,7 +88,9 @@ static void WINAPI sleep(DWORD milliseconds) {
 #define CloseServiceHandle scm::close
 #define GetTickCount scm::ticks
 #define Sleep scm::sleep
+#define HeapAlloc service_allocate
 #include "../src/service.cpp"
+#undef HeapAlloc
 #undef OpenSCManager
 #undef OpenService
 #undef GetServiceDisplayName
@@ -93,6 +100,14 @@ static void WINAPI sleep(DWORD milliseconds) {
 #undef CloseServiceHandle
 #undef GetTickCount
 #undef Sleep
+
+void test_affinity_allocation() {
+  TCHAR *output = reinterpret_cast<TCHAR *>(1);
+  fail_affinity_allocation = true;
+  CHECK(affinity_mask_to_string(1, &output) != 0);
+  CHECK(output == NULL);
+  fail_affinity_allocation = false;
+}
 
 static int run_start() {
   TCHAR name[] = _T("NSSM-Test-Startup");

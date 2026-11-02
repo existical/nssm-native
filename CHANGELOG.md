@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Parse affinity lists directly into a checked 64-bit mask, rejecting invalid
+  endpoints, reversed ranges and empty tokens without overflowing a temporary
+  array. [NSSM-004](docs/fixes/NSSM-004.md).
+- Count sparse CPU masks correctly and map GUI affinity rows to actual CPU
+  identifiers; stop inventing CPUs when the affinity query fails.
+  [NSSM-029](docs/fixes/NSSM-029.md).
+- Reject unsigned numeric inputs without digits, negative values and overflow;
+  preserve complete-input validation for settings and prefix parsing for
+  affinity ranges. [NSSM-031](docs/fixes/NSSM-031.md).
+- Add numeric/affinity regressions, registry preservation checks and hidden
+  Windows list-box tests. Fix the affinity formatter's allocation-failure check
+  and terminate the invalid-affinity warning's argument list.
 - Bound command quoting by counting and writing through the same checked
   traversal. Oversized dump arguments fail without overwriting buffers or
   emitting a truncated command. [NSSM-002](docs/fixes/NSSM-002.md).

@@ -68,3 +68,78 @@ void test_dump_quoting() {
   dump_executable = _T("C:\\Tools\\nssm.exe");
   capture_dump = false;
 }
+
+void test_numeric_settings() {
+  registry_fixture registry;
+  const TCHAR *service = _T("NSSM-Test-Numeric");
+  HKEY key = open_registry(service, KEY_READ | KEY_WRITE);
+  REQUIRE(key);
+  CHECK(set_number(key, NSSM_REG_THROTTLE, 17) == 0);
+  const TCHAR *invalid[] = { _T(""), _T("-1"), _T("4294967296"), _T("1,2"), _T("12ms") };
+  for (size_t i = 0; i < _countof(invalid); i++) {
+    value_t value = {};
+    value.string = const_cast<TCHAR *>(invalid[i]);
+    CHECK(setting_set_number(service, key, NSSM_REG_THROTTLE, NULL, &value, NULL) == -1);
+    unsigned long stored = 0;
+    CHECK(get_number(key, NSSM_REG_THROTTLE, &stored, false) == 1 && stored == 17);
+  }
+  TCHAR max_value[] = _T("4294967295");
+  value_t value = {};
+  value.string = max_value;
+  CHECK(setting_set_number(service, key, NSSM_REG_THROTTLE, NULL, &value, NULL) == 1);
+  unsigned long stored = 0;
+  CHECK(get_number(key, NSSM_REG_THROTTLE, &stored, false) == 1 && stored == MAXDWORD);
+  CHECK(setting_set_number(service, key, NSSM_REG_THROTTLE, NULL, NULL, NULL) == 0);
+  RegCloseKey(key);
+
+  TCHAR action[] = _T("Exit");
+  value.string = action;
+  const TCHAR *bad_codes[] = { _T("-1"), _T("4294967296"), _T("1,2"), _T("+") };
+  for (size_t i = 0; i < _countof(bad_codes); i++) {
+    CHECK(setting_set_exit_action(service, NULL, NSSM_REG_EXIT, NULL, &value, bad_codes[i]) == -1);
+    value_t result = {};
+    CHECK(setting_get_exit_action(service, NULL, NSSM_REG_EXIT, (void *) _T("Restart"), &result, bad_codes[i]) == -1);
+    CHECK(result.string == NULL);
+  }
+  CHECK(setting_set_exit_action(service, NULL, NSSM_REG_EXIT, NULL, &value, max_value) == 1);
+  value_t result = {};
+  CHECK(setting_get_exit_action(service, NULL, NSSM_REG_EXIT, (void *) _T("Restart"), &result, max_value) == 1);
+  REQUIRE(result.string);
+  CHECK(! _tcscmp(result.string, action));
+  HeapFree(GetProcessHeap(), 0, result.string);
+}
+
+void test_affinity_settings() {
+  registry_fixture registry;
+  const TCHAR *service = _T("NSSM-Test-Affinity");
+  HKEY key = open_registry(service, KEY_READ | KEY_WRITE);
+  REQUIRE(key);
+  TCHAR valid[] = _T("0-2,2,4");
+  value_t value = {};
+  value.string = valid;
+  CHECK(setting_set_affinity(service, key, NSSM_REG_AFFINITY, NULL, &value, NULL) == 1);
+  TCHAR stored[512];
+  CHECK(get_string(key, NSSM_REG_AFFINITY, stored, sizeof(stored), false, false, true) == 0);
+  CHECK(! _tcscmp(stored, _T("0-2,4")));
+  const TCHAR *invalid[] = { _T("0-64"), _T("3-1"), _T("0,"), _T("0,,1"), _T("4294967296"), _T("-1") };
+  for (size_t i = 0; i < _countof(invalid); i++) {
+    value.string = const_cast<TCHAR *>(invalid[i]);
+    CHECK(setting_set_affinity(service, key, NSSM_REG_AFFINITY, NULL, &value, NULL) == -1);
+    CHECK(get_string(key, NSSM_REG_AFFINITY, stored, sizeof(stored), false, false, true) == 0);
+    CHECK(! _tcscmp(stored, _T("0-2,4")));
+  }
+  value_t result = {};
+  CHECK(setting_get_affinity(service, key, NSSM_REG_AFFINITY, NULL, &result, NULL) == 1);
+  REQUIRE(result.string);
+  CHECK(! _tcscmp(result.string, _T("0-2,4")));
+  HeapFree(GetProcessHeap(), 0, result.string);
+  TCHAR empty[] = _T("");
+  value.string = empty;
+  CHECK(setting_set_affinity(service, key, NSSM_REG_AFFINITY, NULL, &value, NULL) == 0);
+  result.string = NULL;
+  CHECK(setting_get_affinity(service, key, NSSM_REG_AFFINITY, NULL, &result, NULL) == 0);
+  REQUIRE(result.string);
+  CHECK(! _tcscmp(result.string, _T("All")));
+  HeapFree(GetProcessHeap(), 0, result.string);
+  RegCloseKey(key);
+}

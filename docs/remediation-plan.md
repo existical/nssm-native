@@ -11,12 +11,14 @@ NSSM-001 through NSSM-024 match its numbered findings. NSSM-025 through NSSM-034
 split its additional follow-ups into independent tasks. The latter ten are
 follow-ups, not ten additional reproduced high-priority defects.
 
-**Status:** B00 and B01 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
+**Status:** B00, B01 and B02 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
 are fixed but unreleased through
 [PR 5](https://github.com/existical/nssm-native/pull/5); see the
 [fix records](fixes/README.md) and [validation](reviews/b01-validation.md).
-B02 is in progress: [NSSM-002](fixes/NSSM-002.md) has an implementation and
-[validation](reviews/b02-validation.md), pending merge. The other tasks
+[NSSM-002](fixes/NSSM-002.md) is fixed but unreleased through
+[PR 7](https://github.com/existical/nssm-native/pull/7).
+B03 (NSSM-004, NSSM-029 and NSSM-031) has an implementation and
+[validation](reviews/b03-validation.md), pending merge. The other tasks
 remain planned; NSSM-034 requires confirmation.
 [Previously merged changes](fixes/implemented.md) retain separate CONT IDs.
 
@@ -39,8 +41,8 @@ work. P2 tasks share an early group only when they support the same repair.
 | --- | --- | --- | --- |
 | B00 | Publish review, plan, fix records and comparison rules | Documentation only | Merged in PR 4; CONT-001 through CONT-005 backfilled |
 | B01 | Registry and environment bounds | 001, 003, 010, 011 | Merged in PR 5; regression, sanitizer and four-configuration checks passed |
-| B02 | Safe command quoting | 002 | In progress, merge pending; bounds, dump failures and shell round trips validated |
-| B03 | Affinity and numeric parsing | 004, 029, 031 | Check all numeric callers; no invalid indexing or shifts |
+| B02 | Safe command quoting | 002 | Merged in PR 7; bounds, dump failures and shell round trips validated |
+| B03 | Affinity and numeric parsing | 004, 029, 031 | In progress, merge pending; boundary, registry and sparse GUI-list tests pass |
 | B04 | Hook ownership and launch handles | 005, 006, 017 | Deterministic completion/failure tests; no leaked handles |
 | B05 | Logger lifetime | 007 | Close/join ordering and restart isolation established |
 | B06 | Offline rotation | 008 | Verify thresholds and delay independently; no real long sleeps |
@@ -106,7 +108,7 @@ failure. Record that oversized expansions previously could corrupt memory.
 **Command quoting bounds — P1, B02.** Review finding 2; reproduced.
 Touch `src/nssm.cpp:quote` and dump tests.
 
-**Implementation status:** in progress, pending merge. See the
+**Implementation status:** merged in PR 7, unreleased. See the
 [fix record](fixes/NSSM-002.md) for results and shell-mode limitations.
 
 1. Use a checked output builder, or one escape traversal shared by counting
@@ -148,6 +150,8 @@ duplicate normalization and verify the empty-value behavior from CONT-003.
 **Affinity array and range bounds — P1, B03.** Review finding 4; endpoint
 acceptance reproduced, array overflow source-traced.
 Touch `src/service.cpp:affinity_string_to_mask`.
+
+**Implementation status:** in progress; see [NSSM-004](fixes/NSSM-004.md).
 
 1. Parse validated tokens directly into an unsigned 64-bit mask, or bound
    every temporary-array access before writing. Prefer eliminating the array.
@@ -437,6 +441,10 @@ failures through both callers.
 
 **Safe error-log insertions — P2, B09.** Review finding 22; source-traced.
 
+B03 includes the missing sentinel on the invalid-affinity warning, needed for
+its stricter rejection path. The remaining calls and typed wrapper below are
+still planned; NSSM-022 is not complete.
+
 1. Pass the formatted return-code string and add missing null terminators at
    the identified log_event calls. Audit all calls against message resources.
 2. Add a small typed or counted insertion wrapper to prevent recurrence,
@@ -534,6 +542,8 @@ consistent.
 
 **CPU detection boundaries — P2, B03.** Follow-up D.
 
+**Implementation status:** in progress; see [NSSM-029](fixes/NSSM-029.md).
+
 Bound shifts before evaluation, count set bits correctly, and audit callers
 that assume CPU indices are dense. Use the actual allowed mask in affinity
 validation/UI where necessary. Test zero/sparse/full masks, bit 63, x86 masks
@@ -554,6 +564,11 @@ rights. Done when export succeeds with the documented minimum access.
 ### NSSM 031
 
 **Checked unsigned numeric parsing — P2, B03.** Follow-up F.
+
+**Implementation status:** in progress; see [NSSM-031](fixes/NSSM-031.md).
+The implementation retains legacy base-zero parsing (decimal, octal and hex),
+leading whitespace and an optional plus sign, while rejecting negatives,
+missing digits, overflow and standalone suffixes.
 
 Define accepted decimal syntax, detect no digits, sign misuse and range
 overflow, and check conversion errors. Preserve a prefix-parsing mode for

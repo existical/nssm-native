@@ -1,4 +1,5 @@
 #include "nssm.h"
+#include <errno.h>
 
 extern unsigned long tls_index;
 extern bool is_admin;
@@ -22,14 +23,18 @@ int str_equiv(const TCHAR *a, const TCHAR *b) {
   return 1;
 }
 
-/* Convert a string to a number. */
+/* Base-zero unsigned conversion. Return 2 for a valid prefix with a suffix. */
 int str_number(const TCHAR *string, unsigned long *number, TCHAR **bogus) {
-  if (! string) return 1;
-
-  *number = _tcstoul(string, bogus, 0);
-  if (**bogus) return 2;
-
-  return 0;
+  if (bogus) *bogus = (TCHAR *) string;
+  if (! string || ! number || ! bogus) return 1;
+  const TCHAR *start = string;
+  while (_istspace(*start)) start++;
+  if (*start == _T('-')) return 1;
+  errno = 0;
+  unsigned long parsed = _tcstoul(string, bogus, 0);
+  if (*bogus == string || errno == ERANGE) return 1;
+  *number = parsed;
+  return **bogus ? 2 : 0;
 }
 
 /* User requested us to print our version. */
@@ -48,8 +53,12 @@ static bool is_version(const TCHAR *s) {
 }
 
 int str_number(const TCHAR *string, unsigned long *number) {
+  if (! number) return 1;
   TCHAR *bogus;
-  return str_number(string, number, &bogus);
+  unsigned long parsed;
+  int ret = str_number(string, &parsed, &bogus);
+  if (! ret) *number = parsed;
+  return ret;
 }
 
 /* Does a char need to be escaped? */
@@ -208,11 +217,16 @@ static int elevate(int argc, TCHAR **argv, unsigned long message) {
   return exitcode;
 }
 
+DWORD_PTR cpu_affinity_mask() {
+  DWORD_PTR affinity, system_affinity;
+  if (! GetProcessAffinityMask(GetCurrentProcess(), &affinity, &system_affinity)) return 0;
+  return system_affinity;
+}
+
 int num_cpus() {
-  DWORD_PTR i, affinity, system_affinity;
-  if (! GetProcessAffinityMask(GetCurrentProcess(), &affinity, &system_affinity)) return 64;
-  for (i = 0; system_affinity & (1LL << i); i++) if (i == 64) break;
-  return (int) i;
+  int count = 0;
+  for (DWORD_PTR mask = cpu_affinity_mask(); mask; mask >>= 1) count += (int) (mask & 1);
+  return count;
 }
 
 const TCHAR *nssm_unquoted_imagepath() {

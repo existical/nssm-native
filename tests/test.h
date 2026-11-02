@@ -53,4 +53,7 @@ void test_registry_bounds();
 void test_multisz_bounds();
 void test_quoting();
 int quoting_child(int, TCHAR **);
+void test_numeric();
+void test_affinity();
+void test_cpu_detection();
 #endif

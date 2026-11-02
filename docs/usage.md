@@ -42,6 +42,34 @@ NSSM supports application arguments, startup directories, service accounts,
 environment settings, restart policies, output redirection, log rotation and
 event hooks.
 
+## Numeric settings and processor affinity
+
+Unsigned numeric settings accept values from 0 through 4294967295. Decimal
+input is supported; the legacy base-zero syntax is retained, so `0x10` means
+16 and `010` means 8. Leading whitespace and a plus sign remain accepted.
+Negative numbers, missing digits, overflow and trailing characters are rejected
+without replacing the stored value. Use canonical decimal AppExit identifiers;
+the separate export/exit-action work still tracks legacy key-name behavior.
+
+`AppAffinity` accepts comma-separated CPU IDs and inclusive ranges such as
+`0-2,4,10-12`. IDs must be in 0 through 63; both endpoints are checked, reversed
+ranges and empty tokens are rejected, and duplicate entries are harmless.
+`All`, the default/reset command and the CLI's empty affinity value still
+remove the restriction.
+
+The configuration format remains 64-bit on both architectures. Actual
+availability is determined by the Windows affinity API in its current/primary
+processor group; the x86 API mask is 32-bit. Parsing a valid identifier does
+not establish that that CPU exists locally. At application launch, NSSM
+intersects the requested mask with the system mask. A disjoint mask causes the
+existing affinity-setting failure warning and leaves the child on its inherited
+affinity. This work does not add cross-group selection.
+
+The GUI lists actual system-mask CPU IDs, even when they have gaps. If the query
+fails or reports no mask, it lists no specific CPUs; the `All` option remains
+available. Choosing a specific affinity with no selected CPU fails validation.
+Selecting every displayed CPU retains the existing unrestricted behavior.
+
 ## Configuration dumps
 
 `nssm dump MyService` prints commands for cmd.exe. Check its exit status before

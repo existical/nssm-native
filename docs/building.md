@@ -70,7 +70,7 @@ The historical two-part numeric Windows version layout is
 
 ## Checks
 
-CTest runs seven groups:
+CTest runs nine groups:
 
 - `nssm.smoke`: command exit status, exact version output, PE machine type and
   embedded file/product metadata.
@@ -88,22 +88,31 @@ CTest runs seven groups:
 - `nssm.quoting`: zero/exact/insufficient capacities, generated escaping cases,
   dump failure output, and actual child arguments through cmd.exe and a batch
   file with delayed expansion disabled.
+- `nssm.numeric`: checked DWORD parsing, prefix/complete-input contracts,
+  rejected-setting preservation and AppExit numeric boundaries.
+- `nssm.affinity`: range endpoints, repeated entries, mask/string round trips,
+  formatter allocation failure, injected CPU masks and real hidden list-box
+  row/CPU mapping.
 
 The regression executable compiles the production implementations with test-only
 wrappers for the entry point, SCM, registry queries, expansion, allocations
-and dump output.
+and dump output. CPU masks and the affinity formatter's allocation failure
+are also injected only in the regression executable.
 Tests do not install or control real
 services. Registry access is redirected within the test process to a temporary
 HKCU key, which is deleted afterwards; the hook test also creates and removes a
 copy of its executable under the build directory. The quoting test creates and
 removes a similar copy and an ASCII batch file there. Environment changes are local
-to each test process. No administrator rights are required.
+to each test process. Affinity tests create and destroy a hidden Windows list
+box; they do not display a service editor. No administrator rights are required.
 
 The B01 [validation record](reviews/b01-validation.md) includes the observed
 pre-fix failures, full build matrix, static analysis and separate
 AddressSanitizer commands.
 The B02 [validation record](reviews/b02-validation.md) records quoting bounds,
 shell round trips, caller error handling and the existing batch-file limitations.
+The B03 [validation record](reviews/b03-validation.md) covers numeric bounds,
+affinity parsing, native-width masks and GUI row mapping.
 
 The startup progress checks follow the SCM checkpoint/wait-hint contract in
 [Microsoft's SERVICE_STATUS reference](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/ns-winsvc-service_status),
