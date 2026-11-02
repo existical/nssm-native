@@ -108,6 +108,7 @@ static LPVOID WINAPI service_allocate(HANDLE heap, DWORD flags, SIZE_T bytes) {
 #define get_process_creation_time launch_test::time
 #define get_process_exit_time launch_test::exit_time
 #define kill_process launch_test::kill
+#define kill_process_tree(...) launch_test::kill_tree(__VA_ARGS__)
 #define nssm_hook launch_test::hook
 #define log_event launch_test::log
 #include "../src/service.cpp"
@@ -128,6 +129,7 @@ static LPVOID WINAPI service_allocate(HANDLE heap, DWORD flags, SIZE_T bytes) {
 #undef get_process_creation_time
 #undef get_process_exit_time
 #undef kill_process
+#undef kill_process_tree
 #undef nssm_hook
 #undef log_event
 #undef HeapAlloc

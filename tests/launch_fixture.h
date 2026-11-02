@@ -21,6 +21,7 @@ void environment(TCHAR *);
 int time(HANDLE, FILETIME *);
 int exit_time(HANDLE, FILETIME *);
 int kill(kill_t *);
+unsigned long kill_tree(kill_t *, unsigned long);
 int hook(hook_thread_t *, nssm_service_t *, TCHAR *, TCHAR *, unsigned long *, unsigned long, bool);
 int hook(hook_thread_t *, nssm_service_t *, TCHAR *, TCHAR *, unsigned long *, unsigned long);
 int hook(hook_thread_t *, nssm_service_t *, TCHAR *, TCHAR *, unsigned long *);

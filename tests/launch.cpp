@@ -3,7 +3,7 @@
 namespace launch_test {
 static bool active, create_ok, terminate_ok, resume_ok, abort_hook, stopped;
 static bool process_closed, thread_closed, resumed;
-static unsigned closes, output_closes, creates, resumes, waits;
+static unsigned closes, output_closes, creates, resumes, waits, tree_calls;
 static DWORD wait_result, create_error, launch_flags;
 static int process_token, thread_token;
 static HANDLE process_handle = &process_token, thread_handle = &thread_token;
@@ -13,7 +13,7 @@ const TCHAR *imagepath() { return live_image.empty() ? nssm_imagepath() : &live_
 static void reset() {
   active = create_ok = terminate_ok = resume_ok = true;
   abort_hook = stopped = process_closed = thread_closed = resumed = false;
-  closes = output_closes = creates = resumes = waits = 0;
+  closes = output_closes = creates = resumes = waits = tree_calls = 0;
   wait_result = WAIT_OBJECT_0;
   create_error = ERROR_ACCESS_DENIED;
   launch_flags = 0;
@@ -77,6 +77,11 @@ void environment(TCHAR *env) { if (! active) duplicate_environment_strings(env);
 int time(HANDLE h, FILETIME *value) { if (! active) return get_process_creation_time(h, value); ZeroMemory(value, sizeof(*value)); return 0; }
 int exit_time(HANDLE h, FILETIME *value) { if (! active) return get_process_exit_time(h, value); ZeroMemory(value, sizeof(*value)); return 0; }
 int kill(kill_t *k) { if (! active) return kill_process(k); CHECK(k->process_handle == process_handle); stopped = true; return 1; }
+unsigned long kill_tree(kill_t *k, unsigned long pid) {
+  if (! active) return kill_process_tree(k, pid);
+  CHECK(k->process_handle == process_handle && ! process_closed && k->pid == pid);
+  tree_calls++; return 0;
+}
 int hook(hook_thread_t *list, nssm_service_t *service, TCHAR *event, TCHAR *action, unsigned long *control, unsigned long deadline, bool async) {
   if (! active) return nssm_hook(list, service, event, action, control, deadline, async);
   return abort_hook && ! _tcscmp(event, NSSM_HOOK_EVENT_START) && ! _tcscmp(action, NSSM_HOOK_ACTION_PRE) ? NSSM_HOOK_STATUS_ABORT : NSSM_HOOK_STATUS_NOTFOUND;
@@ -100,6 +105,7 @@ static void service_case(bool suspended, bool created, bool resume_success, bool
   _tcscpy_s(service->name, _T("Launch test")); _tcscpy_s(service->exe, _T("fake.exe"));
   service->allow_restart = true; service->no_console = true; service->throttle_delay = 1;
   service->affinity = suspended ? 1 : 0;
+  service->kill_process_tree = true;
   InitializeCriticalSection(&service->hook_section);
   int result = start_service(service);
   if (abort || ! created || (suspended && ! resume_success)) {
@@ -112,6 +118,7 @@ static void service_case(bool suspended, bool created, bool resume_success, bool
     CHECK(thread_closed && ! process_closed); // Process ownership stays with service.
     CHECK(resumes == (suspended ? 1U : 0U));
     CHECK(stop_service(service, 0, true, true) == 0);
+    CHECK(tree_calls == 1 && process_closed);
   }
   CHECK(output_closes == 1);
   CHECK(closes == (created && ! abort ? 2U : 0U));

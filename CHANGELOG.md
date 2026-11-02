@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Retain original process handles through descendant cleanup, validate each
+  child against its immediate parent, and skip unverifiable identities.
+  Check process/thread identity before signalling and close read-only tree
+  traversal handles. [NSSM-009](docs/fixes/NSSM-009.md).
+- Add deterministic PID/TID reuse and failure cases, service root ownership
+  checks, and live cleanup of isolated seven-process trees. Document depth,
+  snapshot, shared-console and foreign-window limitations.
 - Correct offline rotation's swapped size/delay arguments for stdout and
   stderr. Named options preserve the full 64-bit size threshold and use only
   the configured copy/truncate delay. [NSSM-008](docs/fixes/NSSM-008.md).

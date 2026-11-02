@@ -70,7 +70,7 @@ The historical two-part numeric Windows version layout is
 
 ## Checks
 
-CTest runs fourteen groups:
+CTest runs sixteen groups:
 
 - `nssm.smoke`: command exit status, exact version output, PE machine type and
   embedded file/product metadata.
@@ -104,6 +104,10 @@ CTest runs fourteen groups:
   100 repeated logger lifecycles with unchanged handle counts.
 - `nssm.rotation`: offline size/age thresholds, high size words, delay requests,
   copy and rename modes, both streams, shared paths, failures and collisions.
+- `nssm.process_identity`: simulated PID/TID reuse, immediate-parent lifetimes,
+  handle ownership, failures, depth bounds and intercepted signalling.
+- `nssm.process_live`: read-only traversal and cleanup of owned seven-process
+  trees, including an already-exited root, with stable handle counts.
 
 The regression executable compiles the production implementations with test-only
 wrappers for the entry point, SCM, registry queries, expansion, allocations
@@ -127,6 +131,10 @@ a 60-second CTest limit and bounded waits.
 Offline rotation tests use real temporary files, a fixed clock, injected
 large-file metadata and intercepted sleeps. They do not create large files
 or perform long waits, and retain the standard 20-second group limit.
+Process identity tests intercept console/window/thread signalling. Live tree
+tests launch only detached copies of the test executable and restrict process
+opens/termination to their reported PIDs. Helpers have bounded exit waits and
+fixture cleanup; the live group has a 60-second CTest limit.
 
 The B01 [validation record](reviews/b01-validation.md) includes the observed
 pre-fix failures, full build matrix, static analysis and separate
@@ -141,6 +149,8 @@ The B05 [validation record](reviews/b05-validation.md) covers logger ownership,
 draining/cancellation, restart isolation and the limits of forced shutdown.
 The B06 [validation record](reviews/b06-validation.md) covers offline rotation
 parameters, threshold/delay behavior and legacy comparison.
+The B07 [validation record](reviews/b07-validation.md) covers process identity,
+held handles, signalling checks and isolated live descendant cleanup.
 
 The startup progress checks follow the SCM checkpoint/wait-hint contract in
 [Microsoft's SERVICE_STATUS reference](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/ns-winsvc-service_status),

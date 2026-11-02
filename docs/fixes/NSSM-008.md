@@ -3,12 +3,12 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P1; finding 8 in the 2026 November 2 review |
-| State | In progress; implementation present, merge pending |
+| State | Fixed, unreleased |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`, `v2.24-103-gdee49fc` |
 | Reproduced against | `b41b26e4c304b0dfd5202e1bb3fd99286766f178` |
 | Evidence | Real temporary log rotation through both output setup paths; sleep requests intercepted |
 | Fix PR | [PR 11](https://github.com/existical/nssm-native/pull/11) |
-| Implementation commit | `f3459073f215025c7292c28f38b00d9c1f3f97b1` (merge pending) |
+| Implementation commit | `f3459073f215025c7292c28f38b00d9c1f3f97b1`; merged at `9a5a14549b1837ba518ed577905aaafe04236d66` |
 | First release | Not yet released |
 
 The offline rotation function expected seconds, delay, low size word and high

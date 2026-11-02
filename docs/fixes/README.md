@@ -61,11 +61,18 @@ all four CI configurations passing:
 | --- | --- | --- | --- |
 | [NSSM-007](NSSM-007.md) | Own logger state and join before releasing thread handles | Fixed, unreleased | Not yet released |
 
-B06 is under review in [PR 11](https://github.com/existical/nssm-native/pull/11), pending merge:
+B06 merged in [PR 11](https://github.com/existical/nssm-native/pull/11), with
+all four CI configurations passing:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |
-| [NSSM-008](NSSM-008.md) | Separate offline rotation size, age and delay options | In progress | Not yet released |
+| [NSSM-008](NSSM-008.md) | Separate offline rotation size, age and delay options | Fixed, unreleased | Not yet released |
+
+B07 has an implementation and regression coverage, pending review and merge:
+
+| ID | Change | State | First release |
+| --- | --- | --- | --- |
+| [NSSM-009](NSSM-009.md) | Retain validated process identities through tree cleanup | In progress | Not yet released |
 
 The [implementation plan](../remediation-plan.md) tracks NSSM-001 through
 NSSM-034. Check each record's state before assuming inclusion in a build.

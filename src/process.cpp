@@ -89,51 +89,46 @@ int get_process_exit_time(HANDLE process_handle, FILETIME *ft) {
   return 0;
 }
 
-int check_parent(kill_t *k, PROCESSENTRY32 *pe, unsigned long ppid) {
-  /* Check parent process ID matches. */
-  if (pe->th32ParentProcessID != ppid) return 1;
+typedef DWORD (WINAPI *process_id_function_t)(HANDLE);
 
-  /*
-    Process IDs can be reused so do a sanity check by making sure the child
-    has been running for less time than the parent.
-    Though unlikely, it's possible that the parent exited and its process ID
-    was already reused, so we'll also compare against its exit time.
-  */
-  HANDLE process_handle = OpenProcess(PROCESS_QUERY_INFORMATION, false, pe->th32ProcessID);
-  if (! process_handle) {
-    TCHAR pid_string[16];
-    _sntprintf_s(pid_string, _countof(pid_string), _TRUNCATE, _T("%lu"), pe->th32ProcessID);
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OPENPROCESS_FAILED, pid_string, k->name, error_string(GetLastError()), 0);
-    return 2;
-  }
+/* Resolve optional identity APIs without adding a newer Windows import. */
+static process_id_function_t process_id_function(const char *name) {
+  HMODULE module = GetModuleHandle(_T("kernel32.dll"));
+  return module ? (process_id_function_t) GetProcAddress(module, name) : NULL;
+}
 
-  FILETIME ft;
-  if (get_process_creation_time(process_handle, &ft)) {
-    CloseHandle(process_handle);
-    return 3;
-  }
+static bool has_time(const FILETIME *ft) {
+  return ft->dwLowDateTime || ft->dwHighDateTime;
+}
 
-  CloseHandle(process_handle);
+/* The caller must keep this handle open throughout validation and use. */
+static bool process_identity(kill_t *k) {
+  if (! k || ! k->pid || ! k->process_handle || ! has_time(&k->creation_time)) return false;
+  process_id_function_t id = process_id_function("GetProcessId");
+  if (! id || id(k->process_handle) != k->pid) return false;
+  FILETIME born;
+  return ! get_process_creation_time(k->process_handle, &born) && ! CompareFileTime(&born, &k->creation_time);
+}
 
-  /* Verify that the parent's creation time is not later. */
-  if (CompareFileTime(&k->creation_time, &ft) > 0) return 4;
-
-  /* Verify that the parent's exit time is not earlier. */
-  if (CompareFileTime(&k->exit_time, &ft) < 0) return 5;
-
-  return 0;
+static bool process_running(kill_t *k) {
+  return process_identity(k) && WaitForSingleObject(k->process_handle, 0) == WAIT_TIMEOUT;
 }
 
 /* Send some window messages and hope the window respects one or more. */
 int CALLBACK kill_window(HWND window, LPARAM arg) {
   kill_t *k = (kill_t *) arg;
+  if (! process_running(k)) return 1;
 
   unsigned long pid;
-  if (! GetWindowThreadProcessId(window, &pid)) return 1;
+  DWORD thread = GetWindowThreadProcessId(window, &pid);
+  if (! thread) return 1;
   if (pid != k->pid) return 1;
 
   /* First try sending WM_CLOSE to request that the window close. */
   k->signalled |= PostMessage(window, WM_CLOSE, k->exitcode, 0);
+
+  /* A foreign HWND can be destroyed/recycled between messages. Recheck it. */
+  if (! process_running(k) || GetWindowThreadProcessId(window, &pid) != thread || pid != k->pid) return 1;
 
   /*
     Then tell the window that the user is logging off and it should exit
@@ -153,6 +148,11 @@ int CALLBACK kill_window(HWND window, LPARAM arg) {
 */
 int kill_threads(nssm_service_t *service, kill_t *k) {
   int ret = 0;
+  if (! process_running(k)) return 0;
+  process_id_function_t owner = process_id_function("GetProcessIdOfThread");
+  if (! owner) return 0;
+  FILETIME cutoff;
+  GetSystemTimeAsFileTime(&cutoff);
 
   /* Get a snapshot of all threads in the system. */
   HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
@@ -171,12 +171,19 @@ int kill_threads(nssm_service_t *service, kill_t *k) {
     return 0;
   }
 
-  /* This thread belongs to the doomed process so signal it. */
-  if (te.th32OwnerProcessID == k->pid) {
-    ret |= PostThreadMessage(te.th32ThreadID, WM_QUIT, k->exitcode, 0);
-  }
-
   while (true) {
+    if (te.th32OwnerProcessID == k->pid && process_running(k)) {
+      HANDLE thread = OpenThread(SYNCHRONIZE | THREAD_QUERY_INFORMATION, false, te.th32ThreadID);
+      if (thread) {
+        FILETIME born, exited, kernel, user;
+        if (owner(thread) == k->pid && GetThreadTimes(thread, &born, &exited, &kernel, &user) &&
+            CompareFileTime(&born, &k->creation_time) >= 0 && CompareFileTime(&born, &cutoff) <= 0 &&
+            WaitForSingleObject(thread, 0) == WAIT_TIMEOUT && process_running(k)) {
+          ret |= PostThreadMessage(te.th32ThreadID, WM_QUIT, k->exitcode, 0);
+        }
+        CloseHandle(thread);
+      }
+    }
     /* Try to get the next thread. */
     if (! Thread32Next(snapshot, &te)) {
       unsigned long error = GetLastError();
@@ -184,10 +191,6 @@ int kill_threads(nssm_service_t *service, kill_t *k) {
       log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_THREAD_ENUMERATE_FAILED, k->name, error_string(GetLastError()), 0);
       CloseHandle(snapshot);
       return ret;
-    }
-
-    if (te.th32OwnerProcessID == k->pid) {
-      ret |= PostThreadMessage(te.th32ThreadID, WM_QUIT, k->exitcode, 0);
     }
   }
 
@@ -202,12 +205,10 @@ int kill_threads(kill_t *k) {
 
 /* Give the process a chance to die gracefully. */
 int kill_process(nssm_service_t *service, kill_t *k) {
-  if (! k) return 1;
-
-  unsigned long ret;
-  if (GetExitCodeProcess(k->process_handle, &ret)) {
-    if (ret != STILL_ACTIVE) return 1;
-  }
+  if (! process_identity(k)) { SetLastError(ERROR_INVALID_DATA); return 0; }
+  DWORD state = WaitForSingleObject(k->process_handle, 0);
+  if (state == WAIT_OBJECT_0) return 1;
+  if (state != WAIT_TIMEOUT) return 0;
 
   /* Try to send a Control-C event to the console. */
   if (k->stop_method & NSSM_STOP_METHOD_CONSOLE) {
@@ -255,6 +256,7 @@ int kill_console(nssm_service_t *service, kill_t *k) {
   unsigned long ret;
 
   if (! k) return 1;
+  if (! process_running(k)) return 2;
 
   /* Check we loaded AttachConsole(). */
   if (! imports.AttachConsole) return 4;
@@ -289,6 +291,7 @@ int kill_console(nssm_service_t *service, kill_t *k) {
   }
 
   /* Send the event. */
+  if (! ret && ! process_running(k)) ret = 2;
   if (! ret) {
     if (! GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0)) {
       log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_GENERATECONSOLECTRLEVENT_FAILED, k->name, error_string(GetLastError()), 0);
@@ -316,87 +319,125 @@ int kill_console(kill_t *k) {
   return kill_console(NULL, k);
 }
 
-void walk_process_tree(nssm_service_t *service, walk_function_t fn, kill_t *k, unsigned long ppid) {
-  if (! k) return;
-  /* Shouldn't happen unless the service failed to start. */
-  if (! k->pid) return; /* XXX: needed? */
-  unsigned long pid = k->pid;
-  unsigned long depth = k->depth;
+static unsigned long tree_failure(kill_t *k, DWORD error) {
+  TCHAR pid[16];
+  _sntprintf_s(pid, _countof(pid), _TRUNCATE, _T("%lu"), k ? k->pid : 0);
+  log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_PROCESS_TREE_SKIPPED, pid, k && k->name ? k->name : NSSM, error_string(error), 0);
+  return 1;
+}
 
-  TCHAR pid_string[16], code[16];
-  _sntprintf_s(pid_string, _countof(pid_string), _TRUNCATE, _T("%lu"), pid);
-  _sntprintf_s(code, _countof(code), _TRUNCATE, _T("%lu"), k->exitcode);
-  if (fn == kill_process) log_event(EVENTLOG_INFORMATION_TYPE, NSSM_EVENT_KILLING, k->name, pid_string, code, 0);
+/*
+  Each frame borrows one pinned process handle and owns its snapshot and child
+  handles. No PID is reopened after validation. Keep the parent's handle until
+  all descendants have been considered, including after the parent exits.
+*/
+static unsigned long walk_process_node(nssm_service_t *service, walk_function_t fn, kill_t *k, unsigned long ppid, bool child_node) {
+  if (! process_identity(k)) return tree_failure(k, ERROR_INVALID_DATA);
+  if (k->depth >= 128) return tree_failure(k, ERROR_STACK_OVERFLOW);
 
-  /* We will need a process handle in order to call TerminateProcess() later. */
-  HANDLE process_handle = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_TERMINATE, false, pid);
-  if (process_handle) {
-    /* Kill this process first, then its descendents. */
-    TCHAR ppid_string[16];
-    _sntprintf_s(ppid_string, _countof(ppid_string), _TRUNCATE, _T("%lu"), ppid);
-    if (fn == kill_process) log_event(EVENTLOG_INFORMATION_TYPE, NSSM_EVENT_KILL_PROCESS_TREE, pid_string, ppid_string, k->name, 0);
-    k->process_handle = process_handle; /* XXX: open directly? */
-    if (! fn(service, k)) {
-      /* Maybe it already died. */
-      unsigned long ret;
-      if (! GetExitCodeProcess(process_handle, &ret) || ret == STILL_ACTIVE) {
-        if (k->stop_method & NSSM_STOP_METHOD_TERMINATE) log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_TERMINATEPROCESS_FAILED, pid_string, k->name, error_string(GetLastError()), 0);
-        else log_event(EVENTLOG_WARNING_TYPE, NSSM_EVENT_PROCESS_STILL_ACTIVE, k->name, pid_string, NSSM, NSSM_REG_STOP_METHOD_SKIP, 0);
-      }
-    }
-
-    CloseHandle(process_handle);
-  }
-  else log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OPENPROCESS_FAILED, pid_string, k->name, error_string(GetLastError()), 0);
-
-  /* Get a snapshot of all processes in the system. */
+  FILETIME cutoff;
+  GetSystemTimeAsFileTime(&cutoff);
   HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
   if (snapshot == INVALID_HANDLE_VALUE) {
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_CREATETOOLHELP32SNAPSHOT_PROCESS_FAILED, k->name, error_string(GetLastError()), 0);
-    return;
+    return 1;
   }
 
   PROCESSENTRY32 pe;
   ZeroMemory(&pe, sizeof(pe));
   pe.dwSize = sizeof(pe);
-
-  if (! Process32First(snapshot, &pe)) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_PROCESS_ENUMERATE_FAILED, k->name, error_string(GetLastError()), 0);
-    CloseHandle(snapshot);
-    return;
-  }
-
-  /* This is a child of the doomed process so kill it. */
-  k->depth++;
-  if (! check_parent(k, &pe, pid)) {
-    k->pid = pe.th32ProcessID;
-    walk_process_tree(service, fn, k, ppid);
-  }
-  k->pid = pid;
-
-  while (true) {
-    /* Try to get the next process. */
-    if (! Process32Next(snapshot, &pe)) {
-      unsigned long ret = GetLastError();
-      if (ret == ERROR_NO_MORE_FILES) break;
-      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_PROCESS_ENUMERATE_FAILED, k->name, error_string(GetLastError()), 0);
+  /* Confirm the parent relation in a fresh snapshot taken AFTER pinning the
+     child. This also rejects replacements created within one clock tick. */
+  if (child_node) {
+    bool found = false;
+    if (Process32First(snapshot, &pe)) {
+      do {
+        if (pe.th32ProcessID == k->pid) {
+          found = pe.th32ParentProcessID == ppid;
+          break;
+        }
+      } while (Process32Next(snapshot, &pe));
+    }
+    if (! found) {
       CloseHandle(snapshot);
-      k->depth = depth;
-      return;
+      return tree_failure(k, ERROR_INVALID_DATA);
     }
-
-    if (! check_parent(k, &pe, pid)) {
-      k->pid = pe.th32ProcessID;
-      walk_process_tree(service, fn, k, ppid);
-    }
-    k->pid = pid;
   }
-  k->depth = depth;
 
+  unsigned long errors = 0;
+  if (fn == kill_process) {
+    TCHAR pid[16], parent[16], code[16];
+    _sntprintf_s(pid, _countof(pid), _TRUNCATE, _T("%lu"), k->pid);
+    _sntprintf_s(parent, _countof(parent), _TRUNCATE, _T("%lu"), ppid);
+    _sntprintf_s(code, _countof(code), _TRUNCATE, _T("%lu"), k->exitcode);
+    log_event(EVENTLOG_INFORMATION_TYPE, NSSM_EVENT_KILLING, k->name, pid, code, 0);
+    log_event(EVENTLOG_INFORMATION_TYPE, NSSM_EVENT_KILL_PROCESS_TREE, pid, parent, k->name, 0);
+  }
+  if (! fn(service, k)) {
+    DWORD error = GetLastError();
+    if (WaitForSingleObject(k->process_handle, 0) != WAIT_OBJECT_0) {
+      TCHAR pid[16];
+      _sntprintf_s(pid, _countof(pid), _TRUNCATE, _T("%lu"), k->pid);
+      if (fn == kill_process && (k->stop_method & NSSM_STOP_METHOD_TERMINATE))
+        log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_TERMINATEPROCESS_FAILED, pid, k->name, error_string(error ? error : ERROR_PROCESS_ABORTED), 0);
+      else if (fn == kill_process)
+        log_event(EVENTLOG_WARNING_TYPE, NSSM_EVENT_PROCESS_STILL_ACTIVE, k->name, pid, NSSM, NSSM_REG_STOP_METHOD_SKIP, 0);
+      else tree_failure(k, error ? error : ERROR_PROCESS_ABORTED);
+      errors++;
+    }
+  }
+
+  /* Use this immediate parent's actual lifetime, not the root's timestamps. */
+  FILETIME kernel, user;
+  if (! GetProcessTimes(k->process_handle, &k->creation_time, &k->exit_time, &kernel, &user)) {
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_GETPROCESSTIMES_FAILED, error_string(GetLastError()), 0);
+    CloseHandle(snapshot);
+    return errors + 1;
+  }
+
+  if (Process32First(snapshot, &pe)) {
+    do {
+      if (pe.th32ParentProcessID != k->pid || pe.th32ProcessID == k->pid) continue;
+      kill_t child = *k;
+      child.pid = pe.th32ProcessID;
+      child.depth = k->depth + 1;
+      child.signalled = 0;
+      DWORD access = SYNCHRONIZE | PROCESS_QUERY_INFORMATION;
+      access |= fn == kill_process ? PROCESS_TERMINATE : PROCESS_VM_READ;
+      child.process_handle = OpenProcess(access, false, child.pid);
+      if (! child.process_handle) {
+        TCHAR pid[16];
+        _sntprintf_s(pid, _countof(pid), _TRUNCATE, _T("%lu"), child.pid);
+        log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OPENPROCESS_FAILED, pid, k->name, error_string(GetLastError()), 0);
+        errors++;
+        continue;
+      }
+      if (get_process_creation_time(child.process_handle, &child.creation_time) ||
+          CompareFileTime(&child.creation_time, &k->creation_time) < 0 ||
+          CompareFileTime(&child.creation_time, &cutoff) > 0 ||
+          (has_time(&k->exit_time) && CompareFileTime(&child.creation_time, &k->exit_time) > 0)) {
+        errors += tree_failure(&child, ERROR_INVALID_DATA);
+      }
+      else errors += walk_process_node(service, fn, &child, k->pid, true);
+      CloseHandle(child.process_handle);
+    } while (Process32Next(snapshot, &pe));
+  }
+  DWORD error = GetLastError();
+  if (error != ERROR_NO_MORE_FILES) {
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_PROCESS_ENUMERATE_FAILED, k->name, error_string(error), 0);
+    errors++;
+  }
   CloseHandle(snapshot);
+  return errors;
 }
 
-void kill_process_tree(kill_t *k, unsigned long ppid) {
+unsigned long walk_process_tree(nssm_service_t *service, walk_function_t fn, kill_t *k, unsigned long ppid) {
+  if (! k || ! fn) return tree_failure(k, ERROR_INVALID_PARAMETER);
+  kill_t root = *k;
+  return walk_process_node(service, fn, &root, ppid, false);
+}
+
+unsigned long kill_process_tree(kill_t *k, unsigned long ppid) {
   return walk_process_tree(NULL, kill_process, k, ppid);
 }
 

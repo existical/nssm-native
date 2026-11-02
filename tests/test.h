@@ -71,5 +71,8 @@ void test_launch_handles();
 void test_hook_live_handles();
 void test_logger_ownership();
 void test_offline_rotation();
+void test_process_identity();
+void test_process_live();
+int process_tree_child(int, TCHAR **);
 int logger_child(int, TCHAR **);
 #endif

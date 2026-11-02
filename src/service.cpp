@@ -2055,10 +2055,7 @@ void CALLBACK end_service(void *arg, unsigned char why) {
     service->exitcode = exitcode;
     /* Check real exit time. */
     if (exitcode != STILL_ACTIVE) get_process_exit_time(service->process_handle, &service->exit_time);
-    CloseHandle(service->process_handle);
   }
-
-  service->process_handle = 0;
 
   /*
     Log that the service ended BEFORE logging about killing the process
@@ -2076,6 +2073,9 @@ void CALLBACK end_service(void *arg, unsigned char why) {
     service_kill_t(service, &k);
     kill_process_tree(&k, service->pid);
   }
+  /* Keep the root identity pinned until descendant cleanup has finished. */
+  if (service->process_handle) CloseHandle(service->process_handle);
+  service->process_handle = 0;
   service->pid = 0;
 
   /* Exit hook. */
@@ -2375,25 +2375,32 @@ int service_process_tree(int argc, TCHAR **argv) {
     k.pid = service_status.dwProcessId;
     if (! k.pid) continue;
 
-    k.process_handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, k.pid);
+    k.process_handle = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, k.pid);
     if (! k.process_handle) {
       _ftprintf(stderr, _T("%s: %lu: %s\n"), canonical_name, k.pid, error_string(GetLastError()));
+      errors++;
       continue;
     }
 
-    if (get_process_creation_time(k.process_handle, &k.creation_time)) continue;
+    if (get_process_creation_time(k.process_handle, &k.creation_time)) {
+      CloseHandle(k.process_handle);
+      errors++;
+      continue;
+    }
     /* Dummy exit time so we can check processes' parents. */
     GetSystemTimeAsFileTime(&k.exit_time);
 
     service = alloc_nssm_service();
     if (! service) {
+      CloseHandle(k.process_handle);
       errors++;
       continue;
     }
 
     _sntprintf_s(service->name, _countof(service->name), _TRUNCATE, _T("%s"), canonical_name);
     k.name = service->name;
-    walk_process_tree(service, print_process, &k, k.pid);
+    if (walk_process_tree(service, print_process, &k, k.pid)) errors++;
+    CloseHandle(k.process_handle);
 
     cleanup_nssm_service(service);
   }
