@@ -123,6 +123,9 @@ static int test(const std::wstring &nssm) {
       require(manager != NULL, "Lifecycle test requires disposable elevated host");
       {
         fixture owned(manager, nssm, dir.path);
+        // Bootstrap Parameters/Application so NSSM recognises its own service
+        // before using the public setting commands. The service stays disabled.
+        owned.configure(helper);
         const std::wstring set = L"set " + quoted(owned.name) + L" ";
         command(nssm, set + L"Application " + quoted(helper));
         command(nssm, set + L"AppDirectory " + quoted(dir.path));

@@ -48,10 +48,10 @@ authentication; these candidate executables and manifests are unsigned.
 
 For a later release, choose a distinct unused continuation tag. The supported
 format includes v2.25.0-beta.1, v2.25.0-rc.1 and v2.25.0; these are examples,
-not assigned tags. Preserve all original upstream tags. After review and
-approval of a concrete candidate, create its tag on the chosen clean commit,
-copy candidate.md to docs/releases/<tag>.md, and record the actual included
-IDs, compatibility changes, evidence and known limits. Build with `-Tag <tag>`;
+not assigned tags. Preserve all original upstream tags. Prepare docs/releases/<tag>.md from candidate.md and commit the actual
+included IDs, compatibility changes, evidence and known limits before tagging.
+After review and approval of that concrete candidate, create the tag on the
+chosen clean commit. Build with `-Tag <tag>`;
 the script verifies that tag and HEAD agree and version generation selects it.
 Do not claim a first release in fix records until the tag and matching assets
 are published. Upload the complete package set, then verify public checksums
