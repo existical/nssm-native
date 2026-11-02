@@ -36,7 +36,8 @@ four CI configurations passing:
 | --- | --- | --- | --- |
 | [NSSM-002](NSSM-002.md) | Bound command-quoting output | Fixed, unreleased | Not yet released |
 
-B03 has an implementation under review, pending merge:
+B03 is under review in [PR 8](https://github.com/existical/nssm-native/pull/8),
+pending merge:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |

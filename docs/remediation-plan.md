@@ -377,6 +377,12 @@ Default=Ignore/42=Exit reproduction.
 **Done:** every explicit rule is preserved or export reports failure.
 Depends on NSSM-002 and NSSM-033; retain CONT-002's typed dump helper.
 
+The B03 caller audit also found that the AppExit setter retains the original
+numeric key spelling while lookup formats the parsed code as decimal. Add
+round-trip cases for leading zeros, hexadecimal, whitespace and plus signs,
+then define canonicalization/migration behavior. This mismatch is
+source-inspected; B03's AppExit integration tests cover canonical decimal IDs.
+
 ### NSSM 017
 
 **Launch handle cleanup — P2, B04.** Review finding 17; hook leak reproduced.
