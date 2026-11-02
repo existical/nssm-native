@@ -44,9 +44,19 @@ boundaries, not atomic safety for foreign HWNDs or isolated Ctrl+C delivery.
 `nssm.process_live` starts seven copies of the regression executable: a root,
 two children and four grandchildren. They are detached from consoles, report
 their PIDs/parent PIDs through an inherited pipe, and wait on a fixture-owned
-event with a 30-second fallback. Production OpenProcess and TerminateProcess
-calls are guarded by the reported PID allowlist. The test creates no service
-and sends no real console, window or thread messages.
+event with a 30-second fallback. Test wrappers filter real snapshot entries to
+reported fixture PIDs, preserving their actual parent relationships. Production
+OpenProcess and TerminateProcess calls are independently guarded by that PID
+allowlist. The test creates no service and sends no real console, window or
+thread messages. Production enumeration itself remains system-wide.
+
+An initial x86 Release CI run exposed the fixture's use of an unrestricted
+host snapshot: its ownership guard rejected a non-fixture PID during traversal,
+and handle counts also differed. Filtering the fixture's snapshot input avoids
+depending on unrelated host processes and stale parent-PID entries; the
+process-opening and termination guards remain strict. Fake-process tests cover
+rejected and reused candidates without inspecting unrelated live processes.
+Both identity groups subsequently passed 20 consecutive x86 Release runs.
 
 Read-only traversal sees all seven without terminating them. Cleanup is then
 tested with the root running and with the root already terminated while its

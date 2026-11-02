@@ -132,9 +132,9 @@ Offline rotation tests use real temporary files, a fixed clock, injected
 large-file metadata and intercepted sleeps. They do not create large files
 or perform long waits, and retain the standard 20-second group limit.
 Process identity tests intercept console/window/thread signalling. Live tree
-tests launch only detached copies of the test executable and restrict process
-opens/termination to their reported PIDs. Helpers have bounded exit waits and
-fixture cleanup; the live group has a 60-second CTest limit.
+tests launch only detached copies of the test executable and restrict snapshot
+entries and process opens/termination to their reported PIDs. Helpers have
+bounded exit waits and fixture cleanup; the live group has a 60-second CTest limit.
 
 The B01 [validation record](reviews/b01-validation.md) includes the observed
 pre-fix failures, full build matrix, static analysis and separate

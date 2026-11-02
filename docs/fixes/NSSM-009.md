@@ -90,6 +90,11 @@ There are explicit compatibility limits:
   not a containment mechanism. Job Objects and service-callback concurrency
   remain separate work.
 
+Live test snapshots are restricted to reported fixture PIDs before the walker
+sees them; OpenProcess and TerminateProcess retain independent ownership
+guards. This isolates tests from unrelated host processes and stale parent-PID
+entries. Production enumeration remains system-wide.
+
 See [deterministic tests](../../tests/process_tree.cpp),
 [owned live trees](../../tests/process_live.cpp),
 [service ownership assertions](../../tests/launch.cpp) and

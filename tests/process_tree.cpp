@@ -106,14 +106,22 @@ static HANDLE WINAPI snapshot(DWORD flags, DWORD pid) {
   return value;
 }
 static BOOL first(HANDLE value, LPPROCESSENTRY32 entry) {
-  if (! active) return Process32First(value, entry);
+  if (! active) {
+    BOOL result = Process32First(value, entry);
+    while (result && process_live_test::active && ! process_live_test::owns(entry->th32ProcessID)) result = Process32Next(value, entry);
+    return result;
+  }
   handle *h = lookup(value); h->index = 0;
   if (first_fail) { SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
   if (h->entries.empty()) { SetLastError(ERROR_NO_MORE_FILES); return FALSE; }
   *entry = h->entries[0]; return TRUE;
 }
 static BOOL next(HANDLE value, LPPROCESSENTRY32 entry) {
-  if (! active) return Process32Next(value, entry);
+  if (! active) {
+    BOOL result = Process32Next(value, entry);
+    while (result && process_live_test::active && ! process_live_test::owns(entry->th32ProcessID)) result = Process32Next(value, entry);
+    return result;
+  }
   handle *h = lookup(value);
   if (next_fail) { SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
   if (++h->index == h->entries.size()) { SetLastError(ERROR_NO_MORE_FILES); return FALSE; }
