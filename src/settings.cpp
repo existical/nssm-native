@@ -12,6 +12,11 @@ extern const TCHAR *priority_strings[];
 extern const TCHAR *hook_event_strings[];
 extern const TCHAR *hook_action_strings[];
 
+struct dump_context_t {
+  const settings_t *setting;
+  const TCHAR *source_name;
+};
+
 /* Does the parameter refer to the default value of the setting? */
 static inline int is_default(const TCHAR *value) {
   return (str_equiv(value, NSSM_DEFAULT_STRING) || str_equiv(value, _T("*")) || ! value[0]);
@@ -155,117 +160,101 @@ static int setting_dump_string(const TCHAR *service_name, unsigned long type, co
 }
 
 static int setting_set_exit_action(const TCHAR *service_name, void *param, const TCHAR *name, void *default_value, value_t *value, const TCHAR *additional) {
-  unsigned long exitcode;
-  TCHAR *code;
-  TCHAR action_string[ACTION_LEN];
-
-  if (additional) {
-    /* Default action? */
-    if (is_default(additional)) code = 0;
-    else {
-      if (str_number(additional, &exitcode)) return -1;
-      code = (TCHAR *) additional;
-    }
+  TCHAR code[16] = {};
+  if (additional && ! is_default(additional)) {
+    unsigned long exitcode;
+    if (str_number(additional, &exitcode)) return -1;
+    _sntprintf_s(code, _countof(code), _TRUNCATE, _T("%lu"), exitcode);
   }
-
-  HKEY key = open_registry(service_name, name, KEY_WRITE);
-  if (! key) return -1;
-
-  long error;
-  int ret = 1;
-
-  /* Resetting to default? */
-  if (value && value->string) _sntprintf_s(action_string, _countof(action_string), _TRUNCATE, _T("%s"), value->string);
-  else {
-    if (code) {
-      /* Delete explicit action. */
-      error = RegDeleteValue(key, code);
-      RegCloseKey(key);
-      if (error == ERROR_SUCCESS || error == ERROR_FILE_NOT_FOUND) return 0;
-      print_message(stderr, NSSM_MESSAGE_REGDELETEVALUE_FAILED, code, service_name, error_string(error));
+  const TCHAR *action = value ? value->string : NULL;
+  bool reset = ! action;
+  const TCHAR *fallback = default_value ? (const TCHAR *) default_value : exit_action_strings[NSSM_EXIT_RESTART];
+  if (! action && ! code[0]) action = fallback;
+  if (action) {
+    unsigned i;
+    for (i = 0; exit_action_strings[i]; i++) if (str_equiv(action, exit_action_strings[i])) break;
+    if (! exit_action_strings[i]) {
+      print_message(stderr, NSSM_MESSAGE_INVALID_EXIT_ACTION, action);
+      for (i = 0; exit_action_strings[i]; i++) _ftprintf(stderr, _T("%s\n"), exit_action_strings[i]);
       return -1;
     }
-    else {
-      /* Explicitly keep the default action. */
-      if (default_value) _sntprintf_s(action_string, _countof(action_string), _TRUNCATE, _T("%s"), (TCHAR *) default_value);
-      ret = 0;
-    }
+    action = exit_action_strings[i];
   }
-
-  /* Validate the string. */
-  for (int i = 0; exit_action_strings[i]; i++) {
-    if (! _tcsnicmp((const TCHAR *) action_string, exit_action_strings[i], ACTION_LEN)) {
-      if (default_value && str_equiv(action_string, (TCHAR *) default_value)) ret = 0;
-      if (RegSetValueEx(key, code, 0, REG_SZ, (const unsigned char *) exit_action_strings[i], (unsigned long) (_tcslen(action_string) + 1) * sizeof(TCHAR)) != ERROR_SUCCESS) {
-        print_message(stderr, NSSM_MESSAGE_SETVALUE_FAILED, code, service_name, error_string(GetLastError()));
-        RegCloseKey(key);
-        return -1;
-      }
-
-      RegCloseKey(key);
-      return ret;
-    }
+  HKEY key = open_registry(service_name, name, KEY_SET_VALUE);
+  if (! key) return -1;
+  long error;
+  if (! action) error = RegDeleteValue(key, code);
+  else error = RegSetValueEx(key, code, 0, REG_SZ, (const unsigned char *) action, (unsigned long) (_tcslen(action) + 1) * sizeof(TCHAR));
+  RegCloseKey(key);
+  if (! action && error == ERROR_FILE_NOT_FOUND) return 0;
+  if (error != ERROR_SUCCESS) {
+    print_message(stderr, action ? NSSM_MESSAGE_SETVALUE_FAILED : NSSM_MESSAGE_REGDELETEVALUE_FAILED, code, service_name, error_string(error));
+    return -1;
   }
-
-  print_message(stderr, NSSM_MESSAGE_INVALID_EXIT_ACTION, action_string);
-  for (int i = 0; exit_action_strings[i]; i++) _ftprintf(stderr, _T("%s\n"), exit_action_strings[i]);
-
-  return -1;
+  return reset || (action && str_equiv(action, fallback)) ? 0 : 1;
 }
 
 static int setting_get_exit_action(const TCHAR *service_name, void *param, const TCHAR *name, void *default_value, value_t *value, const TCHAR *additional) {
+  if (! value) return -1;
+  value->string = NULL;
   unsigned long exitcode = 0;
-  unsigned long *code = 0;
-
-  if (additional) {
-    if (! is_default(additional)) {
-      if (str_number(additional, &exitcode)) return -1;
-      code = &exitcode;
-    }
+  unsigned long *code = NULL;
+  if (additional && ! is_default(additional)) {
+    if (str_number(additional, &exitcode)) return -1;
+    code = &exitcode;
   }
-
-  TCHAR action_string[ACTION_LEN];
+  TCHAR action[ACTION_LEN];
   bool default_action;
-  if (get_exit_action(service_name, code, action_string, &default_action)) return -1;
-
-  value_from_string(name, value, action_string);
-
-  if (default_action && ! _tcsnicmp((const TCHAR *) action_string, (TCHAR *) default_value, ACTION_LEN)) return 0;
-  return 1;
+  if (get_exit_action(service_name, code, action, &default_action)) return -1;
+  if (value_from_string(name, value, action) < 0) return -1;
+  const TCHAR *fallback = default_value ? (const TCHAR *) default_value : exit_action_strings[NSSM_EXIT_RESTART];
+  return default_action && str_equiv(action, fallback) ? 0 : 1;
 }
 
-static int setting_dump_exit_action(const TCHAR *service_name, void *param, const TCHAR *name, void *default_value, value_t *value, const TCHAR *additional) {
-  int errors = 0;
-  HKEY key = open_registry(service_name, NSSM_REG_EXIT, KEY_READ);
-  if (! key) return -1;
+/* Runtime lookup uses canonical decimal names; never activate dormant aliases in a dump. */
+static bool canonical_exit_code(const TCHAR *name) {
+  if (! name[0]) return true;
+  if (name[0] == _T('0') && name[1]) return false;
+  unsigned long number = 0;
+  for (const TCHAR *p = name; *p; p++) {
+    if (*p < _T('0') || *p > _T('9')) return false;
+    unsigned long digit = *p - _T('0');
+    if (number > (MAXDWORD - digit) / 10) return false;
+    number = number * 10 + digit;
+  }
+  return true;
+}
 
-  TCHAR code[16];
+static int setting_dump_exit_action(const TCHAR *service_name, void *param, const TCHAR *name, void *setting_ptr, value_t *value, const TCHAR *additional) {
+  HKEY key = NULL;
+  long error = RegOpenKeyEx((HKEY) param, name, 0, KEY_QUERY_VALUE, &key);
+  if (error == ERROR_FILE_NOT_FOUND) return 0;
+  if (error != ERROR_SUCCESS) {
+    print_message(stderr, NSSM_MESSAGE_GET_SETTING_FAILED, name, service_name);
+    return -1;
+  }
   unsigned long index = 0;
+  TCHAR code[16] = {};
   while (true) {
-    int ret = enumerate_registry_values(key, &index, code, _countof(code));
-    if (ret == ERROR_NO_MORE_ITEMS) break;
-    if (ret != ERROR_SUCCESS) continue;
-    bool valid = true;
-    int i;
-    for (i = 0; i < _countof(code); i++) {
-      if (! code[i]) break;
-      if (code[i] >= _T('0') || code[i] <= _T('9')) continue;
-      valid = false;
+    error = enumerate_registry_values(key, &index, code, _countof(code));
+    if (error == ERROR_NO_MORE_ITEMS) { error = ERROR_SUCCESS; break; }
+    if (error != ERROR_SUCCESS) break; // Includes oversized names; never retry without progress.
+    if (! canonical_exit_code(code)) { error = ERROR_INVALID_DATA; break; }
+    TCHAR action[ACTION_LEN];
+    error = query_exit_action(key, code, action);
+    if (error != ERROR_SUCCESS) break; // Do not export a fallback for a disappearing/broken rule.
+    value_t entry;
+    entry.string = action; // Stack-owned; no allocation to leak between rules.
+    if (setting_dump_string(service_name, REG_SZ, name, &entry, code[0] ? code : NSSM_DEFAULT_STRING)) {
+      error = ERROR_INSUFFICIENT_BUFFER;
       break;
     }
-    if (! valid) continue;
-
-    TCHAR *additional = (code[i]) ? code : NSSM_DEFAULT_STRING;
-
-    ret = setting_get_exit_action(service_name, 0, name, default_value, value, additional);
-    if (ret == 1) {
-      if (setting_dump_string(service_name, REG_SZ, name, value, additional)) errors++;
-    }
-    else if (ret < 0) errors++;
   }
-
-  if (errors) return -1;
-  return 0;
+  RegCloseKey(key);
+  if (error == ERROR_SUCCESS) return 0;
+  print_message(stderr, NSSM_MESSAGE_GET_SETTING_FAILED, name, service_name);
+  _ftprintf(stderr, _T("AppExit: %s\n"), error_string(error));
+  return -1;
 }
 
 static inline bool split_hook_name(const TCHAR *hook_name, TCHAR *hook_event, TCHAR *hook_action) {
@@ -314,6 +303,7 @@ static int setting_get_hook(const TCHAR *service_name, void *param, const TCHAR 
 }
 
 static int setting_dump_hooks(const TCHAR *service_name, void *param, const TCHAR *name, void *default_value, value_t *value, const TCHAR *additional) {
+  const dump_context_t *context = (const dump_context_t *) default_value;
   int i, j;
 
   int errors = 0;
@@ -326,13 +316,15 @@ static int setting_dump_hooks(const TCHAR *service_name, void *param, const TCHA
       TCHAR hook_name[HOOK_NAME_LENGTH];
       _sntprintf_s(hook_name, _countof(hook_name), _TRUNCATE, _T("%s/%s"), hook_event, hook_action);
 
-      int ret = setting_get_hook(service_name, param, name, default_value, value, hook_name);
+      int ret = setting_get_hook(context->source_name, param, name, context->setting->default_value, value, hook_name);
       if (ret != 1) {
         if (ret < 0) errors++;
         continue;
       }
 
       if (setting_dump_string(service_name, REG_SZ, name, value, hook_name)) errors++;
+      HeapFree(GetProcessHeap(), 0, value->string);
+      value->string = NULL;
     }
   }
 
@@ -642,7 +634,7 @@ static int setting_get_priority(const TCHAR *service_name, void *param, const TC
 }
 
 static int setting_dump_priority(const TCHAR *service_name, void *key_ptr, const TCHAR *name, void *setting_ptr, value_t *value, const TCHAR *additional) {
-  settings_t *setting = (settings_t *) setting_ptr;
+  const settings_t *setting = ((const dump_context_t *) setting_ptr)->setting;
   int ret = setting_get_priority(service_name, key_ptr, name, (void *) setting->default_value, value, 0);
   if (ret != 1) return ret;
   return setting_dump_string(service_name, REG_SZ, name, value, 0);
@@ -1017,7 +1009,8 @@ int native_get_environment(const TCHAR *service_name, void *param, const TCHAR *
 }
 
 static int native_dump_environment(const TCHAR *service_name, void *param, const TCHAR *name, void *default_value, value_t *value, const TCHAR *additional) {
-  HKEY key = open_service_registry(service_name, KEY_READ, true);
+  const dump_context_t *context = (const dump_context_t *) default_value;
+  HKEY key = open_service_registry(context->source_name, KEY_QUERY_VALUE, true);
   if (! key) return -1;
 
   int ret = setting_dump_environment(service_name, (void *) key, name, default_value, value, additional);
@@ -1375,7 +1368,9 @@ int get_setting(const TCHAR *service_name, SC_HANDLE service_handle, settings_t 
   return setting->get(service_name, service_handle, setting->name, 0, value, additional);
 }
 
-int dump_setting(const TCHAR *service_name, HKEY key, SC_HANDLE service_handle, settings_t *setting) {
+int dump_setting(const TCHAR *service_name, HKEY key, SC_HANDLE service_handle, settings_t *setting, const TCHAR *source_name) {
+  if (! source_name) source_name = service_name;
+  dump_context_t context = { setting, source_name };
   void *param;
   if (setting->native) {
     if (! service_handle) return -1;
@@ -1389,11 +1384,14 @@ int dump_setting(const TCHAR *service_name, HKEY key, SC_HANDLE service_handle, 
   value_t value = { 0 };
   int ret;
 
-  if (setting->dump) return setting->dump(service_name, param, setting->name, (void *) setting, &value, 0);
-  if (setting->native) ret = get_setting(service_name, service_handle, setting, &value, 0);
-  else ret = get_setting(service_name, key, setting, &value, 0);
-  if (ret != 1) return ret;
-  return setting_dump_string(service_name, setting->type, setting->name, &value, 0);
+  if (setting->dump) ret = setting->dump(service_name, param, setting->name, &context, &value, 0);
+  else {
+    if (setting->native) ret = get_setting(source_name, service_handle, setting, &value, 0);
+    else ret = get_setting(source_name, key, setting, &value, 0);
+    if (ret == 1) ret = setting_dump_string(service_name, setting->type, setting->name, &value, 0);
+  }
+  if (is_string_type(setting->type) && value.string && value.string != setting->default_value) HeapFree(GetProcessHeap(), 0, value.string);
+  return ret;
 }
 
 settings_t settings[] = {

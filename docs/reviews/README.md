@@ -35,4 +35,5 @@ Implementation evidence is retained separately in the
 [B06 offline rotation validation](b06-validation.md),
 [B07 process identity validation](b07-validation.md) and
 [B08 ownership/error-path validation](b08-validation.md) and
-[B09 redirection/logging validation](b09-validation.md) records.
+[B09 redirection/logging validation](b09-validation.md) and
+[B10 configuration-export validation](b10-validation.md) records.

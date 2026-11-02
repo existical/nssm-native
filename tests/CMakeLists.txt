@@ -22,8 +22,20 @@ foreach(property INCLUDE_DIRECTORIES COMPILE_DEFINITIONS COMPILE_OPTIONS LINK_LI
 endforeach()
 target_compile_features(nssm_regressions PRIVATE cxx_std_11)
 target_compile_options(nssm_regressions PRIVATE /EHsc)
-foreach(group environment hooks startup registry multisz quoting numeric affinity hook_lifecycle launch hook_live logger rotation process_identity process_live admin setting_ownership waits install_ownership debug_token error_messages stdin log_bytes event_insertions)
+foreach(group environment hooks startup registry multisz quoting numeric affinity hook_lifecycle launch hook_live logger rotation process_identity process_live admin setting_ownership waits install_ownership debug_token error_messages stdin log_bytes event_insertions exit_export exit_fallback export_access)
   add_test(NAME nssm.${group} COMMAND nssm_regressions ${group})
   set_tests_properties(nssm.${group} PROPERTIES TIMEOUT 20)
 endforeach()
 set_tests_properties(nssm.launch nssm.hook_live nssm.logger nssm.process_live PROPERTIES TIMEOUT 60)
+
+# Explicit opt-in: creates two uniquely named disabled services, never starts
+# either, tests real service ACLs, then deletes both using retained handles.
+option(NSSM_ENABLE_SCM_TESTS "Run isolated service tests on an elevated disposable Windows host" OFF)
+add_executable(nssm_export_live export_live.cpp)
+target_compile_features(nssm_export_live PRIVATE cxx_std_11)
+target_compile_options(nssm_export_live PRIVATE /W3 /EHsc)
+target_link_libraries(nssm_export_live PRIVATE advapi32)
+if(NSSM_ENABLE_SCM_TESTS)
+  add_test(NAME nssm.export_live COMMAND nssm_export_live "$<TARGET_FILE:nssm>")
+  set_tests_properties(nssm.export_live PROPERTIES TIMEOUT 120)
+endif()

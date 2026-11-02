@@ -227,3 +227,29 @@ behavior and the remaining offline/external-writer limitations.
 Startup failure events now contain the numeric error as text. Event arguments
 are counted and checked as string pointers at compilation; see
 [NSSM-022](fixes/NSSM-022.md). Logging remains best-effort if Windows rejects an event.
+
+## AppExit rules and configuration export
+
+AppExit export now includes explicit default and numeric rules, including
+`Default=Ignore` alongside `42=Exit`. New set/reset commands use canonical
+decimal registry names while preserving the CLI's base-zero parser: `052`
+and `0x2a` both mean 42, whereas `042` means 34. Runtime lookup already used
+canonical decimal. Dumps reject old raw aliases and malformed values rather
+than silently dropping or activating them; no existing aliases are migrated
+automatically. See [NSSM-016](fixes/NSSM-016.md) before repairing old raw keys.
+
+Missing AppExit configuration defaults to Restart. Missing numeric overrides
+use the unnamed default, if present. Invalid types, unterminated/oversized
+strings, unknown actions and query failures return errors with initialized
+outputs; runtime error handling retains Restart. See [NSSM-033](fixes/NSSM-033.md).
+
+`dump Source Target` reads Source while emitting commands for Target. Check
+the dump command's exit status and discard any partial script on failure.
+Use a quiet configuration window when consistency matters; export is not a
+transactional snapshot. Existing command-shell quoting limits still apply.
+
+Dump/get need configuration-query service access and read access to the SCM
+and registry. They no longer require SERVICE_CHANGE_CONFIG. Set/reset/edit
+still require change access. Prefer the canonical service name when access
+is restricted; see [NSSM-030](fixes/NSSM-030.md) for the precise masks and
+display-name enumeration limitation.

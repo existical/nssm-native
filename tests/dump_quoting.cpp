@@ -4,12 +4,30 @@ typedef std::basic_string<TCHAR> text_t;
 static text_t dump_output;
 static text_t dump_executable = _T("C:\\Tools\\nssm.exe");
 static bool capture_dump = false;
+static bool fail_exit_enumeration;
+static unsigned exit_enum_calls;
+static long test_enumerate_exit(HKEY key, unsigned long *index, TCHAR *name, unsigned long count) {
+  if (fail_exit_enumeration) {
+    // Bound the legacy endless retry while preserving its observable mistake.
+    if (++exit_enum_calls > 3) return ERROR_NO_MORE_ITEMS;
+    return ERROR_ACCESS_DENIED;
+  }
+  return enumerate_registry_values(key, index, name, count);
+}
 namespace reset_test {
 static bool active, fail_write, fail_delete;
+static bool tracking;
+static std::vector<void *> owned;
 static unsigned allocations;
 static LPVOID WINAPI allocate(HANDLE heap, DWORD flags, SIZE_T size) {
   if (active) { allocations++; return NULL; }
-  return HeapAlloc(heap, flags, size);
+  void *p = HeapAlloc(heap, flags, size);
+  if (tracking && p) owned.push_back(p);
+  return p;
+}
+static BOOL WINAPI release(HANDLE heap, DWORD flags, LPVOID p) {
+  for (size_t i = 0; i < owned.size(); i++) if (owned[i] == p) { owned.erase(owned.begin() + i); break; }
+  return HeapFree(heap, flags, p);
 }
 static int set(HKEY key, TCHAR *name, TCHAR *value) {
   return active && fail_write ? 1 : set_expand_string(key, name, value);
@@ -47,16 +65,44 @@ static int test_dump_printf(const TCHAR *format, ...) {
 #define _tprintf test_dump_printf
 #define nssm_exe test_nssm_exe
 #define HeapAlloc reset_test::allocate
+#define HeapFree reset_test::release
 #define set_expand_string reset_test::set
 #undef RegDeleteValue
 #define RegDeleteValue reset_test::remove
+#define enumerate_registry_values test_enumerate_exit
 #include "../src/settings.cpp"
+#undef enumerate_registry_values
 #undef HeapAlloc
+#undef HeapFree
 #undef set_expand_string
 #undef RegDeleteValue
 #define RegDeleteValue RegDeleteValueW
 #undef nssm_exe
 #undef _tprintf
+
+#include "exit_export_cases.h"
+
+void test_exit_export() {
+  registry_fixture registry;
+  const TCHAR *service = _T("NSSM-Test-ExitExport");
+  HKEY key = open_registry(service, NSSM_REG_EXIT, KEY_READ | KEY_WRITE); REQUIRE(key);
+  REQUIRE(set_string(key, _T(""), _T("Ignore")) == 0);
+  REQUIRE(set_string(key, _T("42"), _T("Exit")) == 0);
+  HKEY parameters = open_registry(service, KEY_READ); REQUIRE(parameters);
+  settings_t *setting = NULL;
+  for (unsigned i = 0; settings[i].name; i++) if (! _tcscmp(settings[i].name, NSSM_REG_EXIT)) setting = &settings[i];
+  REQUIRE(setting);
+  capture_dump = true; dump_output.clear();
+  CHECK(dump_setting(service, parameters, NULL, setting) == 0);
+  CHECK(dump_output.find(_T(" AppExit Default Ignore\n")) != text_t::npos);
+  CHECK(dump_output.find(_T(" AppExit 42 Exit\n")) != text_t::npos);
+  fail_exit_enumeration = true; exit_enum_calls = 0;
+  CHECK(dump_setting(service, parameters, NULL, setting) == -1);
+  CHECK(exit_enum_calls == 1);
+  fail_exit_enumeration = false; capture_dump = false;
+  test_exit_export_cases(service, parameters, key, setting);
+  RegCloseKey(parameters); RegCloseKey(key);
+}
 
 void test_setting_ownership() {
   registry_fixture registry;

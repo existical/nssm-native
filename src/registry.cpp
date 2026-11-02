@@ -736,11 +736,12 @@ HKEY open_service_registry(const TCHAR *service_name, REGSAM sam, bool must_exis
 
 /* Open a subkey of the service Services\<service_name>\<sub>. */
 long open_registry(const TCHAR *service_name, const TCHAR *sub, REGSAM sam, HKEY *key, bool must_exist) {
+  *key = 0;
   /* Get registry */
   TCHAR registry[KEY_LENGTH];
   if (service_registry_path(service_name, true, sub, registry, _countof(registry)) < 0) {
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, NSSM_REGISTRY, _T("open_registry()"));
-    return 0;
+    return ERROR_INSUFFICIENT_BUFFER;
   }
 
   return open_registry_key(registry, sam, key, must_exist);
@@ -991,33 +992,44 @@ int get_parameters(nssm_service_t *service, STARTUPINFO *si) {
   Returns: 0 on success.
            1 on error.
 */
+long query_exit_action(HKEY key, const TCHAR *name, TCHAR *action) {
+  _tcscpy_s(action, ACTION_LEN, exit_action_strings[NSSM_EXIT_RESTART]);
+  TCHAR buffer[ACTION_LEN] = {};
+  unsigned long type = 0, bytes = sizeof(buffer);
+  long error = RegQueryValueEx(key, name, 0, &type, (unsigned char *) buffer, &bytes);
+  if (error != ERROR_SUCCESS) return error;
+  if (type != REG_SZ || ! bytes || bytes > sizeof(buffer) || bytes % sizeof(TCHAR) ||
+      ! terminated_string(buffer, bytes / sizeof(TCHAR))) return ERROR_INVALID_DATA;
+  for (unsigned i = 0; exit_action_strings[i]; i++) {
+    if (! str_equiv(buffer, exit_action_strings[i])) continue;
+    _tcscpy_s(action, ACTION_LEN, exit_action_strings[i]);
+    return ERROR_SUCCESS;
+  }
+  return ERROR_INVALID_DATA;
+}
+
 int get_exit_action(const TCHAR *service_name, unsigned long *ret, TCHAR *action, bool *default_action) {
-  /* Are we returning the default action or a status-specific one? */
-  *default_action = ! ret;
+  _tcscpy_s(action, ACTION_LEN, exit_action_strings[NSSM_EXIT_RESTART]);
+  *default_action = true;
+  HKEY key = 0;
+  long error = open_registry(service_name, NSSM_REG_EXIT, KEY_QUERY_VALUE, &key, false);
+  if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) return 0;
+  if (error != ERROR_SUCCESS) return 1;
 
-  /* Try to open the registry */
-  HKEY key = open_registry(service_name, NSSM_REG_EXIT, KEY_READ);
-  if (! key) return 1;
-
-  unsigned long type = REG_SZ;
-  unsigned long action_len = ACTION_LEN;
-
-  TCHAR code[16];
-  if (! ret) code[0] = _T('\0');
-  else if (_sntprintf_s(code, _countof(code), _TRUNCATE, _T("%lu"), *ret) < 0) {
-    RegCloseKey(key);
-    return get_exit_action(service_name, 0, action, default_action);
+  TCHAR code[16] = {};
+  if (ret) _sntprintf_s(code, _countof(code), _TRUNCATE, _T("%lu"), *ret);
+  error = query_exit_action(key, code, action);
+  if (error == ERROR_FILE_NOT_FOUND && ret) {
+    code[0] = 0;
+    error = query_exit_action(key, code, action);
   }
-  if (RegQueryValueEx(key, code, 0, &type, (unsigned char *) action, &action_len) != ERROR_SUCCESS) {
-    RegCloseKey(key);
-    /* Try again with * as the key if an exit code was defined */
-    if (ret) return get_exit_action(service_name, 0, action, default_action);
-    return 0;
-  }
-
-  /* Close registry */
   RegCloseKey(key);
-
+  if (error == ERROR_FILE_NOT_FOUND) return 0; // Absent default means Restart.
+  if (error != ERROR_SUCCESS) {
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_QUERYVALUE_FAILED, code[0] ? code : NSSM_REG_EXIT, error_string(error));
+    return 1;
+  }
+  *default_action = ! code[0];
   return 0;
 }
 

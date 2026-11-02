@@ -40,8 +40,14 @@ static BOOL WINAPI release(HANDLE heap, DWORD flags, LPVOID memory) {
 enum query_behavior { normal, grow_once, grow_always, change_type, odd_size, query_error };
 static query_behavior behavior;
 static unsigned data_queries;
+static bool exit_query_error, exit_open_error;
+static LSTATUS WINAPI open(HKEY key, LPCTSTR name, DWORD options, REGSAM access, PHKEY result) {
+  if (exit_open_error) { *result = NULL; return ERROR_ACCESS_DENIED; }
+  return RegOpenKeyEx(key, name, options, access, result);
+}
 static LSTATUS WINAPI query(HKEY key, LPCTSTR name, LPDWORD reserved,
     LPDWORD type, LPBYTE data, LPDWORD bytes) {
+  if (exit_query_error) return ERROR_ACCESS_DENIED;
   if (active && name && ! _tcscmp(name, _T("race")) && data) {
     ++data_queries;
     if (behavior == query_error) return ERROR_ACCESS_DENIED;
@@ -90,13 +96,91 @@ static void reset() {
 #define HeapFree registry_test::release
 #undef RegQueryValueEx
 #define RegQueryValueEx registry_test::query
+#undef RegOpenKeyEx
+#define RegOpenKeyEx registry_test::open
 #undef ExpandEnvironmentStrings
 #define ExpandEnvironmentStrings registry_test::expand
 #include "../src/registry.cpp"
 #undef HeapAlloc
 #undef HeapFree
 #undef RegQueryValueEx
+#undef RegOpenKeyEx
+#define RegOpenKeyEx RegOpenKeyExW
 #undef ExpandEnvironmentStrings
+
+void test_exit_fallback() {
+  registry_fixture registry;
+  const TCHAR *service = _T("NSSM-Test-ExitFallback");
+  TCHAR action[ACTION_LEN];
+  _tcscpy_s(action, _T("sentinel")); bool fallback = false;
+  CHECK(get_exit_action(service, NULL, action, &fallback) == 0);
+  CHECK(! _tcscmp(action, _T("Restart")) && fallback);
+  HKEY key = open_registry(service, NSSM_REG_EXIT, KEY_READ | KEY_WRITE); REQUIRE(key);
+  _tcscpy_s(action, _T("sentinel")); fallback = false;
+  CHECK(get_exit_action(service, NULL, action, &fallback) == 0);
+  CHECK(! _tcscmp(action, _T("Restart")) && fallback);
+  REQUIRE(set_string(key, _T(""), _T("Ignore")) == 0);
+  DWORD code = 42;
+  CHECK(get_exit_action(service, &code, action, &fallback) == 0);
+  CHECK(! _tcscmp(action, _T("Ignore")) && fallback);
+  REQUIRE(set_number(key, _T("42"), 7) == 0);
+  CHECK(get_exit_action(service, &code, action, &fallback) != 0);
+  CHECK(! _tcscmp(action, _T("Restart")) && fallback);
+  const TCHAR *actions[] = {_T("Restart"), _T("Ignore"), _T("Exit"), _T("Suicide")};
+  for (unsigned i = 0; i < _countof(actions); i++) {
+    REQUIRE(set_string(key, _T("42"), const_cast<TCHAR *>(actions[i])) == 0);
+    CHECK(get_exit_action(service, &code, action, &fallback) == 0);
+    CHECK(! _tcscmp(action, actions[i]) && ! fallback);
+  }
+  REQUIRE(set_string(key, _T("42"), _T("exit")) == 0);
+  CHECK(get_exit_action(service, &code, action, &fallback) == 0);
+  CHECK(! _tcscmp(action, _T("Exit")) && ! fallback);
+  // Keep the character after the declared payload nonzero so Windows cannot
+  // repair an omitted terminator by observing adjacent zero-filled memory.
+  const TCHAR unterminated[] = {_T('E'), _T('x'), _T('i'), _T('t'), _T('!')};
+  const TCHAR hidden[] = {_T('E'), _T('x'), _T('i'), _T('t'), 0, _T('x'), 0};
+  const TCHAR too_long[] = _T("Restart-overlong-invalid-value");
+  const struct { DWORD type; const void *data; DWORD bytes; } malformed[] = {
+    {REG_SZ, _T(""), sizeof(TCHAR)}, {REG_SZ, _T("Invalid"), 8 * sizeof(TCHAR)},
+    {REG_SZ, unterminated, 4 * sizeof(TCHAR)}, {REG_SZ, hidden, sizeof(hidden)},
+    {REG_SZ, too_long, sizeof(too_long)}, {REG_SZ, _T("Exit"), 3},
+    {REG_SZ, _T(""), 0}, {REG_EXPAND_SZ, _T("Exit"), 5 * sizeof(TCHAR)},
+    {REG_BINARY, _T("Exit"), 5 * sizeof(TCHAR)}
+  };
+  for (const auto &bad : malformed) {
+    for (unsigned which = 0; which < 2; which++) {
+      REQUIRE(RegSetValueEx(key, which ? _T("") : _T("42"), 0, bad.type, static_cast<const BYTE *>(bad.data), bad.bytes) == ERROR_SUCCESS);
+      if (bad.data == unterminated) {
+        DWORD stored = 0;
+        REQUIRE(RegQueryValueExW(key, which ? _T("") : _T("42"), NULL, NULL, NULL, &stored) == ERROR_SUCCESS);
+        REQUIRE(stored == bad.bytes);
+      }
+      _tcscpy_s(action, _T("sentinel")); fallback = false;
+      int result = get_exit_action(service, which ? NULL : &code, action, &fallback);
+      CHECK(result != 0);
+      CHECK(! _tcscmp(action, _T("Restart")) && fallback);
+    }
+  }
+  REQUIRE(set_string(key, _T(""), _T("Ignore")) == 0);
+  REQUIRE(set_string(key, _T("42"), _T("Exit")) == 0);
+  registry_test::exit_query_error = true;
+  CHECK(get_exit_action(service, &code, action, &fallback) != 0);
+  CHECK(! _tcscmp(action, _T("Restart")) && fallback);
+  registry_test::exit_query_error = false; registry_test::exit_open_error = true;
+  CHECK(get_exit_action(service, &code, action, &fallback) != 0);
+  CHECK(! _tcscmp(action, _T("Restart")) && fallback);
+  registry_test::exit_open_error = false;
+  REQUIRE(RegDeleteValue(key, _T("42")) == ERROR_SUCCESS);
+  CHECK(get_exit_action(service, &code, action, &fallback) == 0);
+  CHECK(! _tcscmp(action, _T("Ignore")) && fallback);
+  REQUIRE(RegDeleteValue(key, _T("")) == ERROR_SUCCESS);
+  CHECK(get_exit_action(service, &code, action, &fallback) == 0);
+  CHECK(! _tcscmp(action, _T("Restart")) && fallback);
+  RegCloseKey(key);
+  std::basic_string<TCHAR> long_name(KEY_LENGTH * 2, _T('x'));
+  CHECK(get_exit_action(long_name.c_str(), NULL, action, &fallback) != 0);
+  CHECK(! _tcscmp(action, _T("Restart")) && fallback);
+}
 
 static void store_raw(HKEY key, const TCHAR *name, DWORD type, const void *data, DWORD bytes) {
   REQUIRE(RegSetValueEx(key, name, 0, type, static_cast<const BYTE *>(data), bytes) == ERROR_SUCCESS);

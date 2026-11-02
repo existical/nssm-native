@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Preserve every explicit AppExit rule in export, reject invalid/noncanonical
+  names, stop on enumeration errors, and write new numeric rules under
+  canonical decimal names. Read source configuration when exporting under a
+  new service name and release dump allocations/handles.
+  [NSSM-016](docs/fixes/NSSM-016.md).
+- Request query-only service access for dump/get while retaining change access
+  for set/reset/edit. Add an opt-in test of real service ACLs on a disposable
+  Windows runner. [NSSM-030](docs/fixes/NSSM-030.md).
+- Define missing AppExit configuration as Restart, validate stored action types,
+  sizes and text, and report malformed/query-failure cases with initialized
+  outputs. [NSSM-033](docs/fixes/NSSM-033.md).
+
 - Make configured stdin inheritable and retain launch-scoped parent cleanup.
   [NSSM-012](docs/fixes/NSSM-012.md).
 - Correct UTF-16 timestamp buffers, preserve split code units and recognize

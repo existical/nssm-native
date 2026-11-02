@@ -11,7 +11,7 @@ NSSM-001 through NSSM-024 match its numbered findings. NSSM-025 through NSSM-034
 split its additional follow-ups into independent tasks. The latter ten are
 follow-ups, not ten additional reproduced high-priority defects.
 
-**Status:** B00 through B08 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
+**Status:** B00 through B09 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
 are fixed but unreleased through
 [PR 5](https://github.com/existical/nssm-native/pull/5); see the
 [fix records](fixes/README.md) and [validation](reviews/b01-validation.md).
@@ -29,8 +29,11 @@ B07 (NSSM-009) is fixed but unreleased through
 [PR 12](https://github.com/existical/nssm-native/pull/12). All nine P1 findings
 are now merged and unreleased. B08 merged in
 [PR 13](https://github.com/existical/nssm-native/pull/13); see its
-[validation](reviews/b08-validation.md). B09 has implementation and
-[validation](reviews/b09-validation.md) in [PR 14](https://github.com/existical/nssm-native/pull/14), pending merge. Other tasks
+[validation](reviews/b08-validation.md). B09 merged in
+[PR 14](https://github.com/existical/nssm-native/pull/14); see its
+[validation](reviews/b09-validation.md). B10 has implementation and
+[validation](reviews/b10-validation.md) in [PR 15](https://github.com/existical/nssm-native/pull/15),
+pending review and merge. Other tasks
 remain planned; NSSM-034 requires confirmation.
 [Previously merged changes](fixes/implemented.md) retain separate CONT IDs.
 
@@ -60,8 +63,8 @@ work. P2 tasks share an early group only when they support the same repair.
 | B06 | Offline rotation | 008 | Merged in PR 11; size/age/delay, mode/stream and failure tests pass |
 | B07 | Process identity during cleanup | 009 | Merged in PR 12; PID-reuse, signalling, failure and owned child-tree tests pass |
 | B08 | Primitive ownership and error paths | 015, 018, 019, 021, 028, 032 | Merged in PR 13; six focused implementation commits, failure tests and full matrix pass |
-| B09 | Redirection and logging correctness | 012, 013, 014, 022 | In progress; stdin, encoding, byte counts and typed event insertions covered |
-| B10 | Configuration export and exit actions | 016, 030, 033 | B01/B02; export/import comparison and query-only access |
+| B09 | Redirection and logging correctness | 012, 013, 014, 022 | Merged in PR 14; stdin, encoding, byte counts and typed event insertions validated |
+| B10 | Configuration export and exit actions | 016, 030, 033 | In progress; AppExit round trips, strict fallback values and query-only export implemented |
 | B11 | GUI and accounts | 020, 025, 026, 027, 034 | B04/B08; GUI retry tests and account API failure injection |
 | B12 | Dependencies | 023 | B01; service/group combinations round-trip through SCM |
 | B13 | Remaining service control waits | 024 | B08; zero-time and bounded-polling semantics established |
@@ -332,7 +335,7 @@ boundary, nonzero following bytes, and format/unformat round trips.
 
 ### NSSM 012
 
-**Implementation status:** implementation and tests present, pending merge;
+**Implementation status:** merged in PR 14, unreleased;
 see [NSSM-012](fixes/NSSM-012.md).
 
 **Inheritable stdin — P2, B09.** Review finding 12; missing handle flag
@@ -350,7 +353,7 @@ existing file-sharing and disposition options.
 
 ### NSSM 013
 
-**Implementation status:** implementation and tests present, pending merge;
+**Implementation status:** merged in PR 14, unreleased;
 see [NSSM-013](fixes/NSSM-013.md).
 
 **UTF-16 timestamp output — P2, B09.** Review finding 13; invalid pointer
@@ -368,7 +371,7 @@ one-byte chunks, split newlines/code units, empty lines, and rotation.
 
 ### NSSM 014
 
-**Implementation status:** implementation and tests present, pending merge;
+**Implementation status:** merged in PR 14, unreleased;
 see [NSSM-014](fixes/NSSM-014.md).
 
 B05 initializes basic read/write outputs and the initial observed file size
@@ -407,6 +410,9 @@ registry failures under heap diagnostics.
 Document the actual default written/deleted for each reset.
 
 ### NSSM 016
+
+**Implementation status:** implementation and tests present, pending merge;
+see [NSSM-016](fixes/NSSM-016.md).
 
 **Correct AppExit export — P2, B10.** Review finding 16; lost numeric rule
 reproduced, nonprogressing enumeration source-traced.
@@ -503,7 +509,7 @@ failures through both callers.
 
 ### NSSM 022
 
-**Implementation status:** implementation and tests present, pending merge;
+**Implementation status:** merged in PR 14, unreleased;
 see [NSSM-022](fixes/NSSM-022.md).
 
 **Safe error-log insertions — P2, B09.** Review finding 22; source-traced.
@@ -511,7 +517,7 @@ see [NSSM-022](fixes/NSSM-022.md).
 B03 includes the missing sentinel on the invalid-affinity warning, needed for
 its stricter rejection path. B05 adds the missing sentinel on the pipe-creation
 failure message while repairing that setup path. The remaining calls and typed wrapper below are
-implemented in B09; merge is pending.
+merged in B09 through PR 14, unreleased.
 
 1. Pass the formatted return-code string and add missing null terminators at
    the identified log_event calls. Audit all calls against message resources.
@@ -624,6 +630,9 @@ supported masks are handled without undefined shifts or phantom CPU choices.
 
 ### NSSM 030
 
+**Implementation status:** implementation and tests present, pending merge;
+see [NSSM-030](fixes/NSSM-030.md).
+
 **Read-only configuration export access — P2, B10.** Follow-up E.
 
 Assign requested SCM/service/registry rights by operation. Remove change
@@ -665,6 +674,9 @@ message and allocation/formatting failures. Done when capacities are correct
 and repeated error_string calls retain no stale pointer or extra allocation.
 
 ### NSSM 033
+
+**Implementation status:** implementation and tests present, pending merge;
+see [NSSM-033](fixes/NSSM-033.md).
 
 **Initialized AppExit fallback — P2, B10.** First part of follow-up H.
 
