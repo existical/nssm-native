@@ -106,7 +106,8 @@ four Windows CI configurations passing, including the real SCM export test:
 | [NSSM-030](NSSM-030.md) | Export with read-only service access | Fixed, unreleased | Not yet released |
 | [NSSM-033](NSSM-033.md) | Initialize and validate AppExit fallbacks | Fixed, unreleased | Not yet released |
 
-B11 has implementation and tests, pending review and merge:
+B11 has implementation and tests in [PR 16](https://github.com/existical/nssm-native/pull/16),
+pending review and merge:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |

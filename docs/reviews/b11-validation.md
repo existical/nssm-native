@@ -1,8 +1,9 @@
 # B11 GUI and account validation
 
 Validation date: 2026 November 2. Scope: NSSM-020, NSSM-025, NSSM-026,
-NSSM-027 and NSSM-034. B11 is implemented, pending review and merge, and
-unreleased. The [fix index](../fixes/README.md) records each issue's state.
+NSSM-027 and NSSM-034. B11 is implemented in
+[PR 16](https://github.com/existical/nssm-native/pull/16), pending review and
+merge, and unreleased. The [fix index](../fixes/README.md) records each issue's state.
 
 Baseline: `f28a43141a576033713190fe9b716fb503ac227a`, after PR 15 merged.
 Implementation: `b91392150c23ecec4299c4eec75a7fcb65f867fb`.
@@ -53,7 +54,11 @@ Local tools: Visual Studio 2022, MSVC toolset 14.44.35207 (compiler
 | x86 Debug | All 33 standard CTest groups passed |
 | x64 AddressSanitizer | All nine selected groups passed: account_lookup, account_rights, gui_retry, gui_password, gui_hooks, install_ownership, exit_export, hooks and registry |
 | MSVC `/analyze` Release | Build completed; remaining diagnostics retained |
-| GitHub Windows matrix | Pending PR workflow |
+| GitHub Windows matrix | All four jobs passed; x64 Release passed all 34 groups including real SCM export, others all 33 |
+
+All four jobs passed at commit `a57216b12a6c5e7e65dcc707473399f973f5a2cf`
+in [CI run 41526740827](https://github.com/existical/nssm-native/actions/runs/41526740827).
+The x64 Release log records `nssm.export_live` passing as test 34 of 34.
 
 No account.cpp analysis warnings remain in this build. Explicit GUI allocation
 guards remove the GUI null-object diagnostics; the old uninitialized action
