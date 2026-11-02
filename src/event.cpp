@@ -47,23 +47,17 @@ TCHAR *message_string(unsigned long error) {
 }
 
 /* Log a message to the Event Log */
-void log_event(unsigned short type, unsigned long id, ...) {
-  va_list arg;
-  int count;
-  TCHAR *s;
-  TCHAR *strings[NSSM_NUM_EVENT_STRINGS];
+void log_event_strings(unsigned short type, unsigned long id, unsigned short count, const TCHAR * const *insertions) {
+  if (count > NSSM_NUM_EVENT_STRINGS) return;
+  const TCHAR *strings[NSSM_NUM_EVENT_STRINGS] = {};
+  for (unsigned short i = 0; i < count; i++) strings[i] = insertions[i] ? insertions[i] : _T("");
 
   /* Open event log */
   HANDLE handle = RegisterEventSource(0, NSSM_SOURCE);
   if (! handle) return;
 
   /* Log it */
-  count = 0;
-  va_start(arg, id);
-  while ((s = va_arg(arg, TCHAR *)) && count < NSSM_NUM_EVENT_STRINGS - 1) strings[count++] = s;
-  strings[count] = 0;
-  va_end(arg);
-  ReportEvent(handle, type, 0, id, 0, count, 0, (const TCHAR **) strings, 0);
+  ReportEvent(handle, type, 0, id, 0, count, 0, count ? strings : NULL, 0);
 
   /* Close event log */
   DeregisterEventSource(handle);

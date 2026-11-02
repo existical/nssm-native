@@ -320,7 +320,7 @@ int _tmain(int argc, TCHAR **argv) {
       unsigned long error = GetLastError();
       /* User probably ran nssm with no argument */
       if (error == ERROR_FAILED_SERVICE_CONTROLLER_CONNECT) nssm_exit(usage(1));
-      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_DISPATCHER_FAILED, error_string(error), 0);
+      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_DISPATCHER_FAILED, error_string(error));
       nssm_exit(100);
     }
   }

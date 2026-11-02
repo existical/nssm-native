@@ -203,3 +203,27 @@ command reports the failure and exits with code 111. See
 Error-message buffers now have matching byte/character capacities, correct
 fallback ownership and automatic cleanup when worker threads return. Message
 text and locale selection remain unchanged; see [NSSM-032](fixes/NSSM-032.md).
+
+## Redirected input and log bytes
+
+AppStdin now gives the child an inheritable input file handle. Configured share,
+disposition and flags are retained, and the parent's launch copy is closed after
+creation succeeds or fails. See [NSSM-012](fixes/NSSM-012.md).
+
+Timestamped UTF-16LE output preserves split code units and uses complete LF
+characters as line boundaries. A leading UTF-16LE BOM gives reliable detection;
+BOM-less detection remains heuristic. Known-empty UTF-16 output files receive
+one BOM. Existing output encoding must match the child stream. An incomplete
+final byte is copied unchanged; encoding changes within a stream are unsupported.
+See [NSSM-013](fixes/NSSM-013.md) for probe and append behavior.
+
+Online size rotation includes timestamps and BOM bytes and occurs after a
+complete newline reaches the threshold. Short writes resume at the remaining
+suffix. An unrecoverable/incomplete write stops that logger and records an error;
+later child writes to its pipe may fail. Unknown initial file size no longer
+disables the threshold. See [NSSM-014](fixes/NSSM-014.md) for rotation failure
+behavior and the remaining offline/external-writer limitations.
+
+Startup failure events now contain the numeric error as text. Event arguments
+are counted and checked as string pointers at compilation; see
+[NSSM-022](fixes/NSSM-022.md). Logging remains best-effort if Windows rejects an event.

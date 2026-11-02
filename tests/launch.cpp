@@ -2,7 +2,7 @@
 
 namespace launch_test {
 static bool active, create_ok, terminate_ok, resume_ok, abort_hook, stopped;
-static bool process_closed, thread_closed, resumed;
+static bool process_closed, thread_closed, resumed, affinity_ok = true;
 static unsigned closes, output_closes, creates, resumes, waits, tree_calls;
 static DWORD wait_result, create_error, launch_flags;
 static int process_token, thread_token;
@@ -66,7 +66,7 @@ BOOL WINAPI affinity(HANDLE h, PDWORD_PTR process, PDWORD_PTR system) {
   if (! active) return GetProcessAffinityMask(h, process, system);
   *process = *system = 1; return TRUE;
 }
-BOOL WINAPI set_affinity(HANDLE h, DWORD_PTR mask) { return active ? TRUE : SetProcessAffinityMask(h, mask); }
+BOOL WINAPI set_affinity(HANDLE h, DWORD_PTR mask) { if (! active) return SetProcessAffinityMask(h, mask); if (! affinity_ok) SetLastError(ERROR_ACCESS_DENIED); return affinity_ok; }
 BOOL WINAPI status(SERVICE_STATUS_HANDLE h, LPSERVICE_STATUS value) { return active ? TRUE : SetServiceStatus(h, value); }
 BOOL WINAPI free_console() { return active ? TRUE : FreeConsole(); }
 int parameters(nssm_service_t *service, STARTUPINFO *si) { return active ? 0 : get_parameters(service, si); }
@@ -88,7 +88,6 @@ int hook(hook_thread_t *list, nssm_service_t *service, TCHAR *event, TCHAR *acti
 }
 int hook(hook_thread_t *l, nssm_service_t *s, TCHAR *e, TCHAR *a, unsigned long *c, unsigned long d) { return hook(l,s,e,a,c,d,true); }
 int hook(hook_thread_t *l, nssm_service_t *s, TCHAR *e, TCHAR *a, unsigned long *c) { return hook(l,s,e,a,c,NSSM_HOOK_DEADLINE,true); }
-void log(unsigned short, unsigned long, ...) { /* No event-log writes in the launch/SCM harness. */ }
 
 static void environment_case(bool created, bool terminated, DWORD waited, int expected) {
   reset(); create_ok = created; terminate_ok = terminated; wait_result = waited;
@@ -126,6 +125,34 @@ static void service_case(bool suspended, bool created, bool resume_success, bool
   DeleteCriticalSection(&service->hook_section);
   delete service; active = false;
 }
+}
+
+void test_launch_events() {
+  using namespace launch_test;
+  event_test::records.clear(); event_test::active = true;
+  reset(); create_ok = false;
+  nssm_service_t *service = new nssm_service_t();
+  _tcscpy_s(service->name, _T("Event test")); _tcscpy_s(service->exe, _T("fake.exe"));
+  service->allow_restart = true; service->no_console = true;
+  InitializeCriticalSection(&service->hook_section);
+  int result = monitor_service(service);
+  CHECK(result != 0);
+  REQUIRE(! event_test::records.empty());
+  const event_test::record &last = event_test::records.back();
+  CHECK(last.id == NSSM_EVENT_START_SERVICE_FAILED && last.type == EVENTLOG_ERROR_TYPE);
+  REQUIRE(last.strings.size() == 3);
+  CHECK(last.strings[0] == _T("fake.exe") && last.strings[1] == _T("Event test"));
+  CHECK(last.strings[2] == std::to_wstring(result));
+  DeleteCriticalSection(&service->hook_section); delete service; active = false;
+  event_test::records.clear(); affinity_ok = false;
+  service_case(true, true, true, false);
+  bool found = false;
+  for (const auto &entry : event_test::records) if (entry.id == NSSM_EVENT_SETPROCESSAFFINITYMASK_FAILED) {
+    found = true; REQUIRE(entry.strings.size() == 2);
+    CHECK(entry.strings[0] == _T("Launch test"));
+    CHECK(entry.strings[1] == error_string(ERROR_ACCESS_DENIED));
+  }
+  CHECK(found); affinity_ok = true; event_test::active = false;
 }
 
 void test_launch_handles() {

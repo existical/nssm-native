@@ -1,5 +1,7 @@
 #include "test.h"
 #include "rotation_fixture.h"
+#include <algorithm>
+#include "event_capture.h"
 
 namespace logger_test {
 static bool checking;
@@ -12,6 +14,46 @@ static DWORD forced_wait;
 static HANDLE deferred_thread, blocked_output, write_entered;
 static LPTHREAD_START_ROUTINE deferred_routine;
 static void *deferred_argument;
+static bool stream_test, fail_info, fail_size, fail_move, fail_truncate, fail_read;
+static std::string stream_input;
+static size_t read_position;
+static DWORD read_chunk, short_write;
+static LONGLONG fail_after;
+static ULONGLONG bytes_written;
+static unsigned rotations, write_errors;
+static std::vector<std::basic_string<TCHAR> > rotated_paths;
+static SYSTEMTIME fixed_time = {2026, 11, 1, 2, 3, 4, 5, 6};
+static BOOL WINAPI read(HANDLE h, LPVOID data, DWORD size, LPDWORD count, LPOVERLAPPED overlap) {
+  if (! stream_test) return ReadFile(h, data, size, count, overlap);
+  if (fail_read) { *count = 0; SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
+  *count = static_cast<DWORD>((std::min)(size_t((std::min)(size, read_chunk)), stream_input.size() - read_position));
+  if (! *count) { SetLastError(ERROR_BROKEN_PIPE); return FALSE; }
+  memcpy(data, stream_input.data() + read_position, *count); read_position += *count; return TRUE;
+}
+static BOOL WINAPI information(HANDLE h, LPBY_HANDLE_FILE_INFORMATION info) {
+  if (stream_test && fail_info) { SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
+  return rotation_test::information(h, info);
+}
+static BOOL WINAPI file_size(HANDLE h, PLARGE_INTEGER size) {
+  if (stream_test && fail_size) { SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
+  return GetFileSizeEx(h, size);
+}
+static void WINAPI now(LPSYSTEMTIME value) { if (stream_test) *value = fixed_time; else rotation_test::now(value); }
+static BOOL WINAPI move(LPCTSTR from, LPCTSTR to) {
+  if (stream_test && fail_move) { SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
+  BOOL result = rotation_test::move(from, to);
+  if (stream_test && result) rotated_paths.push_back(to);
+  return result;
+}
+static BOOL WINAPI copy(LPCTSTR from, LPCTSTR to, BOOL exists) {
+  BOOL result = rotation_test::copy(from, to, exists);
+  if (stream_test && result) rotated_paths.push_back(to);
+  return result;
+}
+static BOOL WINAPI truncate(HANDLE h) {
+  if (stream_test && fail_truncate) { SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
+  return SetEndOfFile(h);
+}
 static LPVOID WINAPI allocate(HANDLE heap, DWORD flags, SIZE_T bytes) {
   if (fail_alloc) { fail_alloc = false; return NULL; }
   void *p = HeapAlloc(heap, flags, bytes);
@@ -57,8 +99,19 @@ static HANDLE WINAPI file(LPCTSTR path, DWORD access, DWORD sharing, LPSECURITY_
   return CreateFile(path, access, sharing, a, disposition, flags, template_file);
 }
 static BOOL WINAPI write(HANDLE h, LPCVOID data, DWORD size, LPDWORD written, LPOVERLAPPED overlap) {
+  // Turn the legacy UTF-16 pointer defect into a safe contract assertion.
+  if (size && reinterpret_cast<ULONG_PTR>(data) < 65536) {
+    *written = 0; SetLastError(ERROR_INVALID_USER_BUFFER); return FALSE;
+  }
   if (h == blocked_output && write_entered) SetEvent(write_entered);
-  return WriteFile(h, data, size, written, overlap);
+  if (stream_test) {
+    if (fail_after >= 0 && bytes_written >= static_cast<ULONGLONG>(fail_after)) { *written = 0; SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
+    if (short_write != MAXDWORD) size = (std::min)(size, short_write);
+    if (fail_after >= 0) size = static_cast<DWORD>((std::min)(ULONGLONG(size), ULONGLONG(fail_after) - bytes_written));
+  }
+  BOOL result = WriteFile(h, data, size, written, overlap);
+  if (stream_test) bytes_written += *written;
+  return result;
 }
 static BOOL WINAPI cancel(HANDLE h) {
   InterlockedIncrement(&cancellations);
@@ -88,7 +141,13 @@ static DWORD WINAPI wait(HANDLE handle, DWORD timeout) {
   if (checking) CHECK(result != WAIT_FAILED);
   return result;
 }
-static void log(unsigned short, unsigned long id, ...) { rotation_test::event(id); }
+template<typename... Strings>
+static void log(unsigned short type, unsigned long id, Strings... insertions) {
+  event_test::log(type, id, insertions...);
+  rotation_test::event(id);
+  if (stream_test && id == NSSM_EVENT_ROTATED) rotations++;
+  if (stream_test && id == NSSM_EVENT_WRITEFILE_FAILED) write_errors++;
+}
 static void console(nssm_service_t *) {}
 }
 
@@ -102,18 +161,21 @@ static void console(nssm_service_t *) {}
 #undef CreateFile
 #define CreateFile logger_test::file
 #define WriteFile logger_test::write
+#define ReadFile logger_test::read
+#define GetFileSizeEx logger_test::file_size
+#define SetEndOfFile logger_test::truncate
 #define GetProcAddress logger_test::lookup
 #define alloc_console logger_test::console
 #define CloseHandle logger_test::close
 #define WaitForSingleObject logger_test::wait
 #define log_event logger_test::log
 #undef CopyFile
-#define CopyFile rotation_test::copy
+#define CopyFile logger_test::copy
 #undef MoveFile
-#define MoveFile rotation_test::move
-#define GetFileInformationByHandle rotation_test::information
+#define MoveFile logger_test::move
+#define GetFileInformationByHandle logger_test::information
 #define Sleep rotation_test::sleep
-#define GetSystemTime rotation_test::now
+#define GetSystemTime logger_test::now
 #include "../src/io.cpp"
 #undef CopyFile
 #undef MoveFile
@@ -131,6 +193,9 @@ static void console(nssm_service_t *) {}
 #undef DuplicateHandle
 #undef CreateFile
 #undef WriteFile
+#undef ReadFile
+#undef GetFileSizeEx
+#undef SetEndOfFile
 #undef GetProcAddress
 #undef alloc_console
 // Restore the generic names used by the test fixtures below.
@@ -360,12 +425,108 @@ static void blocked_write() {
 }
 
 int logger_child(int argc, TCHAR **argv) {
+  if (argc == 2) {
+    char buffer[64]; DWORD count;
+    std::string input;
+    for (;;) {
+      if (! ReadFile(GetStdHandle(STD_INPUT_HANDLE), buffer, sizeof(buffer), &count, NULL)) return 5;
+      if (! count) break;
+      input.append(buffer, count);
+    }
+    return input == "known stdin bytes\r\n" ? 0 : 4;
+  }
   if (argc != 3) return 2;
   HANDLE gate = (HANDLE) (ULONG_PTR) _tcstoui64(argv[2], NULL, 10);
   if (WaitForSingleObject(gate, 5000) != WAIT_OBJECT_0) return 3;
   const char text[] = "child trailing output\n";
   DWORD written;
   return WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), text, sizeof(text) - 1, &written, NULL) ? 0 : 1;
+}
+
+void test_stdin() {
+  using namespace logger_test;
+  normal_streams(true); // Warm up CRT/thread resources before handle accounting.
+  DWORD before = 0;
+  for (unsigned i = 0; i < 31; i++) {
+    if (i == 1) before = test_handle_count(); // Include one child-process warm-up.
+    fixture f;
+    HANDLE input = CreateFile(f.other, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
+    REQUIRE(input != INVALID_HANDLE_VALUE);
+    output(input, "known stdin bytes\r\n"); CloseHandle(input);
+    _tcscpy_s(f.service->stdin_path, f.other);
+    f.service->stdin_sharing = FILE_SHARE_READ;
+    f.service->stdin_disposition = OPEN_EXISTING;
+    f.service->stdin_flags = FILE_ATTRIBUTE_NORMAL;
+    REQUIRE(get_output_handles(f.service, &f.si) == 0);
+    DWORD flags;
+    REQUIRE(GetHandleInformation(f.si.hStdInput, &flags));
+    CHECK(flags & HANDLE_FLAG_INHERIT);
+    TCHAR exe[PATH_LENGTH], command[CMD_LENGTH];
+    REQUIRE(GetModuleFileName(NULL, exe, _countof(exe)));
+    _sntprintf_s(command, _countof(command), _TRUNCATE, _T("\"%s\" --logger-child"), exe);
+    f.si.cb = sizeof(f.si);
+    PROCESS_INFORMATION child = {};
+    if (i % 2) {
+      CHECK(! CreateProcess(f.other, command, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &f.si, &child));
+      f.stop();
+    }
+    else {
+      REQUIRE(CreateProcess(NULL, command, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &f.si, &child));
+      CloseHandle(child.hThread);
+      close_output_handles(&f.si);
+      REQUIRE(WaitForSingleObject(child.hProcess, 5000) == WAIT_OBJECT_0);
+      DWORD code; REQUIRE(GetExitCodeProcess(child.hProcess, &code)); CHECK(code == 0);
+      CloseHandle(child.hProcess); f.stop();
+    }
+    CHECK(! f.si.hStdInput);
+  }
+  DWORD after = test_handle_count();
+  printf("Stdin handles after 30 launches: before=%lu after=%lu\n", before, after);
+  CHECK(after == before);
+  for (unsigned mode = 0; mode < 2; mode++) {
+    fixture f;
+    _tcscpy_s(f.service->stdin_path, f.other);
+    if (mode) file_fail = 1; // Access denied.
+    else _tcscat_s(f.service->stdin_path, _T(".missing"));
+    f.service->stdin_disposition = OPEN_EXISTING;
+    CHECK(get_output_handles(f.service, &f.si) == 2);
+    f.stop();
+  }
+}
+
+#include "log_bytes_cases.h"
+
+void test_pipe_events() {
+  using namespace logger_test;
+  fixture f;
+  event_test::records.clear(); event_test::active = true;
+  fail_pipe = true;
+  REQUIRE(get_output_handles(f.service, &f.si) == 0);
+  bool found = false;
+  for (const auto &entry : event_test::records) if (entry.id == NSSM_EVENT_CREATEPIPE_FAILED) {
+    found = true; REQUIRE(entry.strings.size() == 3);
+    CHECK(entry.strings[0] == f.service->name && entry.strings[1] == f.path);
+    CHECK(entry.strings[2] == error_string(ERROR_NOT_ENOUGH_MEMORY));
+  }
+  CHECK(found); f.stop(); event_test::active = false;
+}
+
+void test_log_bytes() {
+  using namespace logger_test;
+  fixture f;
+  logger_t logger = {};
+  logger.stop_event = CreateEvent(NULL, TRUE, FALSE, NULL);
+  logger.write_handle = CreateFile(f.path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, 0, NULL);
+  REQUIRE(logger.stop_event && logger.write_handle != INVALID_HANDLE_VALUE);
+  unsigned long out = 123; int complained = 0;
+  CHECK(write_timestamp(&logger, 2, &out, &complained) == 0);
+  CHECK(out == TIMESTAMP_LEN * 2);
+  logger.timestamp_log = true;
+  out = 123;
+  CHECK(write_with_timestamp(&logger, NULL, 0, &out, &complained, 1) == 0);
+  CHECK(out == 0);
+  CloseHandle(logger.write_handle); CloseHandle(logger.stop_event);
+  test_stream_bytes();
 }
 
 void test_logger_ownership() {

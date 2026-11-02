@@ -3,11 +3,12 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P2; finding 21, B08 |
-| State | In progress; merge pending |
+| State | Fixed, unreleased |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a` |
 | Reproduced against | `0ba9551903b5a47568bd317c5447fe4eed54d685` |
 | Fix PR | [PR 13](https://github.com/existical/nssm-native/pull/13) |
 | Implementation commit | `909fba2ce8616763b8daaabda45ec55b1f5193f7` |
+| Merge commit | `38224b13c24eff70e404fe85e1ed67d35f9e975b` |
 | First release | Not yet released |
 
 When opening SCM failed, `install_service` destroyed the service object even

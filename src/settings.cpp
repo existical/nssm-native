@@ -389,7 +389,7 @@ static int setting_set_affinity(const TCHAR *service_name, void *param, const TC
 
   if (RegSetValueEx(key, name, 0, REG_SZ, (const unsigned char *) canon, (unsigned long) (_tcslen(canon) + 1) * sizeof(TCHAR)) != ERROR_SUCCESS) {
     if (canon != value->string) HeapFree(GetProcessHeap(), 0, canon);
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, name, error_string(GetLastError()), 0);
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, name, error_string(GetLastError()));
     return -1;
   }
 
@@ -506,7 +506,7 @@ static int setting_set_environment(const TCHAR *service_name, void *param, const
 
   if (RegSetValueEx(key, name, 0, REG_MULTI_SZ, (const unsigned char *) unformatted, (unsigned long) newlen * sizeof(TCHAR)) != ERROR_SUCCESS) {
     if (newlen) HeapFree(GetProcessHeap(), 0, unformatted);
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, NSSM_REG_ENV, error_string(GetLastError()), 0);
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, NSSM_REG_ENV, error_string(GetLastError()));
     return -1;
   }
 
@@ -1217,7 +1217,7 @@ int native_set_startup(const TCHAR *service_name, void *param, const TCHAR *name
     unsigned long error = GetLastError();
     /* Pre-Vista we expect to fail with ERROR_INVALID_LEVEL */
     if (error != ERROR_INVALID_LEVEL) {
-      log_event(EVENTLOG_ERROR_TYPE, NSSM_MESSAGE_SERVICE_CONFIG_DELAYED_AUTO_START_INFO_FAILED, service_name, error_string(error), 0);
+      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SERVICE_CONFIG_DELAYED_AUTO_START_INFO_FAILED, service_name, error_string(error));
     }
   }
 

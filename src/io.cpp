@@ -31,7 +31,7 @@ static int dup_handle(HANDLE source_handle, HANDLE *dest_handle_ptr, TCHAR *sour
   if (! dest_handle_ptr) return 1;
 
   if (! DuplicateHandle(GetCurrentProcess(), source_handle, GetCurrentProcess(), dest_handle_ptr, 0, true, flags)) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_DUPLICATEHANDLE_FAILED, source_description, dest_description, error_string(GetLastError()), 0);
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_DUPLICATEHANDLE_FAILED, source_description, dest_description, error_string(GetLastError()));
     return 2;
   }
   return 0;
@@ -51,7 +51,7 @@ static HANDLE create_logging_thread(TCHAR *service_name, TCHAR *path, unsigned l
   *pipe_handle_ptr = NULL;
   logger_t *logger = (logger_t *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(logger_t));
   if (! logger) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, _T("logger"), _T("create_logging_thread()"), 0);
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, _T("logger"), _T("create_logging_thread()"));
     return (HANDLE) 0;
   }
 
@@ -63,7 +63,7 @@ static HANDLE create_logging_thread(TCHAR *service_name, TCHAR *path, unsigned l
   }
   /* Only the duplicated STARTUPINFO handles are inheritable. */
   if (! CreatePipe(&logger->read_handle, pipe_handle_ptr, NULL, 0)) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_CREATEPIPE_FAILED, service_name, path, error_string(GetLastError()), 0);
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_CREATEPIPE_FAILED, service_name, path, error_string(GetLastError()));
     release_logger(logger);
     return NULL;
   }
@@ -78,7 +78,7 @@ static HANDLE create_logging_thread(TCHAR *service_name, TCHAR *path, unsigned l
   logger->disposition = disposition;
   logger->flags = flags;
   logger->write_handle = *write_handle_ptr;
-  logger->size = (__int64) size.QuadPart;
+  logger->size = size.QuadPart;
   logger->timestamp_log = timestamp_log;
   logger->line_length = 0;
   logger->rotate_online = rotate_online;
@@ -90,7 +90,7 @@ static HANDLE create_logging_thread(TCHAR *service_name, TCHAR *path, unsigned l
   unsigned long tid;
   HANDLE thread_handle = CreateThread(NULL, 0, log_and_rotate, (void *) logger, 0, &tid);
   if (! thread_handle) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_CREATETHREAD_FAILED, error_string(GetLastError()), 0);
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_CREATETHREAD_FAILED, error_string(GetLastError()));
     close_handle(&logger->read_handle);
     close_handle(pipe_handle_ptr);
     /* The caller still owns the file and can fall back to direct output. */
@@ -111,13 +111,6 @@ static inline unsigned long guess_charsize(void *address, unsigned long bufsize)
   else return (unsigned long) sizeof(char);
 }
 
-static inline void write_bom(logger_t *logger, unsigned long *out) {
-  wchar_t bom = L'\ufeff';
-  if (! WriteFile(logger->write_handle, (void *) &bom, sizeof(bom), out, 0)) {
-    log_event(EVENTLOG_WARNING_TYPE, NSSM_EVENT_SOMEBODY_SET_UP_US_THE_BOM, logger->service_name, logger->path, error_string(GetLastError()), 0);
-  }
-}
-
 void close_handle(HANDLE *handle) {
   if (! handle) return;
   if (*handle && *handle != INVALID_HANDLE_VALUE) CloseHandle(*handle);
@@ -130,7 +123,7 @@ int get_createfile_parameters(HKEY key, TCHAR *prefix, TCHAR *path, unsigned lon
 
   /* Path. */
   if (_sntprintf_s(value, _countof(value), _TRUNCATE, _T("%s"), prefix) < 0) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, prefix, _T("get_createfile_parameters()"), 0);
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, prefix, _T("get_createfile_parameters()"));
     return 1;
   }
   switch (expand_parameter(key, value, path, PATH_LENGTH, true, false)) {
@@ -140,7 +133,7 @@ int get_createfile_parameters(HKEY key, TCHAR *prefix, TCHAR *path, unsigned lon
 
   /* ShareMode. */
   if (_sntprintf_s(value, _countof(value), _TRUNCATE, _T("%s%s"), prefix, NSSM_REG_STDIO_SHARING) < 0) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, NSSM_REG_STDIO_SHARING, _T("get_createfile_parameters()"), 0);
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, NSSM_REG_STDIO_SHARING, _T("get_createfile_parameters()"));
     return 3;
   }
   switch (get_number(key, value, sharing, false)) {
@@ -151,7 +144,7 @@ int get_createfile_parameters(HKEY key, TCHAR *prefix, TCHAR *path, unsigned lon
 
   /* CreationDisposition. */
   if (_sntprintf_s(value, _countof(value), _TRUNCATE, _T("%s%s"), prefix, NSSM_REG_STDIO_DISPOSITION) < 0) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, NSSM_REG_STDIO_DISPOSITION, _T("get_createfile_parameters()"), 0);
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, NSSM_REG_STDIO_DISPOSITION, _T("get_createfile_parameters()"));
     return 5;
   }
   switch (get_number(key, value, disposition, false)) {
@@ -162,7 +155,7 @@ int get_createfile_parameters(HKEY key, TCHAR *prefix, TCHAR *path, unsigned lon
 
   /* Flags. */
   if (_sntprintf_s(value, _countof(value), _TRUNCATE, _T("%s%s"), prefix, NSSM_REG_STDIO_FLAGS) < 0) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, NSSM_REG_STDIO_FLAGS, _T("get_createfile_parameters()"), 0);
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, NSSM_REG_STDIO_FLAGS, _T("get_createfile_parameters()"));
     return 7;
   }
   switch (get_number(key, value, flags, false)) {
@@ -175,7 +168,7 @@ int get_createfile_parameters(HKEY key, TCHAR *prefix, TCHAR *path, unsigned lon
   if (copy_and_truncate) {
     unsigned long data;
     if (_sntprintf_s(value, _countof(value), _TRUNCATE, _T("%s%s"), prefix, NSSM_REG_STDIO_COPY_AND_TRUNCATE) < 0) {
-      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, NSSM_REG_STDIO_COPY_AND_TRUNCATE, _T("get_createfile_parameters()"), 0);
+      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, NSSM_REG_STDIO_COPY_AND_TRUNCATE, _T("get_createfile_parameters()"));
       return 9;
     }
     switch (get_number(key, value, &data, false)) {
@@ -195,7 +188,7 @@ int set_createfile_parameter(HKEY key, TCHAR *prefix, TCHAR *suffix, unsigned lo
   TCHAR value[NSSM_STDIO_LENGTH];
 
   if (_sntprintf_s(value, _countof(value), _TRUNCATE, _T("%s%s"), prefix, suffix) < 0) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, suffix, _T("set_createfile_parameter()"), 0);
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, suffix, _T("set_createfile_parameter()"));
     return 1;
   }
 
@@ -206,7 +199,7 @@ int delete_createfile_parameter(HKEY key, TCHAR *prefix, TCHAR *suffix) {
   TCHAR value[NSSM_STDIO_LENGTH];
 
   if (_sntprintf_s(value, _countof(value), _TRUNCATE, _T("%s%s"), prefix, suffix) < 0) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, suffix, _T("delete_createfile_parameter()"), 0);
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, suffix, _T("delete_createfile_parameter()"));
     return 1;
   }
 
@@ -222,19 +215,20 @@ HANDLE write_to_file(TCHAR *path, unsigned long sharing, SECURITY_ATTRIBUTES *at
     return ret;
   }
 
-  log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_CREATEFILE_FAILED, path, error_string(GetLastError()), 0);
+  log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_CREATEFILE_FAILED, path, error_string(GetLastError()));
   return ret;
 }
 
 static void rotated_filename(TCHAR *path, TCHAR *rotated, unsigned long rotated_len, SYSTEMTIME *st) {
+  SYSTEMTIME now;
   if (! st) {
-    SYSTEMTIME now;
     st = &now;
     GetSystemTime(st);
   }
 
   TCHAR buffer[PATH_LENGTH];
-  memmove(buffer, path, sizeof(buffer));
+  _tcsncpy_s(buffer, path, _TRUNCATE);
+  buffer[_countof(buffer) - 1] = 0;
   TCHAR *ext = PathFindExtension(buffer);
   TCHAR extension[PATH_LENGTH];
   _sntprintf_s(extension, _countof(extension), _TRUNCATE, _T("-%04u%02u%02uT%02u%02u%02u.%03u%s"), st->wYear, st->wMonth, st->wDay, st->wHour, st->wMinute, st->wSecond, st->wMilliseconds, ext);
@@ -281,7 +275,7 @@ void rotate_file(TCHAR *service_name, TCHAR *path, const rotation_options_t &opt
   else {
     error = GetLastError();
     if (error == ERROR_FILE_NOT_FOUND) return;
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, service_name, path, _T("CreateFile()"), path, error_string(error), 0);
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, service_name, path, _T("CreateFile()"), path, error_string(error));
     /* Reuse current time for rotation timestamp. */
     seconds = 0;
     minimum_bytes = 0;
@@ -335,13 +329,13 @@ void rotate_file(TCHAR *service_name, TCHAR *path, const rotation_options_t &opt
     if (! MoveFile(path, rotated)) ok = false;
   }
   if (ok) {
-    log_event(EVENTLOG_INFORMATION_TYPE, NSSM_EVENT_ROTATED, service_name, path, rotated, 0);
+    log_event(EVENTLOG_INFORMATION_TYPE, NSSM_EVENT_ROTATED, service_name, path, rotated);
     return;
   }
   error = GetLastError();
 
   if (error == ERROR_FILE_NOT_FOUND) return;
-  log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, service_name, path, function, rotated, error_string(error), 0);
+  log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, service_name, path, function, rotated, error_string(error));
   return;
 }
 
@@ -355,13 +349,16 @@ int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
 
   /* stdin */
   if (service->stdin_path[0]) {
-    si->hStdInput = CreateFile(service->stdin_path, FILE_READ_DATA, service->stdin_sharing, 0, service->stdin_disposition, service->stdin_flags, 0);
+    /* This launch-scoped handle is closed on both CreateProcess outcomes. */
+    SECURITY_ATTRIBUTES security = { sizeof(security), NULL, TRUE };
+    si->hStdInput = CreateFile(service->stdin_path, FILE_READ_DATA, service->stdin_sharing, &security, service->stdin_disposition, service->stdin_flags, 0);
     if (si->hStdInput == INVALID_HANDLE_VALUE) {
-      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_CREATEFILE_FAILED, service->stdin_path, error_string(GetLastError()), 0);
+      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_CREATEFILE_FAILED, service->stdin_path, error_string(GetLastError()));
       return 2;
     }
 
-    inherit_handles = true;
+    inherit_handles = true;
+
   }
 
   /* stdout */
@@ -383,7 +380,8 @@ int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
 
     if (dup_handle(service->stdout_si, &si->hStdOutput, _T("stdout_si"), _T("stdout"))) return 4;
 
-    inherit_handles = true;
+    inherit_handles = true;
+
   }
 
   /* stderr */
@@ -418,7 +416,8 @@ int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
 
     if (dup_handle(service->stderr_si, &si->hStdError, _T("stderr_si"), _T("stderr"))) return 7;
 
-    inherit_handles = true;
+    inherit_handles = true;
+
   }
 
   /*
@@ -510,6 +509,7 @@ void cleanup_loggers(nssm_service_t *service) {
   Returns:  0 on success.
             1 on non-fatal error.
            -1 on fatal error.
+           -2 on normal pipe EOF.
 */
 static int try_read(logger_t *logger, void *address, unsigned long bufsize, unsigned long *in, int *complained) {
   int ret = 1;
@@ -523,8 +523,7 @@ static int try_read(logger_t *logger, void *address, unsigned long bufsize, unsi
     switch (error) {
       /* Other end closed the pipe. */
       case ERROR_BROKEN_PIPE:
-        ret = -1;
-        goto complain_read;
+        return -2; // Normal producer EOF, including when rotation is enabled.
 
       /* Couldn't lock the buffer. */
       case ERROR_NOT_ENOUGH_QUOTA:
@@ -545,118 +544,82 @@ static int try_read(logger_t *logger, void *address, unsigned long bufsize, unsi
 complain_read:
   /* Ignore the error if we've been requested to exit anyway. */
   if (InterlockedCompareExchange(&logger->draining, 0, 0) || InterlockedCompareExchange(&logger->rotate_online, 0, 0) != NSSM_ROTATE_ONLINE) return ret;
-  if (! (*complained & COMPLAINED_READ)) log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_READFILE_FAILED, logger->service_name, logger->path, error_string(error), 0);
+  if (! (*complained & COMPLAINED_READ)) log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_READFILE_FAILED, logger->service_name, logger->path, error_string(error));
   *complained |= COMPLAINED_READ;
   return ret;
 }
 
-/*
-  Try multiple times to write to a file.
-  Returns:  0 on success.
-            1 on non-fatal error.
-           -1 on fatal error.
-*/
-static int try_write(logger_t *logger, void *address, unsigned long bufsize, unsigned long *out, int *complained) {
-  int ret = 1;
-  unsigned long error;
-  for (int tries = 0; tries < 5; tries++) {
-    *out = 0;
+/* Write all bytes synchronously, retaining progress across short writes. */
+static int try_write(logger_t *logger, const void *address, unsigned long bufsize, unsigned long *out, int *complained) {
+  *out = 0;
+  unsigned long error = ERROR_WRITE_FAULT;
+  int tries = 0;
+  bool failed = false;
+  while (*out < bufsize) {
     if (logger_stopping(logger)) return -1;
-    if (WriteFile(logger->write_handle, address, bufsize, out, 0)) return 0;
-
-    error = GetLastError();
-    if (error == ERROR_IO_PENDING) {
-      /* Operation was successful pending flush to disk. */
-      return 0;
-    }
-
-    switch (error) {
-      /* Other end closed the pipe. */
-      case ERROR_BROKEN_PIPE:
-        ret = -1;
-        goto complain_write;
-
-      /* Couldn't lock the buffer. */
-      case ERROR_NOT_ENOUGH_QUOTA:
-      /* Out of disk space. */
-      case ERROR_DISK_FULL:
-        if (logger_stopping(logger, 2000 + tries * 3000)) return -1;
-        ret = 1;
-        continue;
-
-      default:
-        /* We'll lose this line but try to read and write subsequent ones. */
-        ret = 1;
-    }
+    unsigned long written = 0;
+    BOOL ok = WriteFile(logger->write_handle, (const char *) address + *out, bufsize - *out, &written, 0);
+    error = ok ? ERROR_WRITE_FAULT : GetLastError();
+    if (written > bufsize - *out) { error = ERROR_INVALID_DATA; failed = true; break; }
+    *out += written;
+    if (ok && written) { tries = 0; continue; }
+    /* A successful zero-byte write must not spin forever. No overlapped I/O. */
+    if (ok || (error != ERROR_NOT_ENOUGH_QUOTA && error != ERROR_DISK_FULL) || ++tries == 5) { failed = true; break; }
+    if (logger_stopping(logger, 2000 + (tries - 1) * 3000)) return -1;
   }
-
-complain_write:
-  if (! (*complained & COMPLAINED_WRITE)) log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_WRITEFILE_FAILED, logger->service_name, logger->path, error_string(error), 0);
+  if (! failed && *out == bufsize) return 0;
+  if (! (*complained & COMPLAINED_WRITE)) log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_WRITEFILE_FAILED, logger->service_name, logger->path, error_string(error));
   *complained |= COMPLAINED_WRITE;
-  return ret;
+  /* Stop after an incomplete write; continuing could corrupt encoding or a timestamp. */
+  return -1;
 }
 
-/* Note that the timestamp is created in UTF-8. */
-static inline int write_timestamp(logger_t *logger, unsigned long charsize, unsigned long *out, int *complained) {
+static int write_timestamp(logger_t *logger, unsigned long charsize, unsigned long *out, int *complained) {
+  *out = 0;
   char timestamp[TIMESTAMP_LEN + 1];
-
   SYSTEMTIME now;
   GetSystemTime(&now);
-  _snprintf_s(timestamp, _countof(timestamp), _TRUNCATE, TIMESTAMP_FORMAT, now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond, now.wMilliseconds);
-
-  if (charsize == sizeof(char)) return try_write(logger, (void *) timestamp, TIMESTAMP_LEN, out, complained);
-
-  wchar_t *utf16;
-  unsigned long utf16len;
-  if (to_utf16(timestamp, &utf16, &utf16len)) return -1;
-  int ret = try_write(logger, (void *) *utf16, utf16len * sizeof(wchar_t), out, complained);
-  HeapFree(GetProcessHeap(), 0, utf16);
-  return ret;
+  if (_snprintf_s(timestamp, _countof(timestamp), _TRUNCATE, TIMESTAMP_FORMAT, now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond, now.wMilliseconds) != TIMESTAMP_LEN) return -1;
+  if (charsize == 1) return try_write(logger, timestamp, TIMESTAMP_LEN, out, complained);
+  /* The format contains ASCII only. No allocation or borrowed conversion buffer. */
+  wchar_t utf16[TIMESTAMP_LEN];
+  for (unsigned i = 0; i < TIMESTAMP_LEN; i++) utf16[i] = timestamp[i];
+  return try_write(logger, utf16, sizeof(utf16), out, complained);
 }
 
-static int write_with_timestamp(logger_t *logger, void *address, unsigned long bufsize, unsigned long *out, int *complained, unsigned long charsize) {
-  if (logger->timestamp_log) {
-    unsigned long log_out;
-    int log_complained;
-    unsigned long timestamp_out = 0;
-    int timestamp_complained;
+static bool log_newline(const char *data, unsigned long count, unsigned long offset, unsigned long charsize) {
+  return data[offset] == '\n' && (charsize == 1 || (offset + 1 < count && data[offset + 1] == 0));
+}
+
+/* Input starts at a code-unit boundary; an incomplete final unit is copied verbatim. */
+static int write_with_timestamp(logger_t *logger, const void *address, unsigned long bufsize, unsigned long *out, int *complained, unsigned long charsize) {
+  *out = 0;
+  if (! bufsize) return 0;
+  if (! logger->timestamp_log) return try_write(logger, address, bufsize, out, complained);
+  const char *data = (const char *) address;
+  unsigned long offset = 0;
+  while (offset < bufsize) {
+    unsigned long written = 0;
     if (! logger->line_length) {
-      write_timestamp(logger, charsize, &timestamp_out, &timestamp_complained);
-      logger->line_length += (__int64) timestamp_out;
-      *out += timestamp_out;
-      *complained |= timestamp_complained;
+      int ret = write_timestamp(logger, charsize, &written, complained);
+      *out += written;
+      if (ret) return ret;
+      logger->line_length = 1; // Only line-start state is needed, not an unbounded length.
     }
-
-    unsigned long i;
-    void *line = address;
-    unsigned long offset = 0;
-    int ret;
-    for (i = 0; i < bufsize; i++) {
-      if (((char *) address)[i] == '\n') {
-        ret = try_write(logger, line, i - offset + 1, &log_out, &log_complained);
-        line = (void *) ((char *) line + i - offset + 1);
-        logger->line_length = 0LL;
-        *out += log_out;
-        *complained |= log_complained;
-        offset = i + 1;
-        if (offset < bufsize) {
-          write_timestamp(logger, charsize, &timestamp_out, &timestamp_complained);
-          logger->line_length += (__int64) timestamp_out;
-          *out += timestamp_out;
-          *complained |= timestamp_complained;
-        }
-      }
+    unsigned long end = offset;
+    bool newline = false;
+    while (end < bufsize) {
+      newline = log_newline(data, bufsize, end, charsize);
+      end += (bufsize - end < charsize) ? bufsize - end : charsize;
+      if (newline) break;
     }
-
-    if (offset < bufsize) {
-      ret = try_write(logger, line, bufsize - offset, &log_out, &log_complained);
-      *out += log_out;
-      *complained |= log_complained;
-    }
-
-    return ret;
+    int ret = try_write(logger, data + offset, end - offset, &written, complained);
+    *out += written;
+    if (ret) return ret;
+    if (newline) logger->line_length = 0;
+    offset = end;
   }
-  else return try_write(logger, address, bufsize, out, complained);
+  return 0;
 }
 
 static unsigned long finish_logger(logger_t *logger, unsigned long result) {
@@ -666,138 +629,134 @@ static unsigned long finish_logger(logger_t *logger, unsigned long result) {
   return result;
 }
 
-/* Wrapper to be called in a new thread for logging. */
-unsigned long WINAPI log_and_rotate(void *arg) {
-  logger_t *logger = (logger_t *) arg;
-  if (! logger) return 1;
-
-  __int64 size = 0;
+static bool logger_file_size(HANDLE file, ULONGLONG *size) {
+  *size = 0;
   BY_HANDLE_FILE_INFORMATION info;
-
-  /* Find initial file size. */
-  if (! GetFileInformationByHandle(logger->write_handle, &info)) logger->size = 0LL;
-  else {
-    ULARGE_INTEGER l;
-    l.HighPart = info.nFileSizeHigh;
-    l.LowPart = info.nFileSizeLow;
-    size = l.QuadPart;
+  if (GetFileInformationByHandle(file, &info)) {
+    *size = ((ULONGLONG) info.nFileSizeHigh << 32) | info.nFileSizeLow;
+    return true;
   }
+  LARGE_INTEGER value;
+  if (! GetFileSizeEx(file, &value) || value.QuadPart < 0) return false;
+  *size = value.QuadPart;
+  return true;
+}
 
-  char buffer[1024];
-  void *address;
-  unsigned long in, out;
-  unsigned long charsize = 0;
-  unsigned long error;
-  int ret;
-  int complained = 0;
-
-  while (true) {
-    if (logger_stopping(logger)) break;
-    in = out = 0;
-    /* Read data from the pipe. */
-    address = &buffer;
-    ret = try_read(logger, address, sizeof(buffer), &in, &complained);
-    if (ret < 0) {
-      return finish_logger(logger, 2);
-    }
-    else if (ret) continue;
-
-    if (logger_stopping(logger)) break;
-    if (! InterlockedCompareExchange(&logger->draining, 0, 0) && (InterlockedCompareExchange(&logger->rotate_online, 0, 0) == NSSM_ROTATE_ONLINE_ASAP || (logger->size && size + (__int64) in >= logger->size))) {
-      /* Look for newline. */
-      unsigned long i;
-      for (i = 0; i < in; i++) {
-        if (buffer[i] == '\n') {
-          if (! charsize) charsize = guess_charsize(address, in);
-          i += charsize;
-
-          /* Write up to the newline. */
-          ret = try_write(logger, address, i, &out, &complained);
-          if (ret < 0) {
-            return finish_logger(logger, 3);
-          }
-          size += (__int64) out;
-
-          /* Rotate. */
-          if (logger_stopping(logger)) return finish_logger(logger, 0);
-          InterlockedCompareExchange(&logger->rotate_online, NSSM_ROTATE_ONLINE, NSSM_ROTATE_ONLINE_ASAP);
-          TCHAR rotated[PATH_LENGTH];
-          rotated_filename(logger->path, rotated, _countof(rotated), 0);
-
-          /*
-            Ideally we'd try the rename first then close the handle but
-            MoveFile() will fail if the handle is still open so we must
-            risk losing everything.
-          */
-          if (logger->copy_and_truncate) FlushFileBuffers(logger->write_handle);
-          close_handle(&logger->write_handle);
-          bool ok = true;
-          TCHAR *function;
-          if (logger->copy_and_truncate) {
-            function = _T("CopyFile()");
-            if (CopyFile(logger->path, rotated, TRUE)) {
-              HANDLE file = write_to_file(logger->path, NSSM_STDOUT_SHARING, 0, NSSM_STDOUT_DISPOSITION, NSSM_STDOUT_FLAGS);
-              if (logger_stopping(logger, logger->rotate_delay)) {
-                close_handle(&file);
-                return finish_logger(logger, 0);
-              }
-              SetFilePointer(file, 0, 0, FILE_BEGIN);
-              SetEndOfFile(file);
-              CloseHandle(file);
-            }
-            else ok = false;
-          }
-          else {
-            function = _T("MoveFile()");
-            if (! MoveFile(logger->path, rotated)) ok = false;
-          }
-          if (ok) {
-            log_event(EVENTLOG_INFORMATION_TYPE, NSSM_EVENT_ROTATED, logger->service_name, logger->path, rotated, 0);
-            size = 0LL;
-          }
-          else {
-            error = GetLastError();
-            if (error != ERROR_FILE_NOT_FOUND) {
-              if (! (complained & COMPLAINED_ROTATE)) log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, logger->service_name, logger->path, function, rotated, error_string(error), 0);
-              complained |= COMPLAINED_ROTATE;
-              /* We can at least try to re-open the existing file. */
-              logger->disposition = OPEN_ALWAYS;
-            }
-          }
-
-          /* Reopen. */
-          if (logger_stopping(logger)) return finish_logger(logger, 0);
-          logger->write_handle = write_to_file(logger->path, logger->sharing, 0, logger->disposition, logger->flags);
-          if (logger->write_handle == INVALID_HANDLE_VALUE) {
-            error = GetLastError();
-            log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_CREATEFILE_FAILED, logger->path, error_string(error), 0);
-            /* Oh dear.  Now we can't log anything further. */
-            return finish_logger(logger, 4);
-          }
-
-          /* Resume writing after the newline. */
-          address = (void *) ((char *) address + i);
-          in -= i;
+/* Return false only if logging cannot continue. A failed rename keeps the old log. */
+static bool rotate_logger(logger_t *logger, ULONGLONG *size, bool *size_known, int *complained) {
+  if (logger_stopping(logger)) return false;
+  InterlockedCompareExchange(&logger->rotate_online, NSSM_ROTATE_ONLINE, NSSM_ROTATE_ONLINE_ASAP);
+  TCHAR rotated[PATH_LENGTH];
+  rotated_filename(logger->path, rotated, _countof(rotated), NULL);
+  bool ok = false;
+  const TCHAR *function = _T("MoveFile()");
+  unsigned long error = ERROR_SUCCESS;
+  if (logger->copy_and_truncate) {
+    function = _T("FlushFileBuffers()");
+    if (FlushFileBuffers(logger->write_handle)) {
+      function = _T("CopyFile()");
+      if (CopyFile(logger->path, rotated, TRUE)) {
+        if (logger_stopping(logger, logger->rotate_delay)) return false;
+        LARGE_INTEGER zero = { 0 };
+        function = _T("SetFilePointerEx()");
+        if (SetFilePointerEx(logger->write_handle, zero, NULL, FILE_BEGIN)) {
+          function = _T("SetEndOfFile()");
+          ok = SetEndOfFile(logger->write_handle) != FALSE;
         }
       }
     }
-
-    if (! size || logger->timestamp_log) if (! charsize) charsize = guess_charsize(address, in);
-    if (! size) {
-      /* Write a BOM to the new file. */
-      if (charsize == sizeof(wchar_t)) write_bom(logger, &out);
-      size += (__int64) out;
-    }
-
-    /* Write the data, if any. */
-    if (! in) continue;
-
-    ret = write_with_timestamp(logger, address, in, &out, &complained, charsize);
-    size += (__int64) out;
-    if (ret < 0) {
-      return finish_logger(logger, 3);
+    if (! ok) error = GetLastError();
+    /* A failed truncation must never leave the write pointer before existing data. */
+    LARGE_INTEGER zero = { 0 };
+    if (! SetFilePointerEx(logger->write_handle, zero, NULL, FILE_END)) {
+      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, logger->service_name, logger->path, _T("SetFilePointerEx()"), rotated, error_string(GetLastError()));
+      return false;
     }
   }
+  else {
+    close_handle(&logger->write_handle);
+    ok = MoveFile(logger->path, rotated) != FALSE;
+    if (! ok) error = GetLastError();
+    /* On failure always append; CREATE_ALWAYS would destroy the original file. */
+    logger->write_handle = write_to_file(logger->path, logger->sharing, NULL, ok ? logger->disposition : OPEN_ALWAYS, logger->flags);
+    if (logger->write_handle == INVALID_HANDLE_VALUE) return false;
+  }
+  if (ok) log_event(EVENTLOG_INFORMATION_TYPE, NSSM_EVENT_ROTATED, logger->service_name, logger->path, rotated);
+  else {
+    if (! (*complained & COMPLAINED_ROTATE)) log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, logger->service_name, logger->path, function, rotated, error_string(error));
+    *complained |= COMPLAINED_ROTATE;
+  }
+  ULONGLONG observed;
+  *size_known = logger_file_size(logger->write_handle, &observed);
+  if (*size_known) *size = observed;
+  else if (ok) { *size = 0; *size_known = true; }
+  return true;
+}
 
+/* Retain an initial encoding probe, then at most one incomplete UTF-16 byte. */
+unsigned long WINAPI log_and_rotate(void *arg) {
+  logger_t *logger = (logger_t *) arg;
+  if (! logger) return 1;
+  ULONGLONG size;
+  bool size_known = logger_file_size(logger->write_handle, &size);
+  char buffer[1024 + 4];
+  unsigned long pending = 0, charsize = 0;
+  int complained = 0;
+  while (! logger_stopping(logger)) {
+    unsigned long in = 0;
+    int ret = try_read(logger, buffer + pending, 1024, &in, &complained);
+    if (ret > 0) continue;
+    if (logger_stopping(logger)) break;
+    if (ret == -1) return finish_logger(logger, 2);
+    bool eof = ret == -2 || ! in;
+    in += pending;
+    if (! in && eof) break;
+    if (! charsize) {
+      bool bom = in >= 2 && (unsigned char) buffer[0] == 0xff && (unsigned char) buffer[1] == 0xfe;
+      /* IsTextUnicode cannot reliably classify a single BOM-less code unit. */
+      if (! bom && in < 4 && ! eof) { pending = in; continue; }
+      charsize = bom ? 2 : (in >= 2 ? guess_charsize(buffer, in) : 1);
+      if (bom) {
+        in -= 2; memmove(buffer, buffer + 2, in);
+        if (size_known && ! size) {
+          const wchar_t mark = L'\ufeff';
+          unsigned long out = 0;
+          ret = try_write(logger, &mark, sizeof(mark), &out, &complained);
+          size += out;
+          if (ret) return finish_logger(logger, 3);
+        }
+      }
+    }
+    unsigned long complete = (charsize == 2 && ! eof) ? in & ~1UL : in;
+    unsigned long offset = 0;
+    while (offset < complete) {
+      unsigned long end = offset;
+      bool newline = false;
+      while (end < complete) {
+        newline = log_newline(buffer, complete, end, charsize);
+        end += (complete - end < charsize) ? complete - end : charsize;
+        if (newline) break;
+      }
+      unsigned long out = 0;
+      if (charsize == 2 && size_known && ! size) {
+        const wchar_t bom = L'\ufeff';
+        ret = try_write(logger, &bom, sizeof(bom), &out, &complained);
+        size += out;
+        if (ret) return finish_logger(logger, 3);
+      }
+      ret = write_with_timestamp(logger, buffer + offset, end - offset, &out, &complained, charsize);
+      size += out;
+      if (ret) return finish_logger(logger, 3);
+      offset = end;
+      LONG rotation = InterlockedCompareExchange(&logger->rotate_online, 0, 0);
+      if (newline && ! InterlockedCompareExchange(&logger->draining, 0, 0) &&
+          (rotation == NSSM_ROTATE_ONLINE_ASAP || (rotation == NSSM_ROTATE_ONLINE && logger->size && size >= logger->size))) {
+        if (! rotate_logger(logger, &size, &size_known, &complained)) return finish_logger(logger, 4);
+      }
+    }
+    pending = in - complete;
+    if (pending) memmove(buffer, buffer + complete, pending);
+    if (eof) break;
+  }
   return finish_logger(logger, 0);
 }

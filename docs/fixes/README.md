@@ -75,16 +75,26 @@ all four CI configurations passing:
 | --- | --- | --- | --- |
 | [NSSM-009](NSSM-009.md) | Retain validated process identities through tree cleanup | Fixed, unreleased | Not yet released |
 
-B08 is under review in [PR 13](https://github.com/existical/nssm-native/pull/13), pending merge:
+B08 merged in [PR 13](https://github.com/existical/nssm-native/pull/13), with all
+four CI configurations passing:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |
-| [NSSM-015](NSSM-015.md) | Preserve caller ownership during string resets | In progress | Not yet released |
-| [NSSM-018](NSSM-018.md) | Use BOOL storage for administrator membership | In progress | Not yet released |
-| [NSSM-019](NSSM-019.md) | Define zero-duration handle waits | In progress | Not yet released |
-| [NSSM-021](NSSM-021.md) | Leave install-object cleanup to its caller | In progress | Not yet released |
-| [NSSM-028](NSSM-028.md) | Restore scoped debug privilege and impersonation state | In progress | Not yet released |
-| [NSSM-032](NSSM-032.md) | Correct message capacities and thread-local ownership | In progress | Not yet released |
+| [NSSM-015](NSSM-015.md) | Preserve caller ownership during string resets | Fixed, unreleased | Not yet released |
+| [NSSM-018](NSSM-018.md) | Use BOOL storage for administrator membership | Fixed, unreleased | Not yet released |
+| [NSSM-019](NSSM-019.md) | Define zero-duration handle waits | Fixed, unreleased | Not yet released |
+| [NSSM-021](NSSM-021.md) | Leave install-object cleanup to its caller | Fixed, unreleased | Not yet released |
+| [NSSM-028](NSSM-028.md) | Restore scoped debug privilege and impersonation state | Fixed, unreleased | Not yet released |
+| [NSSM-032](NSSM-032.md) | Correct message capacities and thread-local ownership | Fixed, unreleased | Not yet released |
+
+B09 is under review in [PR 14](https://github.com/existical/nssm-native/pull/14), pending merge:
+
+| ID | Change | State | First release |
+| --- | --- | --- | --- |
+| [NSSM-012](NSSM-012.md) | Inherit configured stdin in the child | In progress | Not yet released |
+| [NSSM-013](NSSM-013.md) | Preserve UTF-16 units and timestamp bytes | In progress | Not yet released |
+| [NSSM-014](NSSM-014.md) | Account for actual log writes and rotation | In progress | Not yet released |
+| [NSSM-022](NSSM-022.md) | Use counted string-only event insertions | In progress | Not yet released |
 
 The [implementation plan](../remediation-plan.md) tracks NSSM-001 through
 NSSM-034. Check each record's state before assuming inclusion in a build.

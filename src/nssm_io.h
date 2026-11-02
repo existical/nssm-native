@@ -24,7 +24,7 @@ typedef struct logger_t {
   unsigned long flags;
   HANDLE read_handle;
   HANDLE write_handle;
-  __int64 size;
+  ULONGLONG size;
   bool timestamp_log;
   __int64 line_length;
   bool copy_and_truncate;

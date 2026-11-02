@@ -29,6 +29,9 @@ int wmain(int argc, TCHAR **argv) {
     else if (! _tcscmp(argv[1], _T("launch"))) test_launch_handles();
     else if (! _tcscmp(argv[1], _T("hook_live"))) test_hook_live_handles();
     else if (! _tcscmp(argv[1], _T("logger"))) test_logger_ownership();
+    else if (! _tcscmp(argv[1], _T("stdin"))) test_stdin();
+    else if (! _tcscmp(argv[1], _T("log_bytes"))) test_log_bytes();
+    else if (! _tcscmp(argv[1], _T("event_insertions"))) test_event_insertions();
     else if (! _tcscmp(argv[1], _T("rotation"))) test_offline_rotation();
     else if (! _tcscmp(argv[1], _T("process_identity"))) test_process_identity();
     else if (! _tcscmp(argv[1], _T("process_live"))) test_process_live();

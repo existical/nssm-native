@@ -3,11 +3,12 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P2; follow-up G, B08 |
-| State | In progress; merge pending |
+| State | Fixed, unreleased |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a` |
 | Reproduced against | `0ba9551903b5a47568bd317c5447fe4eed54d685` |
 | Fix PR | [PR 13](https://github.com/existical/nssm-native/pull/13) |
 | Implementation commit | `5baab9964b6e7080a1e98aab8dfba8cb82b0aa0b` |
+| Merge commit | `38224b13c24eff70e404fe85e1ed67d35f9e975b` |
 | First release | Not yet released |
 
 `error_string` allocated 65535 bytes but advertised 65535 TCHARs to formatting
