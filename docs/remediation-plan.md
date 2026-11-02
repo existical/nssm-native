@@ -76,7 +76,7 @@ work. P2 tasks share an early group only when they support the same repair.
 | B11 | GUI and accounts | 020, 025, 026, 027, 034 | Merged in PR 16; five confirmed fixes, GUI retries, account failures and hook round trips validated |
 | B12 | Dependencies | 023 | Merged in PR 17; typed resets/merges, bounded queries, validation cleanup and SCM round-trip tests pass |
 | B13 | Remaining service control waits | 024 | In progress; action budgets, bounded polling, diagnostics and deterministic/live tests implemented |
-| B14 | Candidate release and comparison records | All completed IDs | All P1 tasks closed, release criteria below satisfied |
+| B14 | Candidate release and acceptance follow-ups | 035, 036 | Repair startup and cleanup blockers in PR 20, then complete PR 19 acceptance and packaging |
 
 ## Shared implementation and test rules
 
@@ -733,6 +733,32 @@ Second part of follow-up H; GUI edit-round-trip mutation reproduced in B11.
 environment after saving, and actual hook launch.
 **Done:** editing preserves stored expressions and execution expands them at
 the intended time, or a recorded test establishes that no repair is needed.
+
+### NSSM 035
+
+**Standard-I/O byte capacity — P1, B14 acceptance follow-up.** This is a newly
+reproduced continuation startup regression, additional to the original 34
+review tasks. See [NSSM-035](fixes/NSSM-035.md). Its focused repair is a release
+prerequisite; it does not remove the registry reader's bounds checks.
+
+Pass byte capacity from get_createfile_parameters to expand_parameter. Test
+missing/short/maximum/oversized values for all three streams with canaries,
+and exercise get_parameters through that same production path. Retain the
+real wrapper lifecycle test in the release-preparation PR. Done when startup
+configuration succeeds and oversized values still fail without overwriting.
+
+### NSSM 036
+
+**Concurrent exit/stop cleanup — P1, B14 acceptance follow-up.** The live
+wrapper test observed STOPPED with a descendant still running. The focused
+[repair](fixes/NSSM-036.md) is in [PR 20](https://github.com/existical/nssm-native/pull/20).
+
+Serialize explicit STOP with an in-flight end_service cleanup using the existing
+service-side hook/logger critical section. Release it before restart actions;
+workers must not need it while being joined. Force the overlap with real events
+and verify one cleanup, no premature STOPPED, and eventual completion. Retain
+the actual SCM lifecycle check in PR 19. This is an additional finding beyond
+the original 34-task review and is a release prerequisite.
 
 ## Documentation required with every fix
 
