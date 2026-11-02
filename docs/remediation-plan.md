@@ -28,7 +28,7 @@ B06 (NSSM-008) is fixed but unreleased through
 B07 (NSSM-009) is fixed but unreleased through
 [PR 12](https://github.com/existical/nssm-native/pull/12). All nine P1 findings
 are now merged and unreleased. B08 has implementations and
-[validation](reviews/b08-validation.md), pending review and merge. Other tasks
+[validation](reviews/b08-validation.md) in [PR 13](https://github.com/existical/nssm-native/pull/13), pending merge. Other tasks
 remain planned; NSSM-034 requires confirmation.
 [Previously merged changes](fixes/implemented.md) retain separate CONT IDs.
 

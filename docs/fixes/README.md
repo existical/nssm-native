@@ -75,7 +75,7 @@ all four CI configurations passing:
 | --- | --- | --- | --- |
 | [NSSM-009](NSSM-009.md) | Retain validated process identities through tree cleanup | Fixed, unreleased | Not yet released |
 
-B08 has implementations and regression coverage, pending review and merge:
+B08 is under review in [PR 13](https://github.com/existical/nssm-native/pull/13), pending merge:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |
