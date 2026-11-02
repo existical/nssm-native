@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Prepare candidate packages from clean pinned source archives with full build
+  and test metadata, SHA-256 checksums and preserved source identity. Support
+  distinct beta/RC tags while retaining original version tags. Add a real
+  NSSM-wrapped lifecycle acceptance test and packaging validation in CI.
+  See [release preparation](docs/releases/README.md). No release is published.
+
 - Serialize explicit STOP with exit-callback cleanup so STOPPED is not reported
   before in-flight descendant/hook/logger cleanup completes. Add a forced
   overlap regression. [NSSM-036](docs/fixes/NSSM-036.md).

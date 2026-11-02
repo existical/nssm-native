@@ -27,6 +27,12 @@ foreach(group environment hooks startup registry multisz quoting numeric affinit
   set_tests_properties(nssm.${group} PROPERTIES TIMEOUT 20)
 endforeach()
 set_tests_properties(nssm.launch nssm.hook_live nssm.logger nssm.process_live PROPERTIES TIMEOUT 60)
+add_test(NAME nssm.version_identity COMMAND "${NSSM_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass
+  -File "${CMAKE_CURRENT_SOURCE_DIR}/version.ps1" -SourceDirectory "${PROJECT_SOURCE_DIR}" -WorkDirectory "${CMAKE_CURRENT_BINARY_DIR}")
+set_tests_properties(nssm.version_identity PROPERTIES TIMEOUT 60)
+add_test(NAME nssm.package_rejection COMMAND "${NSSM_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass
+  -File "${CMAKE_CURRENT_SOURCE_DIR}/package-rejection.ps1" -SourceDirectory "${PROJECT_SOURCE_DIR}" -WorkDirectory "${CMAKE_CURRENT_BINARY_DIR}")
+set_tests_properties(nssm.package_rejection PROPERTIES TIMEOUT 60)
 
 # Explicit opt-in on a disposable elevated host. Configuration fixtures stay
 # disabled; controls_live starts only its own native test services.
@@ -39,6 +45,8 @@ if(NSSM_ENABLE_SCM_TESTS)
   add_test(NAME nssm.export_live COMMAND nssm_export_live "$<TARGET_FILE:nssm>")
   add_test(NAME nssm.dependencies_live COMMAND nssm_export_live "$<TARGET_FILE:nssm>" dependencies)
   add_test(NAME nssm.controls_live COMMAND nssm_export_live "$<TARGET_FILE:nssm>" controls)
+  add_test(NAME nssm.lifecycle_live COMMAND nssm_export_live "$<TARGET_FILE:nssm>" lifecycle)
+  set_tests_properties(nssm.lifecycle_live PROPERTIES TIMEOUT 120)
   set_tests_properties(nssm.controls_live PROPERTIES TIMEOUT 120)
   set_tests_properties(nssm.export_live PROPERTIES TIMEOUT 120)
   set_tests_properties(nssm.dependencies_live PROPERTIES TIMEOUT 120)

@@ -59,7 +59,10 @@ history and version tags are available, it uses `git describe` to retain the
 upstream revision format, for example `2.24-104-g2a7aa08`. Rebuilds after a new
 commit refresh the revision without requiring manual reconfiguration.
 
-Two-part tags such as `v2.24` and three-part tags such as `v2.25.0` are accepted.
+Two-part tags such as `v2.24`, three-part tags such as `v2.25.0`, and
+continuation prerelease tags such as `v2.25.0-beta.1` or `v2.25.0-rc.1` are
+accepted. Identified source archives use source-info.json to retain the exact
+Git description and commit-based date.
 `VERSION` supplies the fallback when Git metadata or suitable tags are absent,
 including source ZIP downloads. Keep it aligned with the intended release base.
 An archive without revision information is marked prerelease in its Windows
@@ -70,7 +73,7 @@ The historical two-part numeric Windows version layout is
 
 ## Checks
 
-CTest runs twenty-two groups:
+CTest runs the following regression groups:
 
 - `nssm.smoke`: command exit status, exact version output, PE machine type and
   embedded file/product metadata.
@@ -127,7 +130,7 @@ CTest runs twenty-two groups:
   failures, zero/null insertions and event-source registration failure.
 
 CMake checks that string event arguments compile and integer arguments do not.
-There are 35 standard CTest groups including smoke. B09 groups retain 20-second limits;
+There are 37 standard CTest groups including smoke. B09 groups retain 20-second limits;
 their files and children belong only to the fixture. Event Log calls are intercepted.
 The [B09 validation record](reviews/b09-validation.md) documents results and limits.
 
@@ -139,7 +142,7 @@ The [B09 validation record](reviews/b09-validation.md) documents results and lim
 
 The [B10 validation record](reviews/b10-validation.md) records results and limits.
 The optional `nssm.export_live`, `nssm.dependencies_live` and
-`nssm.controls_live` tests require an elevated disposable Windows host and
+`nssm.controls_live` and `nssm.lifecycle_live` tests require an elevated disposable Windows host and
 are disabled by default. The export test creates two uniquely named disabled
 services, tests query-only export and AppExit import, and deletes both. The
 dependency test creates four disabled fixtures, reads existing group names,
@@ -152,9 +155,9 @@ service-specific shutdown failure, then stops and deletes its services.
 Each fixture has an independent 30-second watchdog and bounded cleanup.
 Enable the opt-in suites with
 `cmake --preset windows-x64 -DNSSM_ENABLE_SCM_TESTS=ON`; build Release and run
-`ctest --test-dir build/windows-x64 -C Release -R '^nssm.(export_live|dependencies_live|controls_live)$' --output-on-failure`.
+`ctest --test-dir build/windows-x64 -C Release -R '^nssm.(export_live|dependencies_live|controls_live|lifecycle_live)$' --output-on-failure`.
 Disable it afterward with `-DNSSM_ENABLE_SCM_TESTS=OFF`. CI opts in only for its
-disposable x64 Release runner, where the test count becomes 38, including `nssm.controls_live`.
+disposable x64 Release runner, where the test count becomes 41, including `nssm.controls_live` and `nssm.lifecycle_live`.
 
 - `nssm.account_lookup`: policy/LSA/heap ownership, conversion/API/allocation
   failures, malformed names and repeated read-only lookup of the local account.
@@ -248,3 +251,18 @@ and PDBs are attached to the workflow run as artifacts.
 Pointer-size conversion diagnostics C4302, C4311 and C4312 are treated as errors
 when compiling application C++ sources. Fixes to service behavior and legacy
 Windows compatibility require separate changes and regression validation.
+
+## Release preparation checks
+
+`nssm.version_identity` checks legacy/stable/beta/RC/post-tag version generation,
+source-archive equivalence and malformed identity rejection in disposable Git
+fixtures. `nssm.package_rejection` checks dirty-tree and wrong-revision refusal.
+These tests require Git and use 60-second limits. The opt-in lifecycle suite
+runs an actual NSSM wrapper through crash/restart and repeated start/stop,
+with stdin/environment, quoted hooks, log draining and descendant cleanup.
+It creates only owned fixtures and uses a 120-second CTest limit.
+
+See [release preparation](releases/README.md) for clean pinned builds,
+manifests, checksums and source ZIPs. The packaging CI job builds and tests all
+four configurations from its generated source archive and verifies the outputs.
+It creates candidate artifacts, not a GitHub release.

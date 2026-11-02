@@ -124,12 +124,12 @@ with all four Windows CI configurations passing:
 | --- | --- | --- | --- |
 | [NSSM-023](NSSM-023.md) | Correct dependency resets, typed merges and validation cleanup | Fixed, unreleased | Not yet released |
 
-B13 has implementation and tests in [PR 18](https://github.com/existical/nssm-native/pull/18),
-pending review and merge:
+B13 merged in [PR 18](https://github.com/existical/nssm-native/pull/18),
+with all four Windows CI configurations passing:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |
-| [NSSM-024](NSSM-024.md) | Bound stop, pause and continue polling and preserve failure details | In progress | Not yet released |
+| [NSSM-024](NSSM-024.md) | Bound stop, pause and continue polling and preserve failure details | Fixed, unreleased | Not yet released |
 
 B14 acceptance found two release blockers beyond the original review:
 

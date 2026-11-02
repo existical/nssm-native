@@ -8,6 +8,9 @@ if(NOT WIN32 OR NOT MSVC)
 endif()
 
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+# Packaging reads identifiers selected by this configuration, not host guesses.
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/toolchain.json"
+  "{\"compiler\":\"MSVC ${CMAKE_CXX_COMPILER_VERSION}\",\"windows_sdk\":\"${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}\",\"cmake\":\"${CMAKE_VERSION}\",\"generator\":\"${CMAKE_GENERATOR}\"}\n")
 set(generated_dir "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${generated_dir}")
 

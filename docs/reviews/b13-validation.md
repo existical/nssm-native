@@ -1,8 +1,11 @@
 # B13 service control validation
 
 Validation date: 2026 November 3. Scope: [NSSM-024](../fixes/NSSM-024.md).
-Implementation is in [PR 18](https://github.com/existical/nssm-native/pull/18),
-pending review and merge; no release is published.
+Implementation merged in [PR 18](https://github.com/existical/nssm-native/pull/18)
+on 2026 November 3 at `0f856a4dedb7e5c9dc08fc010fb69bf90398a05d`.
+Final head `752768a33c705cebf94edc59f11659ec4cbbf8d6` passed all four jobs in
+[CI 41538831183](https://github.com/existical/nssm-native/actions/runs/41538831183).
+No release is published.
 
 Baseline: `89c918c6d33a3f7548d4899a718e55e4f61c5be4`, after PR 17 merged.
 Implementation: `d92c27cb022d1d573070e8f6a62b1964339db42b`.

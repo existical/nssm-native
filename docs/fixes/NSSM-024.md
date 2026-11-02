@@ -3,11 +3,12 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P2; B13; review finding 24 |
-| State | In progress; merge pending |
+| State | Fixed, unreleased |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a` |
 | Reproduced against | `89c918c6d33a3f7548d4899a718e55e4f61c5be4` |
 | Fix PR | [PR 18](https://github.com/existical/nssm-native/pull/18) |
 | Implementation commit | `d92c27cb022d1d573070e8f6a62b1964339db42b` |
+| Merge commit | `0f856a4dedb7e5c9dc08fc010fb69bf90398a05d` |
 | First release | Not yet released |
 
 Legacy stop/pause/continue called await_service_control_response with a zero

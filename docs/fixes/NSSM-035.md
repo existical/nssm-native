@@ -46,6 +46,10 @@ passed all four jobs at `787f3920defd7b12ede0fee414b809637fd95b1d`:
 other configuration. Full wrapper acceptance continues separately in PR 19;
 its startup now succeeds after this correction. The release-preparation PR retains
 its real SCM lifecycle scenario so future coverage includes actual startup.
+After the additional NSSM-036 cleanup repair, the complete lifecycle and
+source-archive packaging passed in
+[CI 41544419568](https://github.com/existical/nssm-native/actions/runs/41544419568);
+see [B14 validation](../reviews/b14-validation.md) for the pinned revision and scope.
 
 ```powershell
 git show dee49fc1a0804f06687299b8e9612a3fce1c5e9a:io.cpp

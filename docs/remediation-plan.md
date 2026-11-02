@@ -11,7 +11,7 @@ NSSM-001 through NSSM-024 match its numbered findings. NSSM-025 through NSSM-034
 split its additional follow-ups into independent tasks. The latter ten are
 follow-ups, not ten additional reproduced high-priority defects.
 
-**Status:** B00 through B12 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
+**Status:** B00 through B13 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
 are fixed but unreleased through
 [PR 5](https://github.com/existical/nssm-native/pull/5); see the
 [fix records](fixes/README.md) and [validation](reviews/b01-validation.md).
@@ -37,12 +37,16 @@ are now merged and unreleased. B08 merged in
 [PR 16](https://github.com/existical/nssm-native/pull/16); see its
 [validation](reviews/b11-validation.md). B12 merged in
 [PR 17](https://github.com/existical/nssm-native/pull/17); see its
-[validation](reviews/b12-validation.md). B13 has implementation and
-[validation](reviews/b13-validation.md) in [PR 18](https://github.com/existical/nssm-native/pull/18),
-pending review and merge. All 34 review
-tasks now have implementations; 33 are merged, and NSSM-024 is pending.
-NSSM-034 was confirmed by its GUI round-trip test. B14 release acceptance and
-packaging remain; no continuation release has been published.
+[validation](reviews/b12-validation.md). B13 merged in
+[PR 18](https://github.com/existical/nssm-native/pull/18); see its
+[validation](reviews/b13-validation.md). All 34 review tasks are now merged
+and unreleased. B14 found two release blockers, [NSSM-035](fixes/NSSM-035.md) and
+[NSSM-036](fixes/NSSM-036.md),
+repaired in [PR 20](https://github.com/existical/nssm-native/pull/20), pending merge.
+B14 release preparation in [PR 19](https://github.com/existical/nssm-native/pull/19) is in progress: lifecycle acceptance,
+clean-commit packaging, source identity and candidate documentation. See
+[release preparation](releases/README.md) and [B14 validation](reviews/b14-validation.md).
+No continuation release has been published.
 [Previously merged changes](fixes/implemented.md) retain separate CONT IDs.
 
 The recovered legacy development baseline is
@@ -75,8 +79,8 @@ work. P2 tasks share an early group only when they support the same repair.
 | B10 | Configuration export and exit actions | 016, 030, 033 | Merged in PR 15; AppExit round trips, strict fallback values and real query-only export validated |
 | B11 | GUI and accounts | 020, 025, 026, 027, 034 | Merged in PR 16; five confirmed fixes, GUI retries, account failures and hook round trips validated |
 | B12 | Dependencies | 023 | Merged in PR 17; typed resets/merges, bounded queries, validation cleanup and SCM round-trip tests pass |
-| B13 | Remaining service control waits | 024 | In progress; action budgets, bounded polling, diagnostics and deterministic/live tests implemented |
-| B14 | Candidate release and acceptance follow-ups | 035, 036 | Repair startup and cleanup blockers in PR 20, then complete PR 19 acceptance and packaging |
+| B13 | Remaining service control waits | 024 | Merged in PR 18; action budgets, polling, diagnostics and deterministic/live tests pass |
+| B14 | Candidate release and acceptance follow-ups | 035, 036 | In progress; startup/cleanup repairs in PR 20, lifecycle and packaging in PR 19; publication separate |
 
 ## Shared implementation and test rules
 
@@ -560,7 +564,7 @@ unit tests and query a disposable service after real SCM updates.
 
 ### NSSM 024
 
-**Implementation status:** implementation and tests present, pending merge;
+**Implementation status:** merged in PR 18, unreleased;
 see [NSSM-024](fixes/NSSM-024.md) and [B13 validation](reviews/b13-validation.md).
 
 **Bounded stop, pause and continue waits — P2, B13.** Review finding 24;
@@ -796,8 +800,8 @@ Review tasks remain planned or in progress until their own implementation lands.
    for affected features, recording OS/toolchain and outcomes.
 3. Maintain `docs/releases/<tag>.md` with included fix IDs, known issues,
    tested Windows versions, compatibility changes and upgrade guidance.
-   Update each included record's first-release field during release
-   preparation, then verify it against the published tag.
+   Prepare each included record's first-release assignment, but mark it released
+   only after verifying the published tag and artifacts.
 4. Build from a clean, pinned commit and publish per-artifact metadata:
    full commit, tag/version output, architecture/configuration, legacy
    baseline, toolchain/SDK versions, build workflow, test results and SHA-256.
