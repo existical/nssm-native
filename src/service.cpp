@@ -412,14 +412,15 @@ SC_HANDLE open_service(SC_HANDLE services, TCHAR *service_name, unsigned long ac
   return open_service(services, service_name, access, 0, 0);
 }
 
-QUERY_SERVICE_CONFIG *query_service_config(const TCHAR *service_name, SC_HANDLE service_handle) {
+QUERY_SERVICE_CONFIG *query_service_config(const TCHAR *service_name, SC_HANDLE service_handle, unsigned long *capacity) {
+  if (capacity) *capacity = 0;
   QUERY_SERVICE_CONFIG *qsc;
-  unsigned long bufsize;
+  unsigned long bufsize = 0;
   unsigned long error;
 
   QueryServiceConfig(service_handle, 0, 0, &bufsize);
   error = GetLastError();
-  if (error == ERROR_INSUFFICIENT_BUFFER) {
+  if (error == ERROR_INSUFFICIENT_BUFFER && bufsize >= sizeof(*qsc)) {
     qsc = (QUERY_SERVICE_CONFIG *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, bufsize);
     if (! qsc) {
       print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("QUERY_SERVICE_CONFIG"), _T("query_service_config()"), 0);
@@ -431,12 +432,15 @@ QUERY_SERVICE_CONFIG *query_service_config(const TCHAR *service_name, SC_HANDLE 
     return 0;
   }
 
-  if (! QueryServiceConfig(service_handle, qsc, bufsize, &bufsize)) {
+  unsigned long required = 0;
+  if (! QueryServiceConfig(service_handle, qsc, bufsize, &required)) {
+    error = GetLastError();
     HeapFree(GetProcessHeap(), 0, qsc);
-    print_message(stderr, NSSM_MESSAGE_QUERYSERVICECONFIG_FAILED, service_name, error_string(GetLastError()), 0);
+    print_message(stderr, NSSM_MESSAGE_QUERYSERVICECONFIG_FAILED, service_name, error_string(error), 0);
     return 0;
   }
 
+  if (capacity) *capacity = bufsize;
   return qsc;
 }
 
@@ -491,186 +495,116 @@ int remove_from_dependencies(TCHAR *dependencies, unsigned long dependencieslen,
 }
 
 int set_service_dependencies(const TCHAR *service_name, SC_HANDLE service_handle, TCHAR *buffer) {
-  TCHAR *dependencies = _T("");
-  unsigned long num_dependencies = 0;
-
+  struct resources_t {
+    SC_HANDLE manager;
+    HKEY key;
+    TCHAR *groups, *canonical;
+    resources_t() : manager(0), key(0), groups(0), canonical(0) {}
+    ~resources_t() {
+      if (groups) HeapFree(GetProcessHeap(), 0, groups);
+      if (canonical) HeapFree(GetProcessHeap(), 0, canonical);
+      if (key) RegCloseKey(key);
+      if (manager) CloseServiceHandle(manager);
+    }
+  } resources;
+  TCHAR empty[2] = {0};
+  TCHAR *dependencies = empty; // A non-null empty block explicitly clears SCM dependencies.
   if (buffer && buffer[0]) {
-    SC_HANDLE services = open_service_manager(SC_MANAGER_CONNECT | SC_MANAGER_ENUMERATE_SERVICE);
-    if (! services) {
+    size_t count = 0;
+    bool needs_groups = false;
+    for (const TCHAR *entry = buffer; *entry; entry += _tcslen(entry) + 1) {
+      count++;
+      if (*entry == SC_GROUP_IDENTIFIER) needs_groups = true;
+      if (_tcslen(entry) >= SERVICE_NAME_LENGTH) return 5;
+    }
+    if (count > (((size_t) -1) / sizeof(TCHAR) - 2) / SERVICE_NAME_LENGTH) return 3;
+    resources.manager = open_service_manager(SC_MANAGER_CONNECT | SC_MANAGER_ENUMERATE_SERVICE);
+    if (! resources.manager) {
       print_message(stderr, NSSM_MESSAGE_OPEN_SERVICE_MANAGER_FAILED);
       return 1;
     }
-
-    /*
-      Count the dependencies then allocate a buffer big enough for their
-      canonical names, ie n * SERVICE_NAME_LENGTH.
-    */
-    TCHAR *s;
-    TCHAR *groups = 0;
-    for (s = buffer; *s; s++) {
-      num_dependencies++;
-      if (*s == SC_GROUP_IDENTIFIER) groups = s;
-      while (*s) s++;
-    }
-
-    /* At least one dependency is a group so we need to verify them. */
-    if (groups) {
-      HKEY key;
-      if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, NSSM_REGISTRY_GROUPS, 0, KEY_READ, &key)) {
-        _ftprintf(stderr, _T("%s: %s\n"), NSSM_REGISTRY_GROUPS, error_string(GetLastError()));
+    if (needs_groups) {
+      LONG error = RegOpenKeyEx(HKEY_LOCAL_MACHINE, NSSM_REGISTRY_GROUPS, 0, KEY_READ, &resources.key);
+      if (error != ERROR_SUCCESS) {
+        _ftprintf(stderr, _T("%s: %s\n"), NSSM_REGISTRY_GROUPS, error_string(error));
         return 2;
       }
-
-      unsigned long type;
-      unsigned long groupslen;
-      unsigned long ret = RegQueryValueEx(key, NSSM_REG_GROUPS, 0, &type, NULL, &groupslen);
-      if (ret == ERROR_SUCCESS) {
-        groups = (TCHAR *) HeapAlloc(GetProcessHeap(), 0, groupslen);
-        if (! groups) {
-          print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("groups"), _T("set_service_dependencies()"));
-          return 3;
-        }
-
-        ret = RegQueryValueEx(key, NSSM_REG_GROUPS, 0, &type, (unsigned char *) groups, &groupslen);
-        if (ret != ERROR_SUCCESS) {
-          _ftprintf(stderr, _T("%s\\%s: %s"), NSSM_REGISTRY_GROUPS, NSSM_REG_GROUPS, error_string(GetLastError()));
-          HeapFree(GetProcessHeap(), 0, groups);
-          RegCloseKey(key);
-          return 4;
-        }
-      }
-      else if (ret != ERROR_FILE_NOT_FOUND) {
-        _ftprintf(stderr, _T("%s\\%s: %s"), NSSM_REGISTRY_GROUPS, NSSM_REG_GROUPS, error_string(GetLastError()));
-        RegCloseKey(key);
-        return 4;
-      }
-
-      RegCloseKey(key);
-
+      unsigned long length = 0;
+      /* Reuse the bounded REG_MULTI_SZ reader, including missing/type/size checks. */
+      if (get_environment((TCHAR *) service_name, resources.key, NSSM_REG_GROUPS, &resources.groups, &length)) return 4;
     }
-
-    unsigned long dependencieslen = (num_dependencies * SERVICE_NAME_LENGTH) + 2;
-    dependencies = (TCHAR *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, dependencieslen * sizeof(TCHAR));
-    size_t i = 0;
-
-    TCHAR dependency[SERVICE_NAME_LENGTH];
-    for (s = buffer; *s; s++) {
-      /* Group? */
-      if (*s == SC_GROUP_IDENTIFIER) {
-        TCHAR *group = s + 1;
-
-        bool ok = false;
-        if (*group) {
-          for (TCHAR *g = groups; *g; g++) {
-            if (str_equiv(g, group)) {
-              ok = true;
-              /* Set canonical name. */
-              memmove(group, g, _tcslen(g) * sizeof(TCHAR));
-              break;
-            }
-
-            while (*g) g++;
+    size_t capacity = count * SERVICE_NAME_LENGTH + 2;
+    resources.canonical = (TCHAR *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, capacity * sizeof(TCHAR));
+    if (! resources.canonical) {
+      print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("dependencies"), _T("set_service_dependencies()"));
+      return 3;
+    }
+    size_t used = 0;
+    for (const TCHAR *entry = buffer; *entry; entry += _tcslen(entry) + 1) {
+      TCHAR name[SERVICE_NAME_LENGTH] = {};
+      if (*entry == SC_GROUP_IDENTIFIER) {
+        if (resources.groups && entry[1]) {
+          for (const TCHAR *group = resources.groups; *group; group += _tcslen(group) + 1) {
+            if (! str_equiv(group, entry + 1)) continue;
+            if (_sntprintf_s(name, _countof(name), _TRUNCATE, _T("%c%s"), SC_GROUP_IDENTIFIER, group) < 0) return 5;
+            break;
           }
-        }
-
-        if (ok) _sntprintf_s(dependency, _countof(dependency), _TRUNCATE, _T("%s"), s);
-        else {
-          HeapFree(GetProcessHeap(), 0, dependencies);
-          if (groups) HeapFree(GetProcessHeap(), 0, groups);
-          _ftprintf(stderr, _T("%s: %s"), s, error_string(ERROR_SERVICE_DEPENDENCY_DELETED));
-          return 5;
         }
       }
       else {
-        SC_HANDLE dependency_handle = open_service(services, s, SERVICE_QUERY_STATUS, dependency, _countof(dependency));
-        if (! dependency_handle) {
-          HeapFree(GetProcessHeap(), 0, dependencies);
-          if (groups) HeapFree(GetProcessHeap(), 0, groups);
-          CloseServiceHandle(services);
-          _ftprintf(stderr, _T("%s: %s"), s, error_string(ERROR_SERVICE_DEPENDENCY_DELETED));
-          return 5;
-        }
+        SC_HANDLE dependency = open_service(resources.manager, (TCHAR *) entry, SERVICE_QUERY_STATUS, name, _countof(name));
+        if (! dependency) return 5;
+        CloseServiceHandle(dependency);
       }
-
-      size_t len = _tcslen(dependency) + 1;
-      memmove(dependencies + i, dependency, len * sizeof(TCHAR));
-      i += len;
-
-      while (*s) s++;
+      if (! name[0]) {
+        _ftprintf(stderr, _T("%s: %s"), entry, error_string(ERROR_SERVICE_DEPENDENCY_DELETED));
+        return 5;
+      }
+      size_t length = _tcslen(name) + 1;
+      memmove(resources.canonical + used, name, length * sizeof(TCHAR));
+      used += length;
     }
-
-    if (groups) HeapFree(GetProcessHeap(), 0, groups);
-    CloseServiceHandle(services);
+    dependencies = resources.canonical;
   }
-
   if (! ChangeServiceConfig(service_handle, SERVICE_NO_CHANGE, SERVICE_NO_CHANGE, SERVICE_NO_CHANGE, 0, 0, 0, dependencies, 0, 0, 0)) {
-    if (num_dependencies) HeapFree(GetProcessHeap(), 0, dependencies);
     print_message(stderr, NSSM_MESSAGE_CHANGESERVICECONFIG_FAILED, error_string(GetLastError()));
     return -1;
   }
-
-  if (num_dependencies) HeapFree(GetProcessHeap(), 0, dependencies);
   return 0;
 }
 
 int get_service_dependencies(const TCHAR *service_name, SC_HANDLE service_handle, TCHAR **buffer, unsigned long *bufsize, int type) {
-  if (! buffer) return 1;
-  if (! bufsize) return 2;
-
-  *buffer = 0;
-  *bufsize = 0;
-
-  QUERY_SERVICE_CONFIG *qsc = query_service_config(service_name, service_handle);
+  if (buffer) *buffer = 0;
+  if (bufsize) *bufsize = 0;
+  if (! buffer || ! bufsize || ! (type & DEPENDENCY_ALL) || (type & ~DEPENDENCY_ALL)) return 1;
+  unsigned long capacity = 0;
+  QUERY_SERVICE_CONFIG *qsc = query_service_config(service_name, service_handle, &capacity);
   if (! qsc) return 3;
-
-  if (! qsc->lpDependencies || ! qsc->lpDependencies[0]) {
-    HeapFree(GetProcessHeap(), 0, qsc);
-    return 0;
-  }
-
-  /* lpDependencies is doubly NULL terminated. */
-  while (qsc->lpDependencies[*bufsize]) {
-    while (qsc->lpDependencies[*bufsize]) ++*bufsize;
-    ++*bufsize;
-  }
-
-  *bufsize += 2;
-
-  *buffer = (TCHAR *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, *bufsize * sizeof(TCHAR));
-  if (! *buffer) {
-    *bufsize = 0;
+  struct config_owner_t {
+    QUERY_SERVICE_CONFIG *value;
+    ~config_owner_t() { HeapFree(GetProcessHeap(), 0, value); }
+  } owner = { qsc };
+  if (! qsc->lpDependencies) return 0;
+  ULONG_PTR offset = (ULONG_PTR) qsc->lpDependencies - (ULONG_PTR) qsc;
+  if (offset < sizeof(*qsc) || offset >= capacity || offset % sizeof(TCHAR) || capacity - offset < sizeof(TCHAR)) return 3;
+  if (! qsc->lpDependencies[0]) return 0;
+  unsigned long length = 0;
+  if (! double_null_length(qsc->lpDependencies, (capacity - (unsigned long) offset) / sizeof(TCHAR), &length)) return 3;
+  TCHAR *result = (TCHAR *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, length * sizeof(TCHAR));
+  if (! result) {
     print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("lpDependencies"), _T("get_service_dependencies()"));
-    HeapFree(GetProcessHeap(), 0, qsc);
     return 4;
   }
-
-  if (type == DEPENDENCY_ALL) memmove(*buffer, qsc->lpDependencies, *bufsize * sizeof(TCHAR));
-  else {
-    TCHAR *s;
-    size_t i = 0;
-    *bufsize = 0;
-    for (s = qsc->lpDependencies; *s; s++) {
-      /* Only copy the appropriate type of dependency. */
-      if ((*s == SC_GROUP_IDENTIFIER && type & DEPENDENCY_GROUPS) || (*s != SC_GROUP_IDENTIFIER && type & DEPENDENCY_SERVICES)) {
-        size_t len = _tcslen(s) + 1;
-        *bufsize += (unsigned long) len;
-        memmove(*buffer + i, s, len * sizeof(TCHAR));
-        i += len;
-      }
-
-      while (*s) s++;
-    }
-    ++*bufsize;
+  unsigned long used = 0;
+  for (const TCHAR *entry = qsc->lpDependencies; *entry; entry += _tcslen(entry) + 1) {
+    if (! ((*entry == SC_GROUP_IDENTIFIER ? DEPENDENCY_GROUPS : DEPENDENCY_SERVICES) & type)) continue;
+    unsigned long count = (unsigned long) _tcslen(entry) + 1;
+    memmove(result + used, entry, count * sizeof(TCHAR));
+    used += count;
   }
-
-  HeapFree(GetProcessHeap(), 0, qsc);
-
-  if (! *buffer[0]) {
-    HeapFree(GetProcessHeap(), 0, *buffer);
-    *buffer = 0;
-    *bufsize = 0;
-  }
-
+  if (! used) { HeapFree(GetProcessHeap(), 0, result); return 0; }
+  *buffer = result;
+  *bufsize = used + 1; // Entries include their NUL; add only the final NUL.
   return 0;
 }
 

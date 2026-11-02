@@ -11,7 +11,7 @@ NSSM-001 through NSSM-024 match its numbered findings. NSSM-025 through NSSM-034
 split its additional follow-ups into independent tasks. The latter ten are
 follow-ups, not ten additional reproduced high-priority defects.
 
-**Status:** B00 through B10 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
+**Status:** B00 through B11 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
 are fixed but unreleased through
 [PR 5](https://github.com/existical/nssm-native/pull/5); see the
 [fix records](fixes/README.md) and [validation](reviews/b01-validation.md).
@@ -33,10 +33,12 @@ are now merged and unreleased. B08 merged in
 [PR 14](https://github.com/existical/nssm-native/pull/14); see its
 [validation](reviews/b09-validation.md). B10 merged in
 [PR 15](https://github.com/existical/nssm-native/pull/15); see its
-[validation](reviews/b10-validation.md). B11 has implementation and
-[validation](reviews/b11-validation.md) in [PR 16](https://github.com/existical/nssm-native/pull/16),
+[validation](reviews/b10-validation.md). B11 merged in
+[PR 16](https://github.com/existical/nssm-native/pull/16); see its
+[validation](reviews/b11-validation.md). B12 has implementation and
+[validation](reviews/b12-validation.md) in [PR 17](https://github.com/existical/nssm-native/pull/17),
 pending review and merge. NSSM-034
-is confirmed by its GUI round-trip test. B12 and B13 remain planned.
+was confirmed by its GUI round-trip test. B13 remains planned.
 [Previously merged changes](fixes/implemented.md) retain separate CONT IDs.
 
 The recovered legacy development baseline is
@@ -67,8 +69,8 @@ work. P2 tasks share an early group only when they support the same repair.
 | B08 | Primitive ownership and error paths | 015, 018, 019, 021, 028, 032 | Merged in PR 13; six focused implementation commits, failure tests and full matrix pass |
 | B09 | Redirection and logging correctness | 012, 013, 014, 022 | Merged in PR 14; stdin, encoding, byte counts and typed event insertions validated |
 | B10 | Configuration export and exit actions | 016, 030, 033 | Merged in PR 15; AppExit round trips, strict fallback values and real query-only export validated |
-| B11 | GUI and accounts | 020, 025, 026, 027, 034 | In progress; five confirmed fixes, GUI retries, account failure injection and hook round trips validated |
-| B12 | Dependencies | 023 | B01; service/group combinations round-trip through SCM |
+| B11 | GUI and accounts | 020, 025, 026, 027, 034 | Merged in PR 16; five confirmed fixes, GUI retries, account failures and hook round trips validated |
+| B12 | Dependencies | 023 | In progress; typed resets/merges, bounded queries, validation cleanup and SCM round-trip tests implemented |
 | B13 | Remaining service control waits | 024 | B08; zero-time and bounded-polling semantics established |
 | B14 | Candidate release and comparison records | All completed IDs | All P1 tasks closed, release criteria below satisfied |
 
@@ -485,7 +487,7 @@ AppThrottle and stop-delay callers.
 
 ### NSSM 020
 
-**Implementation status:** implementation and tests present, pending merge;
+**Implementation status:** merged in PR 16, unreleased;
 see [NSSM-020](fixes/NSSM-020.md) and [B11 validation](reviews/b11-validation.md).
 
 **GUI borrowed service handle — P2, B11.** Review finding 20; source-traced.
@@ -536,6 +538,9 @@ The broader wrapper can be a follow-up commit after the direct fixes.
 
 ### NSSM 023
 
+**Implementation status:** implementation and tests present, pending merge;
+see [NSSM-023](fixes/NSSM-023.md) and [B12 validation](reviews/b12-validation.md).
+
 **Dependency reset and merge semantics — P2, B12.** Review finding 23;
 source-traced against the SCM API contract.
 
@@ -573,7 +578,7 @@ timeout as failure, without regressing startup tests.
 
 ### NSSM 025
 
-**Implementation status:** implementation and tests present, pending merge;
+**Implementation status:** merged in PR 16, unreleased;
 see [NSSM-025](fixes/NSSM-025.md) and [B11 validation](reviews/b11-validation.md).
 
 **Password-confirmation cleanup — P2, B11.** Review follow-up A.
@@ -588,7 +593,7 @@ to another user or process.
 
 ### NSSM 026
 
-**Implementation status:** implementation and tests present, pending merge;
+**Implementation status:** merged in PR 16, unreleased;
 see [NSSM-026](fixes/NSSM-026.md) and [B11 validation](reviews/b11-validation.md).
 
 **Account lookup resource cleanup — P2, B11.** First part of follow-up B.
@@ -602,7 +607,7 @@ and handles balance on every path.
 
 ### NSSM 027
 
-**Implementation status:** implementation and tests present, pending merge;
+**Implementation status:** merged in PR 16, unreleased;
 see [NSSM-027](fixes/NSSM-027.md) and [B11 validation](reviews/b11-validation.md).
 
 **Counted LSA right comparison — P2, B11.** Second part of follow-up B.
@@ -703,7 +708,7 @@ text; validate alongside NSSM-016's export round trip.
 
 ### NSSM 034
 
-**Implementation status:** implementation and tests present, pending merge;
+**Implementation status:** merged in PR 16, unreleased;
 see [NSSM-034](fixes/NSSM-034.md) and [B11 validation](reviews/b11-validation.md).
 
 **Literal hook environment references — confirmed P2, B11.**

@@ -49,6 +49,8 @@ int create_messages();
 int create_parameters(nssm_service_t *, bool);
 int create_exit_action(TCHAR *, const TCHAR *, bool);
 int get_environment(TCHAR *, HKEY, TCHAR *, TCHAR **, unsigned long *);
+/* Count through the first double NUL within a supplied character capacity. */
+bool double_null_length(const TCHAR *, unsigned long, unsigned long *);
 /* String capacities are bytes; successful results include a terminating TCHAR. */
 int get_string(HKEY, TCHAR *, TCHAR *, unsigned long, bool, bool, bool, unsigned long * = 0);
 int get_string(HKEY, TCHAR *, TCHAR *, unsigned long, bool);

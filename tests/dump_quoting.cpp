@@ -1,4 +1,5 @@
 #include "test.h"
+#include "dependency_fixture.h"
 
 typedef std::basic_string<TCHAR> text_t;
 static text_t dump_output;
@@ -20,12 +21,14 @@ static bool tracking;
 static std::vector<void *> owned;
 static unsigned allocations;
 static LPVOID WINAPI allocate(HANDLE heap, DWORD flags, SIZE_T size) {
+  if (dependency_test::active) return dependency_test::allocate(heap, flags, size);
   if (active) { allocations++; return NULL; }
   void *p = HeapAlloc(heap, flags, size);
   if (tracking && p) owned.push_back(p);
   return p;
 }
 static BOOL WINAPI release(HANDLE heap, DWORD flags, LPVOID p) {
+  if (dependency_test::active) return dependency_test::release(heap, flags, p);
   for (size_t i = 0; i < owned.size(); i++) if (owned[i] == p) { owned.erase(owned.begin() + i); break; }
   return HeapFree(heap, flags, p);
 }
@@ -70,7 +73,11 @@ static int test_dump_printf(const TCHAR *format, ...) {
 #undef RegDeleteValue
 #define RegDeleteValue reset_test::remove
 #define enumerate_registry_values test_enumerate_exit
+#undef ChangeServiceConfig
+#define ChangeServiceConfig dependency_test::change
 #include "../src/settings.cpp"
+#undef ChangeServiceConfig
+#define ChangeServiceConfig ChangeServiceConfigW
 #undef enumerate_registry_values
 #undef HeapAlloc
 #undef HeapFree
@@ -81,6 +88,22 @@ static int test_dump_printf(const TCHAR *format, ...) {
 #undef _tprintf
 
 #include "exit_export_cases.h"
+
+int dependency_test::apply(int type, const TCHAR *input) {
+  std::basic_string<TCHAR> text = input ? input : _T("");
+  value_t value = {}; value.string = &text[0];
+  SC_HANDLE handle = reinterpret_cast<SC_HANDLE>(3);
+  int result = type == DEPENDENCY_SERVICES ?
+    native_set_dependonservice(_T("Target"), handle, NSSM_NATIVE_DEPENDONSERVICE, NULL, input ? &value : NULL, NULL) :
+    native_set_dependongroup(_T("Target"), handle, NSSM_NATIVE_DEPENDONGROUP, NULL, input ? &value : NULL, NULL);
+  CHECK(text == (input ? input : _T(""))); return result;
+}
+int dependency_test::dump(int type) {
+  value_t value = {}; capture_dump = true; dump_output.clear();
+  int result = setting_dump_dependon(_T("Target"), reinterpret_cast<SC_HANDLE>(3),
+    type == DEPENDENCY_SERVICES ? NSSM_NATIVE_DEPENDONSERVICE : NSSM_NATIVE_DEPENDONGROUP, type, &value);
+  capture_dump = false; return result;
+}
 
 void test_exit_export() {
   registry_fixture registry;

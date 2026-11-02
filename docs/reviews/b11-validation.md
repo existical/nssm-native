@@ -1,9 +1,9 @@
 # B11 GUI and account validation
 
 Validation date: 2026 November 2. Scope: NSSM-020, NSSM-025, NSSM-026,
-NSSM-027 and NSSM-034. B11 is implemented in
-[PR 16](https://github.com/existical/nssm-native/pull/16), pending review and
-merge, and unreleased. The [fix index](../fixes/README.md) records each issue's state.
+NSSM-027 and NSSM-034. B11 merged in
+[PR 16](https://github.com/existical/nssm-native/pull/16) at
+`f969dd985039a8d2fe77a0ed0a24e077894c2bef`; it remains unreleased. The [fix index](../fixes/README.md) records each issue's state.
 
 Baseline: `f28a43141a576033713190fe9b716fb503ac227a`, after PR 15 merged.
 Implementation: `b91392150c23ecec4299c4eec75a7fcb65f867fb`.

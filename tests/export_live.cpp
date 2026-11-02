@@ -17,12 +17,13 @@ struct service_fixture {
   SC_HANDLE service;
   std::wstring name, path;
   HKEY key;
-  service_fixture(SC_HANDLE manager, const std::wstring &exe, const wchar_t *suffix) : service(NULL), key(NULL) {
+  service_fixture(SC_HANDLE manager, const std::wstring &exe, const wchar_t *suffix,
+    const wchar_t *prefix = L"NSSM-Export-Test", DWORD extra_access = 0) : service(NULL), key(NULL) {
     wchar_t buffer[128];
-    swprintf_s(buffer, L"NSSM-Export-Test-%lu-%llu-%s", GetCurrentProcessId(), GetTickCount64(), suffix);
+    swprintf_s(buffer, L"%s-%lu-%llu-%s", prefix, GetCurrentProcessId(), GetTickCount64(), suffix);
     name = buffer;
     path = L"SYSTEM\\CurrentControlSet\\Services\\" + name;
-    service = CreateServiceW(manager, name.c_str(), name.c_str(), DELETE | WRITE_DAC | SERVICE_QUERY_CONFIG,
+    service = CreateServiceW(manager, name.c_str(), name.c_str(), DELETE | WRITE_DAC | SERVICE_QUERY_CONFIG | extra_access,
       SERVICE_WIN32_OWN_PROCESS, SERVICE_DISABLED, SERVICE_ERROR_NORMAL, quoted(exe).c_str(), NULL, NULL, NULL, NULL, NULL);
     require(service != NULL, "Create isolated disabled service");
   }
@@ -103,7 +104,10 @@ static result run(const std::wstring &exe, const std::wstring &arguments) {
   return value;
 }
 
+#include "dependencies_live_cases.h"
+
 int wmain(int argc, wchar_t **argv) {
+  if (argc == 3 && ! wcscmp(argv[2], L"dependencies")) return dependencies_live(argv[1]);
   SC_HANDLE manager = NULL;
   try {
     require(argc == 2, "Supply the NSSM executable path");
