@@ -67,8 +67,12 @@ int str_equiv(const TCHAR *, const TCHAR *);
 /* Non-overlapping strings; capacity in TCHARs including NUL. Failure writes nothing. */
 int quote(const TCHAR *, TCHAR *, size_t);
 void strip_basename(TCHAR *);
+/* 0 = complete, 2 = valid prefix with suffix, 1 = invalid/overflow; invalid leaves number unchanged. */
 int str_number(const TCHAR *, unsigned long *, TCHAR **);
+/* Standalone conversion requires complete consumption and leaves number unchanged on failure. */
 int str_number(const TCHAR *, unsigned long *);
+/* System mask in the API's current/primary group; zero when unavailable. */
+DWORD_PTR cpu_affinity_mask();
 int num_cpus();
 int usage(int);
 const TCHAR *nssm_unquoted_imagepath();

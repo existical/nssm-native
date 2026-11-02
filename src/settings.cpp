@@ -353,7 +353,7 @@ static int setting_set_affinity(const TCHAR *service_name, void *param, const TC
 
     if (is_default(value->string) || str_equiv(value->string, NSSM_AFFINITY_ALL)) mask = 0LL;
     else if (affinity_string_to_mask(value->string, &mask)) {
-      print_message(stderr, NSSM_MESSAGE_BOGUS_AFFINITY_MASK, value->string, num_cpus() - 1);
+      print_message(stderr, NSSM_MESSAGE_BOGUS_AFFINITY_MASK, value->string, 63);
       return -1;
     }
   }
@@ -426,7 +426,7 @@ static int setting_get_affinity(const TCHAR *service_name, void *param, const TC
 
   __int64 affinity;
   if (affinity_string_to_mask(buffer, &affinity)) {
-    print_message(stderr, NSSM_MESSAGE_BOGUS_AFFINITY_MASK, buffer, num_cpus() - 1);
+    print_message(stderr, NSSM_MESSAGE_BOGUS_AFFINITY_MASK, buffer, 63);
     HeapFree(GetProcessHeap(), 0, buffer);
     return -1;
   }

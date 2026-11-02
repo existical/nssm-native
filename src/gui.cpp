@@ -7,6 +7,51 @@ static enum { NSSM_TAB_APPLICATION, NSSM_TAB_DETAILS, NSSM_TAB_LOGON, NSSM_TAB_D
 static HWND tablist[NSSM_NUM_TABS];
 static int selected_tab;
 
+/* Store the CPU identifier separately: list rows need not be dense CPU IDs. */
+int populate_affinity_list(HWND list, DWORD_PTR available) {
+  SendMessage(list, LB_RESETCONTENT, 0, 0);
+  int count = 0;
+  for (unsigned int cpu = 0; cpu < sizeof(available) * 8; cpu++) {
+    if (! (available & ((DWORD_PTR) 1 << cpu))) continue;
+    TCHAR label[3];
+    _sntprintf_s(label, _countof(label), _TRUNCATE, _T("%u"), cpu);
+    LRESULT row = SendMessage(list, LB_ADDSTRING, 0, (LPARAM) label);
+    if (row < 0 || SendMessage(list, LB_SETITEMDATA, row, cpu) == LB_ERR) {
+      SendMessage(list, LB_RESETCONTENT, 0, 0);
+      return 0;
+    }
+    count++;
+  }
+  return count;
+}
+
+void select_affinity_list(HWND list, __int64 mask) {
+  int count = (int) SendMessage(list, LB_GETCOUNT, 0, 0);
+  for (int row = 0; row < count; row++) {
+    LRESULT cpu = SendMessage(list, LB_GETITEMDATA, row, 0);
+    bool selected = cpu >= 0 && cpu < 64 && (((unsigned __int64) mask) & (1ULL << cpu));
+    SendMessage(list, LB_SETSEL, selected, row);
+  }
+}
+
+int affinity_from_list(HWND list, __int64 *mask) {
+  if (! mask) return 1;
+  *mask = 0;
+  int count = (int) SendMessage(list, LB_GETCOUNT, 0, 0);
+  int selected = (int) SendMessage(list, LB_GETSELCOUNT, 0, 0);
+  if (count <= 0 || count > 64 || selected <= 0 || selected > count) return 1;
+  unsigned __int64 parsed = 0;
+  for (int row = 0; row < count; row++) {
+    LRESULT state = SendMessage(list, LB_GETSEL, row, 0);
+    LRESULT cpu = SendMessage(list, LB_GETITEMDATA, row, 0);
+    if (state == LB_ERR || cpu < 0 || cpu >= 64) return 1;
+    if (state) parsed |= 1ULL << cpu;
+  }
+  /* Preserve the existing convention: all rows selected means no restriction. */
+  if (selected < count) *mask = (__int64) parsed;
+  return 0;
+}
+
 static HWND dialog(const TCHAR *templ, HWND parent, DLGPROC function, LPARAM l) {
   /* The caller will deal with GetLastError()... */
   HRSRC resource = FindResourceEx(0, RT_DIALOG, templ, GetUserDefaultLangID());
@@ -138,9 +183,7 @@ int nssm_gui(int resource, nssm_service_t *service) {
         if ((service->affinity & (__int64) system_affinity) != service->affinity) popup_message(dlg, MB_OK | MB_ICONWARNING, NSSM_GUI_WARN_AFFINITY);
       }
 
-      for (int i = 0; i < num_cpus(); i++) {
-        if (! (service->affinity & (1LL << (__int64) i))) SendMessage(list, LB_SETSEL, 0, i);
-      }
+      select_affinity_list(list, service->affinity);
     }
 
     if (service->no_console) {
@@ -280,7 +323,8 @@ static inline void set_timeout_enabled(unsigned long control, unsigned long depe
 }
 
 static inline void set_affinity_enabled(unsigned char enabled) {
-  EnableWindow(GetDlgItem(tablist[NSSM_TAB_PROCESS], IDC_AFFINITY), enabled);
+  HWND list = GetDlgItem(tablist[NSSM_TAB_PROCESS], IDC_AFFINITY);
+  EnableWindow(list, enabled && SendMessage(list, LB_GETCOUNT, 0, 0) > 0);
 }
 
 static inline void set_rotation_enabled(unsigned char enabled) {
@@ -639,16 +683,9 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
   service->affinity = 0LL;
   if (! (SendDlgItemMessage(tablist[NSSM_TAB_PROCESS], IDC_AFFINITY_ALL, BM_GETCHECK, 0, 0) & BST_CHECKED)) {
     HWND list = GetDlgItem(tablist[NSSM_TAB_PROCESS], IDC_AFFINITY);
-    int selected = (int) SendMessage(list, LB_GETSELCOUNT, 0, 0);
-    int count = (int) SendMessage(list, LB_GETCOUNT, 0, 0);
-    if (! selected) {
+    if (affinity_from_list(list, &service->affinity)) {
       popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_WARN_AFFINITY_NONE);
       return 5;
-    }
-    else if (selected < count) {
-      for (int i = 0; i < count; i++) {
-        if (SendMessage(list, LB_GETSEL, i, 0)) service->affinity |= (1LL << (__int64) i);
-      }
     }
   }
 
@@ -1180,13 +1217,8 @@ INT_PTR CALLBACK nssm_dlg(HWND window, UINT message, WPARAM w, LPARAM l) {
       SendDlgItemMessage(tablist[NSSM_TAB_PROCESS], IDC_CONSOLE, BM_SETCHECK, BST_CHECKED, 0);
 
       list = GetDlgItem(tablist[NSSM_TAB_PROCESS], IDC_AFFINITY);
-      n = num_cpus();
       SendMessage(list, LB_SETCOLUMNWIDTH, 16, 0);
-      for (i = 0; i < n; i++) {
-        TCHAR buffer[3];
-        _sntprintf_s(buffer, _countof(buffer), _TRUNCATE, _T("%d"), i);
-        SendMessage(list, LB_ADDSTRING, 0, (LPARAM) buffer);
-      }
+      n = populate_affinity_list(list, cpu_affinity_mask());
 
       /*
         Size to fit.
@@ -1195,7 +1227,7 @@ INT_PTR CALLBACK nssm_dlg(HWND window, UINT message, WPARAM w, LPARAM l) {
         Note that the above only holds if we set the column width BEFORE
         adding the strings.
       */
-      if (n < 32) {
+      if (n > 0 && n < 32) {
         int columns = (n - 1) / 4;
         RECT rect;
         GetWindowRect(list, &rect);
@@ -1205,7 +1237,7 @@ INT_PTR CALLBACK nssm_dlg(HWND window, UINT message, WPARAM w, LPARAM l) {
         if (n < 4) height -= (int) SendMessage(list, LB_GETITEMHEIGHT, 0, 0) * (4 - n);
         SetWindowPos(list, 0, 0, 0, width, height, SWP_NOMOVE | SWP_NOOWNERZORDER);
       }
-      SendMessage(list, LB_SELITEMRANGE, 1, MAKELPARAM(0, n));
+      if (n) SendMessage(list, LB_SELITEMRANGE, 1, MAKELPARAM(0, n - 1));
 
       SendDlgItemMessage(tablist[NSSM_TAB_PROCESS], IDC_AFFINITY_ALL, BM_SETCHECK, BST_CHECKED, 0);
       set_affinity_enabled(0);

@@ -18,6 +18,8 @@ int wmain(int argc, TCHAR **argv) {
     else if (! _tcscmp(argv[1], _T("registry"))) test_registry_bounds();
     else if (! _tcscmp(argv[1], _T("multisz"))) test_multisz_bounds();
     else if (! _tcscmp(argv[1], _T("quoting"))) test_quoting();
+    else if (! _tcscmp(argv[1], _T("numeric"))) test_numeric();
+    else if (! _tcscmp(argv[1], _T("affinity"))) { test_affinity(); test_cpu_detection(); }
     else throw std::runtime_error("Unknown test group");
   }
   catch (const std::exception &error) {

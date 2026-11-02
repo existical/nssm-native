@@ -29,12 +29,21 @@ All four Windows CI configurations passed. These fixes are not yet released:
 | [NSSM-010](NSSM-010.md) | Validate registry strings and environment blocks | Fixed, unreleased | Not yet released |
 | [NSSM-011](NSSM-011.md) | Bound MULTI_SZ formatting | Fixed, unreleased | Not yet released |
 
-B02 is under review in [PR 7](https://github.com/existical/nssm-native/pull/7);
-it is not yet merged or released:
+B02 merged in [PR 7](https://github.com/existical/nssm-native/pull/7), with all
+four CI configurations passing:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |
-| [NSSM-002](NSSM-002.md) | Bound command-quoting output | In progress, merge pending | Not yet released |
+| [NSSM-002](NSSM-002.md) | Bound command-quoting output | Fixed, unreleased | Not yet released |
+
+B03 is under review in [PR 8](https://github.com/existical/nssm-native/pull/8),
+pending merge:
+
+| ID | Change | State | First release |
+| --- | --- | --- | --- |
+| [NSSM-004](NSSM-004.md) | Bound affinity tokens and CPU ranges | In progress | Not yet released |
+| [NSSM-029](NSSM-029.md) | Count sparse masks and map GUI rows to CPU IDs | In progress | Not yet released |
+| [NSSM-031](NSSM-031.md) | Reject invalid and overflowing unsigned numbers | In progress | Not yet released |
 
 The [implementation plan](../remediation-plan.md) tracks NSSM-001 through
 NSSM-034. Check each record's state before assuming inclusion in a build.

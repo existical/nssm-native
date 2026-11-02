@@ -7,6 +7,9 @@
 #include "resource.h"
 
 int nssm_gui(int, nssm_service_t *);
+int populate_affinity_list(HWND, DWORD_PTR);
+void select_affinity_list(HWND, __int64);
+int affinity_from_list(HWND, __int64 *);
 void centre_window(HWND);
 int configure(HWND, nssm_service_t *, nssm_service_t *);
 int install(HWND);

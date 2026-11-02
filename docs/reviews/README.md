@@ -27,5 +27,6 @@ interactive GUI, domain-account and long-running concurrency scenarios are
 identified as integration-test gaps in the review and plan.
 
 Implementation evidence is retained separately in the
-[B01 registry validation](b01-validation.md) and
-[B02 quoting validation](b02-validation.md) records.
+[B01 registry validation](b01-validation.md),
+[B02 quoting validation](b02-validation.md) and
+[B03 affinity/numeric validation](b03-validation.md) records.
