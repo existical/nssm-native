@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Keep the GUI service handle valid after validation/save failures, clean up
+  temporary configuration consistently, and own the original object through
+  dialog completion. [NSSM-020](docs/fixes/NSSM-020.md).
+- Wipe and free password-confirmation buffers on every path, and release the
+  typed username when replacing it with a canonical well-known account.
+  [NSSM-025](docs/fixes/NSSM-025.md).
+- Close account lookup policies, free SIDs and LSA/conversion buffers with their
+  matching deallocators, initialize failure outputs and validate counted names.
+  Lookup-only calls use lookup policy access. [NSSM-026](docs/fixes/NSSM-026.md).
+- Compare LSA service-logon rights within their counted character length and
+  reject malformed metadata. [NSSM-027](docs/fixes/NSSM-027.md).
+- Preserve literal environment references, complete quoting and registry string
+  types when editing hooks in the GUI; retain execution-time expansion.
+  [NSSM-034](docs/fixes/NSSM-034.md), now confirmed.
+
 - Preserve every explicit AppExit rule in export, reject invalid/noncanonical
   names, stop on enumeration errors, and write new numeric rules under
   canonical decimal names. Read source configuration when exporting under a

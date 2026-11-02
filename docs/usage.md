@@ -253,3 +253,24 @@ and registry. They no longer require SERVICE_CHANGE_CONFIG. Set/reset/edit
 still require change access. Prefer the canonical service name when access
 is restricted; see [NSSM-030](fixes/NSSM-030.md) for the precise masks and
 display-name enumeration limitation.
+
+## GUI edits, accounts and hook references
+
+Correcting invalid input and retrying a GUI save keeps the original service
+handle open. The temporary configuration and confirmation password are cleaned
+up on success and failure; closing the dialog releases its original service
+object. See [NSSM-020](fixes/NSSM-020.md) and [NSSM-025](fixes/NSSM-025.md).
+
+Account-name lookup now releases its Windows resources and requests only
+lookup policy access. Malformed LSA results fail with initialized outputs;
+service-logon rights use bounded counted-string comparisons. Installation may
+still need account-right modification access. See [NSSM-026](fixes/NSSM-026.md)
+and [NSSM-027](fixes/NSSM-027.md).
+
+The hook editor displays and saves literal `%VARIABLE%` references and preserves
+the existing REG_SZ/REG_EXPAND_SZ type, including explicit edits. New hooks use
+REG_EXPAND_SZ. The execution-time reader expands REG_EXPAND_SZ in the hook's
+runtime environment; REG_SZ remains literal. Unrelated saves skip entries that
+could not be read. Existing values that earlier edits already expanded cannot
+be reconstructed automatically. CLI hook get/dump behavior is unchanged.
+See [NSSM-034](fixes/NSSM-034.md) for test evidence and limitations.

@@ -127,7 +127,7 @@ CTest runs twenty-two groups:
   failures, zero/null insertions and event-source registration failure.
 
 CMake checks that string event arguments compile and integer arguments do not.
-There are 28 standard CTest groups including smoke. B09 groups retain 20-second limits;
+There are 33 standard CTest groups including smoke. B09 groups retain 20-second limits;
 their files and children belong only to the fixture. Event Log calls are intercepted.
 The [B09 validation record](reviews/b09-validation.md) documents results and limits.
 
@@ -145,7 +145,22 @@ never starts either service or runs an emitted install command. Enable it with
 `cmake --preset windows-x64 -DNSSM_ENABLE_SCM_TESTS=ON`; build Release and run
 `ctest --test-dir build/windows-x64 -C Release -R '^nssm.export_live$' --output-on-failure`.
 Disable it afterward with `-DNSSM_ENABLE_SCM_TESTS=OFF`. CI opts in only for its
-disposable x64 Release runner, where the test count becomes 29.
+disposable x64 Release runner, where the test count becomes 34.
+
+- `nssm.account_lookup`: policy/LSA/heap ownership, conversion/API/allocation
+  failures, malformed names and repeated read-only lookup of the local account.
+- `nssm.account_rights`: counted/nonterminated rights, guarded-page bounds,
+  case and length variants, enumeration/addition failures; all mutations mocked.
+- `nssm.gui_retry`: real hidden dialog controls, validation/correction/save
+  retries, handle ownership, allocation failures and cancellation.
+- `nssm.gui_password`: matching/mismatching inputs, read/allocation failures,
+  canonical account replacement and zeroing checked at free.
+- `nssm.gui_hooks`: literal expressions, registry types, cancel/edit/save,
+  unreadable entries and a real hook launch after the environment changes.
+
+These B11 groups use 20-second timeouts. The [B11 validation record](reviews/b11-validation.md)
+distinguishes hidden-dialog tests from manual interactive GUI checks and local
+account lookup from live domain-account coverage.
 
 The regression executable compiles the production implementations with test-only
 wrappers for the entry point, SCM, registry queries, expansion, allocations

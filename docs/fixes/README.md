@@ -97,18 +97,28 @@ four Windows CI configurations passing:
 | [NSSM-014](NSSM-014.md) | Account for actual log writes and rotation | Fixed, unreleased | Not yet released |
 | [NSSM-022](NSSM-022.md) | Use counted string-only event insertions | Fixed, unreleased | Not yet released |
 
-B10 has implementation and tests in [PR 15](https://github.com/existical/nssm-native/pull/15),
-pending review and merge:
+B10 merged in [PR 15](https://github.com/existical/nssm-native/pull/15), with all
+four Windows CI configurations passing, including the real SCM export test:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |
-| [NSSM-016](NSSM-016.md) | Preserve explicit AppExit export rules | In progress | Not yet released |
-| [NSSM-030](NSSM-030.md) | Export with read-only service access | In progress | Not yet released |
-| [NSSM-033](NSSM-033.md) | Initialize and validate AppExit fallbacks | In progress | Not yet released |
+| [NSSM-016](NSSM-016.md) | Preserve explicit AppExit export rules | Fixed, unreleased | Not yet released |
+| [NSSM-030](NSSM-030.md) | Export with read-only service access | Fixed, unreleased | Not yet released |
+| [NSSM-033](NSSM-033.md) | Initialize and validate AppExit fallbacks | Fixed, unreleased | Not yet released |
+
+B11 has implementation and tests, pending review and merge:
+
+| ID | Change | State | First release |
+| --- | --- | --- | --- |
+| [NSSM-020](NSSM-020.md) | Retain GUI service-handle ownership across retries | In progress | Not yet released |
+| [NSSM-025](NSSM-025.md) | Wipe and free password confirmations | In progress | Not yet released |
+| [NSSM-026](NSSM-026.md) | Balance account lookup resources and initialize outputs | In progress | Not yet released |
+| [NSSM-027](NSSM-027.md) | Bound LSA right comparisons by counted characters | In progress | Not yet released |
+| [NSSM-034](NSSM-034.md) | Preserve literal hook references and registry types in GUI edits | In progress; confirmed | Not yet released |
 
 The [implementation plan](../remediation-plan.md) tracks NSSM-001 through
 NSSM-034. Check each record's state before assuming inclusion in a build.
-NSSM-001 through NSSM-009 are P1. NSSM-034 needs confirmation; the plan explains
+NSSM-001 through NSSM-009 are P1. NSSM-034 was confirmed by B11; the plan explains
 the evidence for the other tasks. Add rows and individual records here as work
 starts; never reuse an ID.
 
