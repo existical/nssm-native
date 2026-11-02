@@ -7,7 +7,7 @@
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`, `v2.24-103-gdee49fc` |
 | Reproduced against | `41c22afc60e276e3b4c36c8f6611098d29c9a3f6` with the new bounds regression |
 | Evidence | Guarded destination tests, real cmd.exe child arguments, captured production dump output, and source inspection |
-| Fix PR | Pending creation on branch `fix/b02-command-quoting` |
+| Fix PR | [PR 7](https://github.com/existical/nssm-native/pull/7), branch `fix/b02-command-quoting` |
 | Implementation commit | Pending merge; record the immutable hash in the next documentation update |
 | First release | Not yet released |
 
