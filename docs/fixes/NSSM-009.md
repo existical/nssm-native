@@ -7,8 +7,8 @@
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`, `v2.24-103-gdee49fc` |
 | Reproduced against | `9a5a14549b1837ba518ed577905aaafe04236d66` |
 | Evidence | Deterministic PID replacement and ownership assertions; isolated live descendant trees |
-| Fix PR | Pending |
-| Implementation commit | Pending |
+| Fix PR | [PR 12](https://github.com/existical/nssm-native/pull/12) |
+| Implementation commit | `329738b85deb0f454ca6cde1e1882d535530f48e` (merge pending) |
 | First release | Not yet released |
 
 The pre-fix `src/process.cpp` is identical to `process.cpp` in the checked

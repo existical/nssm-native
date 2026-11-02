@@ -26,7 +26,7 @@ B05 (NSSM-007) is fixed but unreleased through
 B06 (NSSM-008) is fixed but unreleased through
 [PR 11](https://github.com/existical/nssm-native/pull/11).
 B07 (NSSM-009) has an implementation and
-[validation](reviews/b07-validation.md), pending review and merge. Other tasks
+[validation](reviews/b07-validation.md) in [PR 12](https://github.com/existical/nssm-native/pull/12), pending merge. Other tasks
 remain planned; NSSM-034 requires confirmation.
 [Previously merged changes](fixes/implemented.md) retain separate CONT IDs.
 
@@ -270,7 +270,7 @@ source-traced, not a demonstrated unrelated-process kill.
 Touch `src/process.cpp:check_parent`, `walk_process_tree`, termination
 callbacks, and `src/service.cpp:end_service`.
 
-**Implementation status:** implementation and tests present, pending merge;
+**Implementation status:** implementation and tests present in PR 12, pending merge;
 see the [fix record](fixes/NSSM-009.md) for legacy comparison, identity checks,
 failure policy and Windows signalling limitations. PID reuse is now reproduced
 with simulated API schedules; live tests target only fixture-owned descendants.

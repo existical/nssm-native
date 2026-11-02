@@ -68,7 +68,7 @@ all four CI configurations passing:
 | --- | --- | --- | --- |
 | [NSSM-008](NSSM-008.md) | Separate offline rotation size, age and delay options | Fixed, unreleased | Not yet released |
 
-B07 has an implementation and regression coverage, pending review and merge:
+B07 is under review in [PR 12](https://github.com/existical/nssm-native/pull/12), pending merge:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |
