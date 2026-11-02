@@ -1,6 +1,31 @@
 // The renamed main loses C++'s implicit return. Its final call exits the process.
 __declspec(noreturn) void nssm_exit(int);
 #include "test.h"
+extern bool is_admin;
+namespace admin_test {
+static bool active, sid_ok, query_ok;
+static BOOL member;
+static unsigned queries, frees;
+static int sid_token;
+static BOOL WINAPI sid(PSID_IDENTIFIER_AUTHORITY authority, BYTE count, DWORD a, DWORD b, DWORD c, DWORD d, DWORD e, DWORD f, DWORD g, DWORD h, PSID *out) {
+  if (! active) return AllocateAndInitializeSid(authority, count, a, b, c, d, e, f, g, h, out);
+  if (sid_ok) *out = &sid_token;
+  return sid_ok;
+}
+static PVOID WINAPI free_sid(PSID value) {
+  if (! active) return FreeSid(value);
+  CHECK(value == &sid_token); frees++; return NULL;
+}
+static BOOL WINAPI membership(HANDLE token, PSID sid, PBOOL out) {
+  if (! active) return CheckTokenMembership(token, sid, out);
+  queries++;
+  // Reject the legacy four-byte write into a one-byte bool without corrupting memory.
+  CHECK(out != reinterpret_cast<PBOOL>(&is_admin));
+  if (out == reinterpret_cast<PBOOL>(&is_admin)) is_admin = member != FALSE;
+  else *out = member;
+  return query_ok;
+}
+}
 static bool fake_cpu_query = false;
 static bool cpu_query_success = true;
 static DWORD_PTR fake_system_mask = 0;
@@ -14,8 +39,27 @@ static BOOL WINAPI test_cpu_query(HANDLE process, PDWORD_PTR affinity, PDWORD_PT
 #undef _tmain
 #define _tmain unused_nssm_main
 #define GetProcessAffinityMask test_cpu_query
+#define AllocateAndInitializeSid admin_test::sid
+#define FreeSid admin_test::free_sid
+#define CheckTokenMembership admin_test::membership
 #include "../src/nssm.cpp"
 #undef GetProcessAffinityMask
+#undef AllocateAndInitializeSid
+#undef FreeSid
+#undef CheckTokenMembership
+
+void test_admin_check() {
+  using namespace admin_test;
+  active = true;
+  for (unsigned scenario = 0; scenario < 4; scenario++) {
+    sid_ok = scenario != 3; query_ok = scenario != 2;
+    member = scenario == 1 ? FALSE : TRUE; queries = frees = 0; is_admin = true;
+    check_admin();
+    CHECK(is_admin == (scenario == 0));
+    CHECK(queries == (sid_ok ? 1U : 0U) && frees == queries);
+  }
+  active = false;
+}
 
 void test_cpu_detection() {
   fake_cpu_query = true;

@@ -44,7 +44,7 @@ BOOL WINAPI terminate(HANDLE h, UINT result) {
 DWORD WINAPI wait(HANDLE h, DWORD timeout) {
   if (! active) return WaitForSingleObject(h, timeout);
   CHECK(h == process_handle && ! process_closed);
-  CHECK(timeout && timeout <= 5000);
+  CHECK(timeout <= 5000);
   waits++;
   return wait_result;
 }
@@ -99,11 +99,11 @@ static void environment_case(bool created, bool terminated, DWORD waited, int ex
   if (created) CHECK(launch_flags & CREATE_SUSPENDED);
   active = false;
 }
-static void service_case(bool suspended, bool created, bool resume_success, bool abort) {
+static void service_case(bool suspended, bool created, bool resume_success, bool abort, unsigned long throttle = 1) {
   reset(); create_ok = created; resume_ok = resume_success; abort_hook = abort; wait_result = WAIT_TIMEOUT;
   nssm_service_t *service = new nssm_service_t();
   _tcscpy_s(service->name, _T("Launch test")); _tcscpy_s(service->exe, _T("fake.exe"));
-  service->allow_restart = true; service->no_console = true; service->throttle_delay = 1;
+  service->allow_restart = true; service->no_console = true; service->throttle_delay = throttle;
   service->affinity = suspended ? 1 : 0;
   service->kill_process_tree = true;
   InitializeCriticalSection(&service->hook_section);
@@ -117,6 +117,7 @@ static void service_case(bool suspended, bool created, bool resume_success, bool
     CHECK(result == 0 && service->status.dwCurrentState == SERVICE_RUNNING);
     CHECK(thread_closed && ! process_closed); // Process ownership stays with service.
     CHECK(resumes == (suspended ? 1U : 0U));
+    CHECK(waits == 1 && service->throttle == 0);
     CHECK(stop_service(service, 0, true, true) == 0);
     CHECK(tree_calls == 1 && process_closed);
   }
@@ -134,6 +135,7 @@ void test_launch_handles() {
   launch_test::environment_case(true, false, WAIT_OBJECT_0, 0); // Already exited.
   launch_test::environment_case(false, false, WAIT_FAILED, -1);
   launch_test::service_case(false, true, true, false);
+  launch_test::service_case(false, true, true, false, 0);
   launch_test::service_case(true, true, true, false);
   launch_test::service_case(false, false, true, false);
   launch_test::service_case(false, true, true, true);

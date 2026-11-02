@@ -1,7 +1,6 @@
 #include "nssm.h"
 #include <errno.h>
 
-extern unsigned long tls_index;
 extern bool is_admin;
 extern imports_t imports;
 
@@ -300,9 +299,6 @@ int _tmain(int argc, TCHAR **argv) {
       nssm_exit(pre_remove_service(argc - 2, argv + 2));
     }
   }
-
-  /* Thread local storage for error message buffer */
-  tls_index = TlsAlloc();
 
   /* Register messages */
   if (is_admin) create_messages();

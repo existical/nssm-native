@@ -57,6 +57,12 @@ private:
 };
 
 void test_environment_entries();
+void test_admin_check();
+void test_handle_waits();
+void test_install_ownership();
+void test_debug_token();
+void test_error_messages();
+void test_setting_ownership();
 void test_hook_commands();
 void test_startup();
 void test_registry_bounds();

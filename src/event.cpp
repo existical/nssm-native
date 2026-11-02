@@ -3,16 +3,22 @@
 #define NSSM_SOURCE _T("nssm")
 #define NSSM_ERROR_BUFSIZE 65535
 #define NSSM_NUM_EVENT_STRINGS 16
-unsigned long tls_index;
+struct error_buffer_t {
+  TCHAR *value;
+  error_buffer_t() : value(NULL) {}
+  ~error_buffer_t() { clear(); }
+  void clear() { if (value) LocalFree(value); value = NULL; }
+};
+static thread_local error_buffer_t error_buffer;
 
-/* Convert error code to error string - must call LocalFree() on return value */
+/* Borrowed until this thread's next error_string() call or thread exit. */
 TCHAR *error_string(unsigned long error) {
   /* Thread-safe buffer */
-  TCHAR *error_message = (TCHAR *) TlsGetValue(tls_index);
+  TCHAR *error_message = error_buffer.value;
   if (! error_message) {
-    error_message = (TCHAR *) LocalAlloc(LPTR, NSSM_ERROR_BUFSIZE);
+    error_message = (TCHAR *) LocalAlloc(LPTR, NSSM_ERROR_BUFSIZE * sizeof(TCHAR));
     if (! error_message) return _T("<out of memory for error message>");
-    TlsSetValue(tls_index, (void *) error_message);
+    error_buffer.value = error_message;
   }
 
   if (! FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, 0, error, GetUserDefaultLangID(), (TCHAR *) error_message, NSSM_ERROR_BUFSIZE, 0)) {
@@ -25,11 +31,16 @@ TCHAR *error_string(unsigned long error) {
 
 /* Convert message code to format string */
 TCHAR *message_string(unsigned long error) {
-  TCHAR *ret;
-  if (! FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_IGNORE_INSERTS, 0, error, GetUserDefaultLangID(), (LPTSTR) &ret, NSSM_ERROR_BUFSIZE, 0)) {
-    if (! FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_IGNORE_INSERTS, 0, error, 0, (LPTSTR) &ret, NSSM_ERROR_BUFSIZE, 0)) {
-      ret = (TCHAR *) HeapAlloc(GetProcessHeap(), 0, 32 * sizeof(TCHAR));
-      if (_sntprintf_s(ret, NSSM_ERROR_BUFSIZE, _TRUNCATE, _T("system error %lu"), error) < 0) return 0;
+  TCHAR *ret = NULL;
+  if (! FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_IGNORE_INSERTS, 0, error, GetUserDefaultLangID(), (LPTSTR) &ret, 0, 0)) {
+    if (! FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_IGNORE_INSERTS, 0, error, 0, (LPTSTR) &ret, 0, 0)) {
+      const size_t capacity = 32;
+      ret = (TCHAR *) LocalAlloc(LPTR, capacity * sizeof(TCHAR));
+      if (! ret) return NULL;
+      if (_sntprintf_s(ret, capacity, _TRUNCATE, _T("system error %lu"), error) < 0) {
+        LocalFree(ret);
+        return NULL;
+      }
     }
   }
   return ret;
