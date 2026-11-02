@@ -2212,6 +2212,14 @@ void throttle_restart(nssm_service_t *service) {
           -1 on error.
 */
 int await_single_handle(SERVICE_STATUS_HANDLE status_handle, SERVICE_STATUS *status, HANDLE handle, TCHAR *name, TCHAR *function_name, unsigned long timeout) {
+  /* A zero delay still checks the handle once, without publishing progress. */
+  if (! timeout) {
+    switch (WaitForSingleObject(handle, 0)) {
+      case WAIT_OBJECT_0: return 0;
+      case WAIT_TIMEOUT: return 1;
+      default: return -1;
+    }
+  }
   unsigned long interval;
   unsigned long ret;
   unsigned long waited;
