@@ -1,0 +1,17 @@
+#ifndef NSSM_DEPENDENCY_FIXTURE_H
+#define NSSM_DEPENDENCY_FIXTURE_H
+#include "test.h"
+namespace dependency_test {
+extern bool active;
+LPVOID allocate(HANDLE, DWORD, SIZE_T);
+BOOL release(HANDLE, DWORD, LPVOID);
+SC_HANDLE manager(DWORD);
+SC_HANDLE open(LPCTSTR, DWORD);
+BOOL close(SC_HANDLE);
+BOOL name(LPCTSTR, LPTSTR, LPDWORD);
+BOOL WINAPI query(SC_HANDLE, LPQUERY_SERVICE_CONFIG, DWORD, LPDWORD);
+BOOL WINAPI change(SC_HANDLE, DWORD, DWORD, DWORD, LPCTSTR, LPCTSTR, LPDWORD, LPCTSTR, LPCTSTR, LPCTSTR, LPCTSTR);
+int apply(int, const TCHAR *);
+int dump(int);
+}
+#endif

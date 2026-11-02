@@ -1,4 +1,5 @@
 #include "install_fixture.h"
+#include "dependency_fixture.h"
 namespace install_test {
 bool active, fail_allocation;
 static unsigned failure, frees, manager_closes, service_closes, deletes;
@@ -32,6 +33,7 @@ SC_HANDLE WINAPI create(SC_HANDLE h, LPCTSTR name, LPCTSTR display, DWORD access
   CHECK(h == manager_handle); SetLastError(ERROR_ACCESS_DENIED); return failure == 1 ? NULL : service_handle;
 }
 BOOL WINAPI change(SC_HANDLE h, DWORD type, DWORD start, DWORD error, LPCTSTR path, LPCTSTR group, LPDWORD tag, LPCTSTR dependencies, LPCTSTR account, LPCTSTR password, LPCTSTR display) {
+  if (dependency_test::active) return dependency_test::change(h, type, start, error, path, group, tag, dependencies, account, password, display);
   if (! active) return ChangeServiceConfig(h, type, start, error, path, group, tag, dependencies, account, password, display);
   CHECK(h == service_handle); SetLastError(ERROR_ACCESS_DENIED); return failure != 2;
 }

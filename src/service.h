@@ -138,7 +138,7 @@ void set_nssm_service_defaults(nssm_service_t *);
 void cleanup_nssm_service(nssm_service_t *);
 SC_HANDLE open_service_manager(unsigned long);
 SC_HANDLE open_service(SC_HANDLE, TCHAR *, unsigned long, TCHAR *, unsigned long);
-QUERY_SERVICE_CONFIG *query_service_config(const TCHAR *, SC_HANDLE);
+QUERY_SERVICE_CONFIG *query_service_config(const TCHAR *, SC_HANDLE, unsigned long * = 0);
 int append_to_dependencies(TCHAR *, unsigned long, TCHAR *, TCHAR **, unsigned long *, int);
 int remove_from_dependencies(TCHAR *, unsigned long, TCHAR *, TCHAR **, unsigned long *, int);
 int set_service_dependencies(const TCHAR *, SC_HANDLE, TCHAR *);

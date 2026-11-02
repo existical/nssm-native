@@ -2,6 +2,7 @@
 #include "launch_fixture.h"
 #include "install_fixture.h"
 #include "gui_fixture.h"
+#include "dependency_fixture.h"
 namespace wait_test {
 static bool active;
 static std::vector<DWORD> requests, results;
@@ -42,14 +43,17 @@ static void reset(std::initializer_list<sample> states) {
   progressing = changing_hint = false;
 }
 static SC_HANDLE WINAPI open_manager(LPCTSTR, LPCTSTR, DWORD access) {
+  if (dependency_test::active) return dependency_test::manager(access);
   if (export_access) requested_manager_access = access;
   return install_test::active ? install_test::manager() : manager_handle;
 }
-static SC_HANDLE WINAPI open_service(SC_HANDLE, LPCTSTR, DWORD access) {
+static SC_HANDLE WINAPI open_service(SC_HANDLE, LPCTSTR value, DWORD access) {
+  if (dependency_test::active) return dependency_test::open(value, access);
   if (export_access) { requested_access = access; SetLastError(ERROR_ACCESS_DENIED); return NULL; }
   return service_handle;
 }
-static BOOL WINAPI name(SC_HANDLE, LPCTSTR, LPTSTR output, LPDWORD length) {
+static BOOL WINAPI name(SC_HANDLE, LPCTSTR value, LPTSTR output, LPDWORD length) {
+  if (dependency_test::active) return dependency_test::name(value, output, length);
   return _tcscpy_s(output, *length, _T("NSSM-Test-Startup")) == 0;
 }
 static BOOL WINAPI start(SC_HANDLE handle, DWORD, const TCHAR **) {
@@ -84,6 +88,7 @@ static BOOL WINAPI query(SC_HANDLE handle, LPSERVICE_STATUS status) {
   return TRUE;
 }
 static BOOL WINAPI close(SC_HANDLE handle) {
+  if (dependency_test::active) return dependency_test::close(handle);
   if (gui_test::active) return gui_test::close(handle);
   if (install_test::active) return install_test::close(handle);
   CHECK(handle == manager_handle || handle == service_handle);
@@ -101,6 +106,7 @@ static void WINAPI sleep(DWORD milliseconds) {
 // The actual control_service() and polling implementation are compiled below.
 static bool fail_affinity_allocation = false;
 static LPVOID WINAPI service_allocate(HANDLE heap, DWORD flags, SIZE_T bytes) {
+  if (dependency_test::active) return dependency_test::allocate(heap, flags, bytes);
   if (gui_test::active) return gui_test::allocate(heap, flags, bytes);
   if (fail_affinity_allocation) return NULL;
   void *p = install_test::allocate(heap, flags, bytes);
@@ -108,6 +114,7 @@ static LPVOID WINAPI service_allocate(HANDLE heap, DWORD flags, SIZE_T bytes) {
   return p;
 }
 static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
+  if (dependency_test::active) return dependency_test::release(heap, flags, p);
   if (gui_test::active) return gui_test::release(heap, flags, p);
   for (size_t i = 0; i < scm::export_objects.size(); i++) if (scm::export_objects[i] == p) { scm::export_objects.erase(scm::export_objects.begin() + i); break; }
   return install_test::release(heap, flags, p);
@@ -123,6 +130,8 @@ static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
 #define GetServiceKeyName scm::name
 #define StartService scm::start
 #define QueryServiceStatus scm::query
+#undef QueryServiceConfig
+#define QueryServiceConfig dependency_test::query
 #define CloseServiceHandle scm::close
 #define GetTickCount scm::ticks
 #define Sleep scm::sleep
@@ -158,6 +167,8 @@ static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
 #define nssm_hook launch_test::hook
 #define log_event launch_test::log
 #include "../src/service.cpp"
+#undef QueryServiceConfig
+#define QueryServiceConfig QueryServiceConfigW
 #undef CreateProcess
 #undef CloseHandle
 #undef WaitForSingleObject

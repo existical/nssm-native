@@ -1,4 +1,5 @@
 #include "test.h"
+#include "dependency_fixture.h"
 
 // Exercise the real registry implementation with guarded allocations and
 // deterministic API failures. None of these wrappers enter nssm.exe.
@@ -9,6 +10,7 @@ static bool active;
 static int fail_after = -1;
 static const SIZE_T guard_size = 256;
 static LPVOID WINAPI allocate(HANDLE heap, DWORD flags, SIZE_T bytes) {
+  if (dependency_test::active) return dependency_test::allocate(heap, flags, bytes);
   if (! active) return HeapAlloc(heap, flags, bytes);
   if (! fail_after) return NULL;
   if (fail_after > 0) --fail_after;
@@ -23,6 +25,7 @@ static LPVOID WINAPI allocate(HANDLE heap, DWORD flags, SIZE_T bytes) {
   return p;
 }
 static BOOL WINAPI release(HANDLE heap, DWORD flags, LPVOID memory) {
+  if (dependency_test::active) return dependency_test::release(heap, flags, memory);
   for (size_t i = 0; i < allocations.size(); i++) {
     if (allocations[i].p != memory) continue;
     const allocation a = allocations[i];

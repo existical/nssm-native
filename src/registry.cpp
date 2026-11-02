@@ -242,7 +242,7 @@ int create_exit_action(TCHAR *service_name, const TCHAR *action_string, bool edi
 
 /* Find the first complete MULTI_SZ terminator without reading past count.
    A null pointer with zero length represents an absent block. */
-static bool double_null_length(const TCHAR *block, unsigned long count, unsigned long *length) {
+bool double_null_length(const TCHAR *block, unsigned long count, unsigned long *length) {
   *length = 0;
   if (! block) return ! count;
   if (count > ((size_t) -1) / sizeof(TCHAR)) return false;
