@@ -7,7 +7,7 @@
 | Reproduced against | `0f856a4dedb7e5c9dc08fc010fb69bf90398a05d` |
 | Introduced startup rejection | `1ecfc6be59e80fe78ea94553634d02a6ed9524d0` (B01) |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a` |
-| Fix PR | Pending creation |
+| Fix PR | [PR 20](https://github.com/existical/nssm-native/pull/20) |
 | Implementation commit | `3146ceca98065907f5f4b5d999139e287065b2ed` |
 | First release | Not yet released |
 
@@ -40,7 +40,11 @@ Validation date: 2026 November 3. All 35 standard CTest groups passed in
 x64/x86 Debug/Release. AddressSanitizer passed stdin, registry and logger
 (3/3 groups) with no findings. Local logs: build/stdio-*-*.log and
 build/stdio-asan.log; initial failing evidence: build/b14-stdio-red-tests.log.
-CI results will be linked after the PR completes. The release-preparation PR retains
+[CI run 41542196154](https://github.com/existical/nssm-native/actions/runs/41542196154)
+passed all four jobs at `787f3920defd7b12ede0fee414b809637fd95b1d`:
+38 groups in x64 Release (including the three existing SCM suites), 35 in each
+other configuration. Full wrapper acceptance continues separately in PR 19;
+its startup now succeeds after this correction. The release-preparation PR retains
 its real SCM lifecycle scenario so future coverage includes actual startup.
 
 ```powershell
