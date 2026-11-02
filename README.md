@@ -39,7 +39,9 @@ This builds and checks the x64 Release executable at
 
 The same CMake presets work in Visual Studio and in
 [GitHub Actions](https://github.com/existical/nssm-native/actions).
-See [building and testing](docs/building.md) for commands and requirements.
+See [building and testing](docs/building.md) for commands and requirements,
+and [release preparation](docs/releases/README.md) for candidate packages,
+checksums and source-archive metadata.
 
 ## Use
 

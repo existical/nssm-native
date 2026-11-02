@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Prepare candidate packages from clean pinned source archives with full build
+  and test metadata, SHA-256 checksums and preserved source identity. Support
+  distinct beta/RC tags while retaining original version tags. Add a real
+  NSSM-wrapped lifecycle acceptance test and packaging validation in CI.
+  See [release preparation](docs/releases/README.md). No release is published.
+
 - Bound stop, pause and continue polling with independent progress and total
   limits; derive the stop budget from enabled shutdown delays and hook waits.
   Preserve SCM query/terminal errors and service-specific shutdown codes,

@@ -108,9 +108,10 @@ The hash identifies the exact file; a release manifest must tie it to source
 and build evidence. Different compiler versions or build timestamps can
 change hashes without changing the intended behavior.
 
-Before publishing continuation releases, implement packaging that emits
-`build-info.json` and `SHA256SUMS.txt` alongside each archive. These files
-are planned release outputs; the current build script does not generate them.
+The [packaging script](../scripts/package.ps1) emits `build-info.json` and
+`SHA256SUMS.txt` with the candidate archives. See [release preparation](releases/README.md)
+for clean-commit requirements, source identity, tests and publication steps.
+The ordinary build script still produces local executables only.
 The manifest must contain:
 
 | Field | Required content |
@@ -131,5 +132,5 @@ matching release assets. CI artifacts can expire; the explanation of fixes
 must remain in Git.
 
 No continuation release tag is assigned by this documentation change.
-Version-generation, source-archive identity, dirty-tree checks and packaging
-automation belong to the release implementation group in the plan.
+Version generation, source-archive identity, dirty-tree checks and packaging
+automation are covered by B14; permanent release publication remains separate.

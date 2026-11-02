@@ -39,3 +39,27 @@ jobs:
             build/windows-${{ matrix.architecture }}/bin/${{ matrix.configuration }}/nssm.exe
             build/windows-${{ matrix.architecture }}/bin/${{ matrix.configuration }}/nssm.pdb
           if-no-files-found: error
+
+  package:
+    name: Release packaging
+    needs: build
+    runs-on: windows-2022
+    steps:
+      - name: Check out the pinned candidate with complete history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Build and test candidate packages from the source archive
+        shell: pwsh
+        run: ./scripts/package.ps1 -Commit (git rev-parse HEAD) -OutputDirectory dist/candidate -EnableScmTests
+      - name: Verify checksums and archive identity
+        shell: pwsh
+        run: ./tests/package.ps1 -PackageDirectory dist/candidate -WorkDirectory build
+      - name: Upload candidate packages and evidence
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: nssm-native-candidate-packages
+          path: dist/candidate/
+          if-no-files-found: error
