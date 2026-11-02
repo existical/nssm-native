@@ -138,8 +138,9 @@ The [B09 validation record](reviews/b09-validation.md) documents results and lim
 - `nssm.export_access`: requested service/SCM rights and CLI failure cleanup.
 
 The [B10 validation record](reviews/b10-validation.md) records results and limits.
-The optional `nssm.export_live` and `nssm.dependencies_live` tests require an elevated disposable Windows
-host and are disabled by default. The export test creates two uniquely named disabled
+The optional `nssm.export_live`, `nssm.dependencies_live` and
+`nssm.controls_live` tests require an elevated disposable Windows host and
+are disabled by default. The export test creates two uniquely named disabled
 services, tests query-only export and AppExit import, and deletes both. The
 dependency test creates four disabled fixtures, reads existing group names,
 and tests set/get/reset/remove, failed updates and dependency export replay.

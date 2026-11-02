@@ -38,7 +38,8 @@ are now merged and unreleased. B08 merged in
 [validation](reviews/b11-validation.md). B12 merged in
 [PR 17](https://github.com/existical/nssm-native/pull/17); see its
 [validation](reviews/b12-validation.md). B13 has implementation and
-[validation](reviews/b13-validation.md), pending review and merge. All 34 review
+[validation](reviews/b13-validation.md) in [PR 18](https://github.com/existical/nssm-native/pull/18),
+pending review and merge. All 34 review
 tasks now have implementations; 33 are merged, and NSSM-024 is pending.
 NSSM-034 was confirmed by its GUI round-trip test. B14 release acceptance and
 packaging remain; no continuation release has been published.

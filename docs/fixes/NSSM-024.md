@@ -6,7 +6,7 @@
 | State | In progress; merge pending |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a` |
 | Reproduced against | `89c918c6d33a3f7548d4899a718e55e4f61c5be4` |
-| Fix PR | Pending creation |
+| Fix PR | [PR 18](https://github.com/existical/nssm-native/pull/18) |
 | Implementation commit | `d92c27cb022d1d573070e8f6a62b1964339db42b` |
 | First release | Not yet released |
 

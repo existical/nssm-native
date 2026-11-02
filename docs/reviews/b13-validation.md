@@ -1,7 +1,8 @@
 # B13 service control validation
 
 Validation date: 2026 November 3. Scope: [NSSM-024](../fixes/NSSM-024.md).
-Implementation is pending review and merge; no release is published.
+Implementation is in [PR 18](https://github.com/existical/nssm-native/pull/18),
+pending review and merge; no release is published.
 
 Baseline: `89c918c6d33a3f7548d4899a718e55e4f61c5be4`, after PR 17 merged.
 Implementation: `d92c27cb022d1d573070e8f6a62b1964339db42b`.
@@ -51,13 +52,27 @@ artifacts: build/b13-red-tests.log, build/b13-x64-Release.log,
 build/b13-x64-Debug.log, build/b13-x86-Release.log, build/b13-x86-Debug.log,
 build/b13-asan.log and build/b13-analysis.log.
 
-The opt-in controls_live fixture is compiled in every configuration and will
-run on the disposable elevated x64 Release CI runner. Three unique native
+The opt-in controls_live fixture is compiled in every configuration and ran
+on the disposable elevated x64 Release CI runner. Three unique native
 services exercise real start/pause/continue/stop, a pause stalled past its hint
 and a shutdown reporting service-specific code 42. Each host has a 30-second
 watchdog; the fixture stops/deletes only its own services and does not force
 terminate any process. Existing export/dependency fixtures remain disabled.
-CI results will be recorded after the PR run completes.
+[CI run 41538407538](https://github.com/existical/nssm-native/actions/runs/41538407538)
+passed at PR head `11c463805d8dbd00468ffa30d71d4b02e865f465`:
+
+| CI configuration | Result |
+| --- | --- |
+| x64 Release | 38/38 groups, including all three live SCM suites |
+| x64 Debug | 35/35 groups |
+| x86 Release | 35/35 groups |
+| x86 Debug | 35/35 groups |
+
+The controls_live test passed in 10.02 seconds; export_live and
+dependencies_live also passed. The complete workflow logs were inspected from
+build/actions-41538407538.zip. All four executable/symbol uploads succeeded.
+The follow-up documentation commit records these results without changing
+production code or tests; the PR reports its own exact-head CI result.
 
 Limits: native control integration does not validate full NSSM application
 shutdown, simultaneous hooks, output draining and descendant teardown as one

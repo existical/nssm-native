@@ -124,7 +124,8 @@ with all four Windows CI configurations passing:
 | --- | --- | --- | --- |
 | [NSSM-023](NSSM-023.md) | Correct dependency resets, typed merges and validation cleanup | Fixed, unreleased | Not yet released |
 
-B13 has implementation and tests, pending review and merge:
+B13 has implementation and tests in [PR 18](https://github.com/existical/nssm-native/pull/18),
+pending review and merge:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |
