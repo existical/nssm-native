@@ -127,7 +127,7 @@ CTest runs twenty-two groups:
   failures, zero/null insertions and event-source registration failure.
 
 CMake checks that string event arguments compile and integer arguments do not.
-There are 33 standard CTest groups including smoke. B09 groups retain 20-second limits;
+There are 34 standard CTest groups including smoke. B09 groups retain 20-second limits;
 their files and children belong only to the fixture. Event Log calls are intercepted.
 The [B09 validation record](reviews/b09-validation.md) documents results and limits.
 
@@ -138,14 +138,17 @@ The [B09 validation record](reviews/b09-validation.md) documents results and lim
 - `nssm.export_access`: requested service/SCM rights and CLI failure cleanup.
 
 The [B10 validation record](reviews/b10-validation.md) records results and limits.
-The optional `nssm.export_live` test requires an elevated disposable Windows
-host and is disabled by default. It creates two uniquely named disabled
-services, tests query-only export and AppExit import, and deletes both. It
-never starts either service or runs an emitted install command. Enable it with
+The optional `nssm.export_live` and `nssm.dependencies_live` tests require an elevated disposable Windows
+host and are disabled by default. The export test creates two uniquely named disabled
+services, tests query-only export and AppExit import, and deletes both. The
+dependency test creates four disabled fixtures, reads existing group names,
+and tests set/get/reset/remove, failed updates and dependency export replay.
+Both suites delete their fixtures and never start a service or run an emitted
+install command. Enable it with
 `cmake --preset windows-x64 -DNSSM_ENABLE_SCM_TESTS=ON`; build Release and run
-`ctest --test-dir build/windows-x64 -C Release -R '^nssm.export_live$' --output-on-failure`.
+`ctest --test-dir build/windows-x64 -C Release -R '^nssm.(export_live|dependencies_live)$' --output-on-failure`.
 Disable it afterward with `-DNSSM_ENABLE_SCM_TESTS=OFF`. CI opts in only for its
-disposable x64 Release runner, where the test count becomes 34.
+disposable x64 Release runner, where the test count becomes 36.
 
 - `nssm.account_lookup`: policy/LSA/heap ownership, conversion/API/allocation
   failures, malformed names and repeated read-only lookup of the local account.
@@ -162,6 +165,14 @@ These B11 groups use 20-second timeouts. The [B11 validation record](reviews/b11
 distinguishes hidden-dialog tests from manual interactive GUI checks and local
 account lookup from live domain-account coverage.
 
+- `nssm.dependencies`: typed resets/adds/removals/replacements, order and
+  duplicates, malformed query/group data, failed updates and allocations,
+  exact query bounds, dump failure and validation resource counts.
+
+The [B12 validation record](reviews/b12-validation.md) records local checks and
+actual CI results. The standard group has a 20-second timeout; the opt-in SCM
+round-trip group has a 120-second timeout and does not run locally by default.
+
 The regression executable compiles the production implementations with test-only
 wrappers for the entry point, SCM, registry queries, expansion, allocations
 and dump output. CPU masks and the affinity formatter's allocation failure
@@ -171,7 +182,7 @@ handles; live hook tests use real workers and children, with tree cleanup
 limited to the fixture's own child. Service launch tests replace SCM, process
 and I/O boundaries and never control an installed service.
 The standard tests do not install or control real
-services; only the explicitly enabled SCM test creates disabled fixtures. Registry access is redirected within the test process to a temporary
+services; only the explicitly enabled SCM tests create disabled fixtures. Registry access is redirected within the test process to a temporary
 HKCU key, which is deleted afterwards; the hook test also creates and removes a
 copy of its executable under the build directory. The quoting test creates and
 removes a similar copy and an ASCII batch file there. Environment changes are local

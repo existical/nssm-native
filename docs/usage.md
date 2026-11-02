@@ -274,3 +274,26 @@ runtime environment; REG_SZ remains literal. Unrelated saves skip entries that
 could not be read. Existing values that earlier edits already expanded cannot
 be reconstructed automatically. CLI hook get/dump behavior is unchanged.
 See [NSSM-034](fixes/NSSM-034.md) for test evidence and limitations.
+
+## Dependency updates
+
+`reset Service DependOnService` clears service dependencies while retaining
+load-order groups. `reset Service DependOnGroup` does the reverse. An empty
+result is sent as an explicit empty list, so resetting the sole dependency
+also clears it. Removing the last service/group with `-Name` retains the other
+type. Empty values and `:` with no entries also clear only the selected type.
+
+Plain names or `:Name` replace a type; additional arguments add entries to that
+replacement list. `+Name` adds one dependency and `-Name` removes matching
+entries case-insensitively. Groups accept their optional `+` identifier:
+`++Group` adds and `-+Group` removes. Duplicate requested names keep the first
+spelling; unrelated entries, including duplicates, remain. Group entries are
+rejected in DependOnService. Bare add/remove operators and multi-entry
+add/remove requests fail.
+
+Updates use one configuration snapshot and one SCM write. Reset/removal can
+retain existing names that are no longer resolvable; adding/replacing still
+validates names. Failures return a nonzero command status. Concurrent edits
+are not transactional, and display-name aliases are not necessarily deduplicated
+before canonicalization. See [NSSM-023](fixes/NSSM-023.md) for ordering,
+compatibility, resource cleanup and validation details.

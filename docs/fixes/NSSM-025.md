@@ -3,11 +3,12 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P2; B11 |
-| State | In progress; merge pending |
+| State | Fixed, unreleased |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a` |
 | Reproduced against | `f28a43141a576033713190fe9b716fb503ac227a` |
 | Fix PR | [PR 16](https://github.com/existical/nssm-native/pull/16) |
 | Implementation commit | `b91392150c23ecec4299c4eec75a7fcb65f867fb` |
+| Merge commit | `f969dd985039a8d2fe77a0ed0a24e077894c2bef` |
 | First release | Not yet released |
 
 After two matching GUI passwords were read, the temporary confirmation

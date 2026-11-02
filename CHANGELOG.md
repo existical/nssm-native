@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Reset/remove service and group dependencies without retaining or discarding
+  the wrong entries. Build typed updates from one snapshot, use explicit empty
+  lists, preserve unrelated entries, validate bounded query/group data and
+  close validation resources. Report dependency dump allocation failures.
+  Add unit cases and an opt-in real SCM round-trip test.
+  [NSSM-023](docs/fixes/NSSM-023.md).
+
 - Keep the GUI service handle valid after validation/save failures, clean up
   temporary configuration consistently, and own the original object through
   dialog completion. [NSSM-020](docs/fixes/NSSM-020.md).

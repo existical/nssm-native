@@ -106,16 +106,22 @@ four Windows CI configurations passing, including the real SCM export test:
 | [NSSM-030](NSSM-030.md) | Export with read-only service access | Fixed, unreleased | Not yet released |
 | [NSSM-033](NSSM-033.md) | Initialize and validate AppExit fallbacks | Fixed, unreleased | Not yet released |
 
-B11 has implementation and tests in [PR 16](https://github.com/existical/nssm-native/pull/16),
-pending review and merge:
+B11 merged in [PR 16](https://github.com/existical/nssm-native/pull/16), with all
+four Windows CI configurations passing:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |
-| [NSSM-020](NSSM-020.md) | Retain GUI service-handle ownership across retries | In progress | Not yet released |
-| [NSSM-025](NSSM-025.md) | Wipe and free password confirmations | In progress | Not yet released |
-| [NSSM-026](NSSM-026.md) | Balance account lookup resources and initialize outputs | In progress | Not yet released |
-| [NSSM-027](NSSM-027.md) | Bound LSA right comparisons by counted characters | In progress | Not yet released |
-| [NSSM-034](NSSM-034.md) | Preserve literal hook references and registry types in GUI edits | In progress; confirmed | Not yet released |
+| [NSSM-020](NSSM-020.md) | Retain GUI service-handle ownership across retries | Fixed, unreleased | Not yet released |
+| [NSSM-025](NSSM-025.md) | Wipe and free password confirmations | Fixed, unreleased | Not yet released |
+| [NSSM-026](NSSM-026.md) | Balance account lookup resources and initialize outputs | Fixed, unreleased | Not yet released |
+| [NSSM-027](NSSM-027.md) | Bound LSA right comparisons by counted characters | Fixed, unreleased | Not yet released |
+| [NSSM-034](NSSM-034.md) | Preserve literal hook references and registry types in GUI edits | Fixed, unreleased | Not yet released |
+
+B12 has implementation and tests, pending review and merge:
+
+| ID | Change | State | First release |
+| --- | --- | --- | --- |
+| [NSSM-023](NSSM-023.md) | Correct dependency resets, typed merges and validation cleanup | In progress | Not yet released |
 
 The [implementation plan](../remediation-plan.md) tracks NSSM-001 through
 NSSM-034. Check each record's state before assuming inclusion in a build.
