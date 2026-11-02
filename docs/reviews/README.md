@@ -25,3 +25,7 @@ The existing x86/x64 Debug/Release builds each passed four CTest groups at
 the reviewed commit. These tests did not cover the new findings. Live SCM,
 interactive GUI, domain-account and long-running concurrency scenarios are
 identified as integration-test gaps in the review and plan.
+
+Implementation evidence is retained separately in the
+[B01 registry validation](b01-validation.md) and
+[B02 quoting validation](b02-validation.md) records.

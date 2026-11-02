@@ -15,7 +15,9 @@ follow-ups, not ten additional reproduced high-priority defects.
 are fixed but unreleased through
 [PR 5](https://github.com/existical/nssm-native/pull/5); see the
 [fix records](fixes/README.md) and [validation](reviews/b01-validation.md).
-The other tasks remain planned; NSSM-034 requires confirmation.
+B02 is in progress: [NSSM-002](fixes/NSSM-002.md) has an implementation and
+[validation](reviews/b02-validation.md), pending merge. The other tasks
+remain planned; NSSM-034 requires confirmation.
 [Previously merged changes](fixes/implemented.md) retain separate CONT IDs.
 
 The recovered legacy development baseline is
@@ -37,7 +39,7 @@ work. P2 tasks share an early group only when they support the same repair.
 | --- | --- | --- | --- |
 | B00 | Publish review, plan, fix records and comparison rules | Documentation only | Merged in PR 4; CONT-001 through CONT-005 backfilled |
 | B01 | Registry and environment bounds | 001, 003, 010, 011 | Merged in PR 5; regression, sanitizer and four-configuration checks passed |
-| B02 | Safe command quoting | 002 | Independent of B01; dump argument round trips pass |
+| B02 | Safe command quoting | 002 | In progress, merge pending; bounds, dump failures and shell round trips validated |
 | B03 | Affinity and numeric parsing | 004, 029, 031 | Check all numeric callers; no invalid indexing or shifts |
 | B04 | Hook ownership and launch handles | 005, 006, 017 | Deterministic completion/failure tests; no leaked handles |
 | B05 | Logger lifetime | 007 | Close/join ordering and restart isolation established |
@@ -103,6 +105,9 @@ failure. Record that oversized expansions previously could corrupt memory.
 
 **Command quoting bounds — P1, B02.** Review finding 2; reproduced.
 Touch `src/nssm.cpp:quote` and dump tests.
+
+**Implementation status:** in progress, pending merge. See the
+[fix record](fixes/NSSM-002.md) for results and shell-mode limitations.
 
 1. Use a checked output builder, or one escape traversal shared by counting
    and writing, with overflow-safe length arithmetic.

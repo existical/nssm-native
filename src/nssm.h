@@ -64,6 +64,7 @@
 
 void nssm_exit(int);
 int str_equiv(const TCHAR *, const TCHAR *);
+/* Non-overlapping strings; capacity in TCHARs including NUL. Failure writes nothing. */
 int quote(const TCHAR *, TCHAR *, size_t);
 void strip_basename(TCHAR *);
 int str_number(const TCHAR *, unsigned long *, TCHAR **);

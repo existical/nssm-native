@@ -40,7 +40,26 @@ does not guarantee that the wrapped application's endpoints are ready.
 
 NSSM supports application arguments, startup directories, service accounts,
 environment settings, restart policies, output redirection, log rotation and
-event hooks. The preserved [upstream manual](upstream/README.txt) contains the
+event hooks.
+
+## Configuration dumps
+
+`nssm dump MyService` prints commands for cmd.exe. Check its exit status before
+using the output: an error can leave earlier complete lines in the stream, so
+discard the entire output on failure. Do not pipe a dump directly into a shell.
+Arguments whose escaped form exceeds the dump buffer now cause an error instead
+of a buffer overwrite.
+
+The quoting tests use `cmd.exe /d /v:off`, with AutoRun and delayed expansion
+disabled. The latter keeps exclamation marks literal. Legacy escaping still has
+limits: percent signs can change or disappear in saved batch files, and
+environment expansion can affect percent-delimited text. Newlines and nested
+shell contexts such as `CALL` or parenthesized blocks are not guaranteed to
+round-trip. Review such values before executing a saved dump; a successful dump
+exit status does not verify its shell interpretation. See
+[NSSM-002](fixes/NSSM-002.md) for the tested cases and remaining limitations.
+
+The preserved [upstream manual](upstream/README.txt) contains the
 complete command and configuration reference, along with author and contributor
 credits. Its old compiler and Windows compatibility notes describe upstream
 releases; see [current build requirements](building.md) for this continuation.

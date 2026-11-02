@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Bound command quoting by counting and writing through the same checked
+  traversal. Oversized dump arguments fail without overwriting buffers or
+  emitting a truncated command. [NSSM-002](docs/fixes/NSSM-002.md).
+- Add quoting capacity, dump failure and real cmd.exe argument regressions;
+  document the existing batch-file percent-sign limitation.
 - Bound registry environment expansion to the actual destination capacity.
   [NSSM-001](docs/fixes/NSSM-001.md).
 - Replace duplicate environment keys once, preserving unrelated entry order
