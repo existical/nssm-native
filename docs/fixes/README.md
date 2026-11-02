@@ -87,7 +87,7 @@ four CI configurations passing:
 | [NSSM-028](NSSM-028.md) | Restore scoped debug privilege and impersonation state | Fixed, unreleased | Not yet released |
 | [NSSM-032](NSSM-032.md) | Correct message capacities and thread-local ownership | Fixed, unreleased | Not yet released |
 
-B09 has implementation and regression coverage, pending review and merge:
+B09 is under review in [PR 14](https://github.com/existical/nssm-native/pull/14), pending merge:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |
