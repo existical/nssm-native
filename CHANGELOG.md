@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Correct the standard-I/O registry caller's byte capacity. B14 acceptance
+  exposed a continuation startup regression after strict byte validation was
+  introduced: Unicode service startup failed even without redirection.
+  Add complete-configuration and all-stream capacity tests.
+  [NSSM-035](docs/fixes/NSSM-035.md).
+
 - Bound stop, pause and continue polling with independent progress and total
   limits; derive the stop budget from enabled shutdown delays and hook waits.
   Preserve SCM query/terminal errors and service-specific shutdown codes,

@@ -43,3 +43,9 @@ settings; this change does not promise that every malformed optional value
 stops service startup. Valid empty values inside an environment block retain
 their previous meaning. A two-NUL AppEnvironment block explicitly describes
 an empty replacement environment; remove the value to use inherited defaults.
+
+B14 acceptance later found that the standard-I/O caller still supplied a
+character count to this byte-capacity API. In Unicode builds that odd count
+caused startup rejection after these strict checks were introduced. See
+[NSSM-035](NSSM-035.md) for the caller correction and complete-configuration
+regression tests; the bounds checks themselves remain in place.
