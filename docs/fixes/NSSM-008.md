@@ -57,7 +57,9 @@ The existing metadata-query failure fallback can bypass age/size thresholds.
 The copy-success path still does not reliably report later reopen, seek or
 truncate failures; successful rotation events alone do not prove truncation
 succeeded. Those paths, concurrent external writers, filename edge cases and
-timestamp accounting remain follow-up work. The tests do not claim complete
+timestamp accounting were follow-up work at B06. B09 addresses online
+accounting and online copy/truncate failure checks in [NSSM-014](NSSM-014.md);
+the offline metadata/post-copy limitations and external-writer coordination remain. The tests do not claim complete
 recovery from arbitrary filesystem failures.
 
 See [rotation regressions](../../tests/rotation.cpp), their

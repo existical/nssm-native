@@ -120,6 +120,17 @@ CTest runs twenty-two groups:
 - `nssm.error_messages`: message capacities, locale/numeric fallback,
   allocation failures and buffer reclamation across returning worker threads.
 
+- `nssm.stdin`: real child reads and EOF, open/launch failures and parent handle counts.
+- `nssm.log_bytes`: deterministic pipe fragments, exact timestamp/BOM/output bytes,
+  thresholds, short writes, metadata failures and online rotation failures.
+- `nssm.event_insertions`: exact event IDs and strings on startup/pipe/affinity
+  failures, zero/null insertions and event-source registration failure.
+
+CMake checks that string event arguments compile and integer arguments do not.
+There are 25 CTest groups including smoke. B09 groups retain 20-second limits;
+their files and children belong only to the fixture. Event Log calls are intercepted.
+The [B09 validation record](reviews/b09-validation.md) documents results and limits.
+
 The regression executable compiles the production implementations with test-only
 wrappers for the entry point, SCM, registry queries, expansion, allocations
 and dump output. CPU masks and the affinity formatter's allocation failure

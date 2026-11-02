@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Make configured stdin inheritable and retain launch-scoped parent cleanup.
+  [NSSM-012](docs/fixes/NSSM-012.md).
+- Correct UTF-16 timestamp buffers, preserve split code units and recognize
+  complete newline characters; keep BOM handling consistent across rotation.
+  [NSSM-013](docs/fixes/NSSM-013.md).
+- Count actual log bytes once, complete short writes, stop on incomplete
+  output, and preserve rotation policy when metadata queries fail. Check
+  online copy/truncate failures and preserve content after failed rename.
+  [NSSM-014](docs/fixes/NSSM-014.md).
+- Replace event varargs with counted string insertions, fix startup error
+  text and select the proper delayed-start event message.
+  [NSSM-022](docs/fixes/NSSM-022.md).
+- Add three B09 regression groups for real stdin children, exact stream bytes
+  and event arguments, plus compile-time rejection of integer insertions.
+
 - Preserve caller ownership when resetting string settings, including null
   inputs and borrowed defaults. [NSSM-015](docs/fixes/NSSM-015.md).
 - Use correctly sized BOOL storage for administrator checks and treat API
