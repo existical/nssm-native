@@ -79,6 +79,12 @@ static inline void set_logon_enabled(unsigned char interact_enabled, unsigned ch
 }
 
 int nssm_gui(int resource, nssm_service_t *service) {
+  /* CLI callers transfer the original object and its SCM handle here. */
+  struct service_owner_t {
+    nssm_service_t *value;
+    ~service_owner_t() { cleanup_nssm_service(value); }
+  } owner = { service };
+  if (! service) return 1;
   /* Create window */
   HWND dlg = dialog(MAKEINTRESOURCE(resource), 0, nssm_dlg, (LPARAM) service);
   if (! dlg) {
@@ -272,14 +278,16 @@ int nssm_gui(int resource, nssm_service_t *service) {
   }
 
   /* Go! */
-  MSG message;
-  while (GetMessage(&message, 0, 0, 0)) {
+  MSG message = {};
+  BOOL received;
+  while ((received = GetMessage(&message, 0, 0, 0)) > 0) {
     if (IsDialogMessage(dlg, &message)) continue;
     TranslateMessage(&message);
     DispatchMessage(&message);
   }
 
-  return (int) message.wParam;
+  if (IsWindow(dlg)) DestroyWindow(dlg);
+  return received < 0 ? 1 : (int) message.wParam;
 }
 
 void centre_window(HWND window) {
@@ -333,6 +341,29 @@ static inline void set_rotation_enabled(unsigned char enabled) {
   EnableWindow(GetDlgItem(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW), enabled);
 }
 
+struct gui_hook_t {
+  const TCHAR *event;
+  const TCHAR *action;
+  DWORD type;
+  bool loaded;
+};
+static gui_hook_t gui_hooks[] = {
+  { NSSM_HOOK_EVENT_START, NSSM_HOOK_ACTION_PRE },
+  { NSSM_HOOK_EVENT_START, NSSM_HOOK_ACTION_POST },
+  { NSSM_HOOK_EVENT_STOP, NSSM_HOOK_ACTION_PRE },
+  { NSSM_HOOK_EVENT_EXIT, NSSM_HOOK_ACTION_POST },
+  { NSSM_HOOK_EVENT_POWER, NSSM_HOOK_ACTION_CHANGE },
+  { NSSM_HOOK_EVENT_POWER, NSSM_HOOK_ACTION_RESUME },
+  { NSSM_HOOK_EVENT_ROTATE, NSSM_HOOK_ACTION_PRE },
+  { NSSM_HOOK_EVENT_ROTATE, NSSM_HOOK_ACTION_POST }
+};
+static bool displaying_hook;
+static gui_hook_t *gui_hook(const TCHAR *event, const TCHAR *action) {
+  for (size_t i = 0; i < _countof(gui_hooks); i++)
+    if (str_equiv(event, gui_hooks[i].event) && str_equiv(action, gui_hooks[i].action)) return &gui_hooks[i];
+  return 0;
+}
+
 static inline int hook_env(const TCHAR *hook_event, const TCHAR *hook_action, TCHAR *buffer, unsigned long buflen) {
   return _sntprintf_s(buffer, buflen, _TRUNCATE, _T("NSSM_HOOK_%s_%s"), hook_event, hook_action);
 }
@@ -346,7 +377,7 @@ static inline void set_hook_tab(int event_index, int action_index, bool changed)
   SendMessage(combo, CB_RESETCONTENT, 0, 0);
 
   const TCHAR *hook_event = hook_event_strings[event_index];
-  TCHAR *hook_action;
+  TCHAR *hook_action = 0;
   int i;
   switch (event_index + first_event) {
     case NSSM_GUI_HOOK_EVENT_ROTATE:
@@ -388,6 +419,7 @@ static inline void set_hook_tab(int event_index, int action_index, bool changed)
 
   SendMessage(combo, CB_SETCURSEL, action_index, 0);
 
+  if (! hook_action) return;
   TCHAR hook_name[HOOK_NAME_LENGTH];
   hook_env(hook_event, hook_action, hook_name, _countof(hook_name));
 
@@ -396,11 +428,16 @@ static inline void set_hook_tab(int event_index, int action_index, bool changed)
   TCHAR cmd[CMD_LENGTH];
   if (changed) {
     GetDlgItemText(tablist[NSSM_TAB_HOOKS], IDC_HOOK, cmd, _countof(cmd));
-    SetEnvironmentVariable(hook_name, cmd);
+    if (SetEnvironmentVariable(hook_name, cmd)) {
+      gui_hook_t *hook = gui_hook(hook_event, hook_action);
+      if (hook) hook->loaded = true;
+    }
   }
   else {
     if (! GetEnvironmentVariable(hook_name, cmd, _countof(cmd))) cmd[0] = _T('\0');
+    displaying_hook = true;
     SetDlgItemText(tablist[NSSM_TAB_HOOKS], IDC_HOOK, cmd);
+    displaying_hook = false;
   }
 }
 
@@ -409,8 +446,10 @@ static inline int update_hook(TCHAR *service_name, const TCHAR *hook_event, cons
   if (hook_env(hook_event, hook_action, hook_name, _countof(hook_name)) < 0) return 1;
   TCHAR cmd[CMD_LENGTH];
   ZeroMemory(cmd, sizeof(cmd));
-  GetEnvironmentVariable(hook_name, cmd, _countof(cmd));
-  if (set_hook(service_name, hook_event, hook_action, cmd)) return 2;
+  if (GetEnvironmentVariable(hook_name, cmd, _countof(cmd)) >= _countof(cmd)) return 2;
+  gui_hook_t *hook = gui_hook(hook_event, hook_action);
+  if (! hook || ! hook->loaded) return 0;
+  if (set_hook(service_name, hook_event, hook_action, cmd, hook->type != REG_SZ)) return 2;
   return 0;
 }
 
@@ -442,13 +481,11 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
 
   if (orig_service) {
     service->native = orig_service->native;
-    service->handle = orig_service->handle;
   }
 
   /* Get service name. */
   if (! GetDlgItemText(window, IDC_NAME, service->name, _countof(service->name))) {
     popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_MISSING_SERVICE_NAME);
-    cleanup_nssm_service(service);
     return 2;
   }
 
@@ -553,6 +590,8 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
         service->usernamelen = 0;
       }
       else {
+        HeapFree(GetProcessHeap(), 0, service->username);
+        service->username = 0;
         service->usernamelen = _tcslen(well_known) + 1;
         service->username = (TCHAR *) HeapAlloc(GetProcessHeap(), 0, service->usernamelen * sizeof(TCHAR));
         if (! service->username) {
@@ -579,7 +618,14 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
         service->passwordlen++;
 
         /* Temporary buffer for password validation. */
-        TCHAR *password = (TCHAR *) HeapAlloc(GetProcessHeap(), 0, service->passwordlen * sizeof(TCHAR));
+        struct confirmation_t {
+          TCHAR *value;
+          size_t bytes;
+          ~confirmation_t() {
+            if (value) { SecureZeroMemory(value, bytes); HeapFree(GetProcessHeap(), 0, value); }
+          }
+        } confirmation = { 0, service->passwordlen * sizeof(TCHAR) };
+        TCHAR *password = confirmation.value = (TCHAR *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, confirmation.bytes);
         if (! password) {
           HeapFree(GetProcessHeap(), 0, service->username);
           service->username = 0;
@@ -591,7 +637,6 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
         /* Actual password buffer. */
         service->password = (TCHAR *) HeapAlloc(GetProcessHeap(), 0, service->passwordlen * sizeof(TCHAR));
         if (! service->password) {
-          HeapFree(GetProcessHeap(), 0, password);
           HeapFree(GetProcessHeap(), 0, service->username);
           service->username = 0;
           service->usernamelen = 0;
@@ -601,7 +646,6 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
 
         /* Get first password. */
         if (! GetDlgItemText(tablist[NSSM_TAB_LOGON], IDC_PASSWORD1, service->password, (int) service->passwordlen)) {
-          HeapFree(GetProcessHeap(), 0, password);
           SecureZeroMemory(service->password, service->passwordlen * sizeof(TCHAR));
           HeapFree(GetProcessHeap(), 0, service->password);
           service->password = 0;
@@ -615,8 +659,7 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
 
         /* Get confirmation. */
         if (! GetDlgItemText(tablist[NSSM_TAB_LOGON], IDC_PASSWORD2, password, (int) service->passwordlen)) {
-          SecureZeroMemory(password, service->passwordlen * sizeof(TCHAR));
-          HeapFree(GetProcessHeap(), 0, password);
+
           SecureZeroMemory(service->password, service->passwordlen * sizeof(TCHAR));
           HeapFree(GetProcessHeap(), 0, service->password);
           service->password = 0;
@@ -631,8 +674,6 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
         /* Compare. */
         if (_tcsncmp(password, service->password, service->passwordlen)) {
           popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_MISSING_PASSWORD);
-          SecureZeroMemory(password, service->passwordlen * sizeof(TCHAR));
-          HeapFree(GetProcessHeap(), 0, password);
           SecureZeroMemory(service->password, service->passwordlen * sizeof(TCHAR));
           HeapFree(GetProcessHeap(), 0, service->password);
           service->password = 0;
@@ -652,21 +693,18 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
     TCHAR *dependencies = (TCHAR *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (dependencieslen + 2) * sizeof(TCHAR));
     if (! dependencies) {
       popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_EVENT_OUT_OF_MEMORY, _T("dependencies"), _T("install()"));
-      cleanup_nssm_service(service);
       return 6;
     }
 
     if (! GetDlgItemText(tablist[NSSM_TAB_DEPENDENCIES], IDC_DEPENDENCIES, dependencies, dependencieslen + 1)) {
       popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_INVALID_DEPENDENCIES);
       HeapFree(GetProcessHeap(), 0, dependencies);
-      cleanup_nssm_service(service);
       return 6;
     }
 
     if (unformat_double_null(dependencies, dependencieslen, &service->dependencies, &service->dependencieslen)) {
       HeapFree(GetProcessHeap(), 0, dependencies);
       popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_EVENT_OUT_OF_MEMORY, _T("dependencies"), _T("install()"));
-      cleanup_nssm_service(service);
       return 6;
     }
 
@@ -740,14 +778,12 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
     TCHAR *env = (TCHAR *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (envlen + 2) * sizeof(TCHAR));
     if (! env) {
       popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_EVENT_OUT_OF_MEMORY, _T("environment"), _T("install()"));
-      cleanup_nssm_service(service);
       return 5;
     }
 
     if (! GetDlgItemText(tablist[NSSM_TAB_ENVIRONMENT], IDC_ENVIRONMENT, env, envlen + 1)) {
       popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_INVALID_ENVIRONMENT);
       HeapFree(GetProcessHeap(), 0, env);
-      cleanup_nssm_service(service);
       return 5;
     }
 
@@ -756,7 +792,6 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
     if (unformat_double_null(env, envlen, &newenv, &newlen)) {
       HeapFree(GetProcessHeap(), 0, env);
       popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_EVENT_OUT_OF_MEMORY, _T("environment"), _T("install()"));
-      cleanup_nssm_service(service);
       return 5;
     }
 
@@ -768,7 +803,6 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
     if (test_environment(env)) {
       popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_INVALID_ENVIRONMENT);
       HeapFree(GetProcessHeap(), 0, env);
-      cleanup_nssm_service(service);
       return 5;
     }
 
@@ -790,9 +824,13 @@ int install(HWND window) {
   if (! window) return 1;
 
   nssm_service_t *service = alloc_nssm_service();
+  if (! service) {
+    popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_EVENT_OUT_OF_MEMORY, _T("service"), _T("install()"));
+    return 1;
+  }
   if (service) {
     int ret = configure(window, service, 0);
-    if (ret) return ret;
+    if (ret) { cleanup_nssm_service(service); return ret; }
   }
 
   /* See if it works. */
@@ -841,6 +879,10 @@ int remove(HWND window) {
 
   /* See if it works */
   nssm_service_t *service = alloc_nssm_service();
+  if (! service) {
+    popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_EVENT_OUT_OF_MEMORY, _T("service"), _T("remove()"));
+    return 1;
+  }
   if (service) {
     /* Get service name */
     if (! GetDlgItemText(window, IDC_NAME, service->name, _countof(service->name))) {
@@ -884,15 +926,23 @@ int remove(HWND window) {
 }
 
 int edit(HWND window, nssm_service_t *orig_service) {
-  if (! window) return 1;
+  if (! window || ! orig_service) return 1;
 
   nssm_service_t *service = alloc_nssm_service();
+  if (! service) {
+    popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_EVENT_OUT_OF_MEMORY, _T("service"), _T("edit()"));
+    return 1;
+  }
   if (service) {
     int ret = configure(window, service, orig_service);
-    if (ret) return ret;
+    if (ret) { cleanup_nssm_service(service); return ret; }
+    /* Borrow only during the save; the dialog retains ownership on failure. */
+    service->handle = orig_service->handle;
   }
+  int result = edit_service(service, true);
+  if (service) service->handle = 0;
 
-  switch (edit_service(service, true)) {
+  switch (result) {
     case 1:
       popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_EVENT_OUT_OF_MEMORY, _T("service"), _T("edit()"));
       cleanup_nssm_service(service);
@@ -1114,7 +1164,8 @@ INT_PTR CALLBACK tab_dlg(HWND tab, UINT message, WPARAM w, LPARAM l) {
 
         /* Hook. */
         case IDC_HOOK:
-          set_hook_tab((int) SendMessage(GetDlgItem(tab, IDC_HOOK_EVENT), CB_GETCURSEL, 0, 0), (int) SendMessage(GetDlgItem(tab, IDC_HOOK_ACTION), CB_GETCURSEL, 0, 0), true);
+          if (HIWORD(w) == EN_CHANGE && ! displaying_hook)
+            set_hook_tab((int) SendMessage(GetDlgItem(tab, IDC_HOOK_EVENT), CB_GETCURSEL, 0, 0), (int) SendMessage(GetDlgItem(tab, IDC_HOOK_ACTION), CB_GETCURSEL, 0, 0), true);
           break;
       }
       return 1;
@@ -1321,20 +1372,16 @@ INT_PTR CALLBACK nssm_dlg(HWND window, UINT message, WPARAM w, LPARAM l) {
       SendMessage(combo, CB_INSERTSTRING, -1, (LPARAM) message_string(NSSM_GUI_HOOK_EVENT_POWER));
       SendMessage(combo, CB_INSERTSTRING, -1, (LPARAM) message_string(NSSM_GUI_HOOK_EVENT_ROTATE));
       SendDlgItemMessage(tablist[NSSM_TAB_HOOKS], IDC_REDIRECT_HOOK, BM_SETCHECK, BST_UNCHECKED, 0);
-      if (_tcslen(service->name)) {
+      for (size_t index = 0; index < _countof(gui_hooks); index++) {
+        gui_hook_t &hook = gui_hooks[index];
+        hook.type = REG_EXPAND_SZ;
+        hook.loaded = false;
         TCHAR hook_name[HOOK_NAME_LENGTH];
-        TCHAR cmd[CMD_LENGTH];
-        for (i = 0; hook_event_strings[i]; i++) {
-          const TCHAR *hook_event = hook_event_strings[i];
-          int j;
-          for (j = 0; hook_action_strings[j]; j++) {
-            const TCHAR *hook_action = hook_action_strings[j];
-            if (! valid_hook_name(hook_event, hook_action, true)) continue;
-            if (get_hook(service->name, hook_event, hook_action, cmd, sizeof(cmd))) continue;
-            if (hook_env(hook_event, hook_action, hook_name, _countof(hook_name)) < 0) continue;
-            SetEnvironmentVariable(hook_name, cmd);
-          }
-        }
+        TCHAR cmd[CMD_LENGTH] = {};
+        if (hook_env(hook.event, hook.action, hook_name, _countof(hook_name)) < 0) continue;
+        SetEnvironmentVariable(hook_name, 0);
+        if (service->name[0] && get_hook(service->name, hook.event, hook.action, cmd, sizeof(cmd), false, &hook.type)) continue;
+        hook.loaded = SetEnvironmentVariable(hook_name, cmd) != 0;
       }
       set_hook_tab(0, 0, false);
 

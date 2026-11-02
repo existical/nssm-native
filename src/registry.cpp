@@ -339,7 +339,7 @@ int get_environment(TCHAR *service_name, HKEY key, TCHAR *value, TCHAR **env, un
 }
 
 /* datalen is a byte capacity, including space for the terminating TCHAR. */
-int get_string(HKEY key, TCHAR *value, TCHAR *data, unsigned long datalen, bool expand, bool sanitise, bool must_exist) {
+int get_string(HKEY key, TCHAR *value, TCHAR *data, unsigned long datalen, bool expand, bool sanitise, bool must_exist, unsigned long *stored_type) {
   if (! data) return 2;
   ZeroMemory(data, datalen);
   if (datalen < sizeof(TCHAR) || datalen % sizeof(TCHAR)) return 2;
@@ -366,6 +366,7 @@ int get_string(HKEY key, TCHAR *value, TCHAR *data, unsigned long datalen, bool 
     return 2;
   }
 
+  if (stored_type) *stored_type = type;
   if (sanitise) PathUnquoteSpaces(buffer);
   if (! expand || type == REG_SZ) {
     memmove(data, buffer, (_tcslen(buffer) + 1) * sizeof(TCHAR));
@@ -1033,7 +1034,7 @@ int get_exit_action(const TCHAR *service_name, unsigned long *ret, TCHAR *action
   return 0;
 }
 
-int set_hook(const TCHAR *service_name, const TCHAR *hook_event, const TCHAR *hook_action, TCHAR *cmd) {
+int set_hook(const TCHAR *service_name, const TCHAR *hook_event, const TCHAR *hook_action, TCHAR *cmd, bool expand) {
   /* Try to open the registry */
   TCHAR registry[KEY_LENGTH];
   if (_sntprintf_s(registry, _countof(registry), _TRUNCATE, _T("%s\\%s"), NSSM_REG_HOOK, hook_event) < 0) {
@@ -1057,7 +1058,7 @@ int set_hook(const TCHAR *service_name, const TCHAR *hook_event, const TCHAR *ho
   if (! key) return 1;
 
   int ret = 1;
-  if (_tcslen(cmd)) ret = set_string(key, (TCHAR *) hook_action, cmd, true);
+  if (_tcslen(cmd)) ret = set_string(key, (TCHAR *) hook_action, cmd, expand);
   else {
     error = RegDeleteValue(key, hook_action);
     if (error == ERROR_SUCCESS || error == ERROR_FILE_NOT_FOUND) ret = 0;
@@ -1069,7 +1070,7 @@ int set_hook(const TCHAR *service_name, const TCHAR *hook_event, const TCHAR *ho
   return ret;
 }
 
-int get_hook(const TCHAR *service_name, const TCHAR *hook_event, const TCHAR *hook_action, TCHAR *buffer, unsigned long buflen) {
+int get_hook(const TCHAR *service_name, const TCHAR *hook_event, const TCHAR *hook_action, TCHAR *buffer, unsigned long buflen, bool expand, unsigned long *stored_type) {
   /* Try to open the registry */
   TCHAR registry[KEY_LENGTH];
   if (_sntprintf_s(registry, _countof(registry), _TRUNCATE, _T("%s\\%s"), NSSM_REG_HOOK, hook_event) < 0) {
@@ -1087,7 +1088,7 @@ int get_hook(const TCHAR *service_name, const TCHAR *hook_event, const TCHAR *ho
   }
 
   /* A hook is a complete command line, not a path to unquote. */
-  int ret = expand_parameter(key, (TCHAR *) hook_action, buffer, buflen, false, false);
+  int ret = get_string(key, (TCHAR *) hook_action, buffer, buflen, expand, false, false, stored_type);
 
   /* Close registry */
   RegCloseKey(key);

@@ -367,3 +367,22 @@ void test_hook_live_handles() {
   HeapFree(GetProcessHeap(), 0, service->initial_env);
   delete service;
 }
+
+// The GUI round-trip suite uses the production hook launcher after changing
+// the environment. Only the existing test wrappers switch to live Win32 calls.
+void test_gui_hook_launch(const TCHAR *name) {
+  nssm_service_t *service = new nssm_service_t();
+  _tcscpy_s(service->name, name); _tcscpy_s(service->dir, _T("."));
+  service->initial_env = copy_environment(); REQUIRE(service->initial_env);
+  InitializeCriticalSection(&service->hook_section);
+  hook_thread_t list = {};
+  hook_test::live = true;
+  CHECK(nssm_hook(&list, service, NSSM_HOOK_EVENT_START, NSSM_HOOK_ACTION_PRE, NULL, 5000, false) == 0);
+  EnterCriticalSection(&service->hook_section);
+  await_hook_threads(&list, NULL, NULL, 5000);
+  LeaveCriticalSection(&service->hook_section);
+  CHECK(list.num_threads == 0 && list.data == NULL);
+  hook_test::live = false;
+  DeleteCriticalSection(&service->hook_section);
+  HeapFree(GetProcessHeap(), 0, service->initial_env); delete service;
+}

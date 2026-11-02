@@ -50,7 +50,7 @@ int create_parameters(nssm_service_t *, bool);
 int create_exit_action(TCHAR *, const TCHAR *, bool);
 int get_environment(TCHAR *, HKEY, TCHAR *, TCHAR **, unsigned long *);
 /* String capacities are bytes; successful results include a terminating TCHAR. */
-int get_string(HKEY, TCHAR *, TCHAR *, unsigned long, bool, bool, bool);
+int get_string(HKEY, TCHAR *, TCHAR *, unsigned long, bool, bool, bool, unsigned long * = 0);
 int get_string(HKEY, TCHAR *, TCHAR *, unsigned long, bool);
 int expand_parameter(HKEY, TCHAR *, TCHAR *, unsigned long, bool, bool);
 int expand_parameter(HKEY, TCHAR *, TCHAR *, unsigned long, bool);
@@ -72,7 +72,7 @@ int get_parameters(nssm_service_t *, STARTUPINFO *);
 int get_exit_action(const TCHAR *, unsigned long *, TCHAR *, bool *);
 /* Read one explicit REG_SZ action. Output is Restart on any error. */
 long query_exit_action(HKEY, const TCHAR *, TCHAR *);
-int set_hook(const TCHAR *, const TCHAR *, const TCHAR *, TCHAR *);
-int get_hook(const TCHAR *, const TCHAR *, const TCHAR *, TCHAR *, unsigned long);
+int set_hook(const TCHAR *, const TCHAR *, const TCHAR *, TCHAR *, bool = true);
+int get_hook(const TCHAR *, const TCHAR *, const TCHAR *, TCHAR *, unsigned long, bool = true, unsigned long * = 0);
 
 #endif
