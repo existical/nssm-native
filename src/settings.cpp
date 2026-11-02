@@ -86,10 +86,11 @@ static int setting_set_string(const TCHAR *service_name, void *param, const TCHA
   if (! key) return -1;
 
   long error;
+  TCHAR *string = value ? value->string : NULL;
 
   /* Resetting to default? */
-  if (! value || ! value->string) {
-    if (default_value) value->string = (TCHAR *) default_value;
+  if (! string) {
+    if (default_value) string = (TCHAR *) default_value;
     else {
       error = RegDeleteValue(key, name);
       if (error == ERROR_SUCCESS || error == ERROR_FILE_NOT_FOUND) return 0;
@@ -97,14 +98,14 @@ static int setting_set_string(const TCHAR *service_name, void *param, const TCHA
       return -1;
     }
   }
-  if (default_value && _tcslen((TCHAR *) default_value) && str_equiv(value->string, (TCHAR *) default_value)) {
+  if (default_value && _tcslen((TCHAR *) default_value) && str_equiv(string, (TCHAR *) default_value)) {
     error = RegDeleteValue(key, name);
     if (error == ERROR_SUCCESS || error == ERROR_FILE_NOT_FOUND) return 0;
     print_message(stderr, NSSM_MESSAGE_REGDELETEVALUE_FAILED, name, service_name, error_string(error));
     return -1;
   }
 
-  if (set_expand_string(key, (TCHAR *) name, value->string)) return -1;
+  if (set_expand_string(key, (TCHAR *) name, string)) return -1;
 
   return 1;
 }
