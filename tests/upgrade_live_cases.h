@@ -136,7 +136,7 @@ static int test(const std::wstring &candidate, const std::wstring &legacy, const
       std::wstring helper = file(dir.path, L"helper with spaces.exe"), script = file(dir.path, L"worker with spaces.ps1");
       std::wstring active = file(dir.path, L"nssm with spaces.exe");
       require(CopyFileW(self, helper.c_str(), TRUE) && CopyFileW(worker.c_str(), script.c_str(), TRUE), "Copy owned helper and representative worker");
-      replace(legacy, active, old_version.output); write(file(dir.path, L"stdin.txt"), "upgrade stdin\n");
+      replace(legacy, active, old_version.output); write(file(dir.path, L"input.txt"), "upgrade input\n");
       manager = OpenSCManagerW(NULL, NULL, SC_MANAGER_CONNECT | SC_MANAGER_CREATE_SERVICE);
       require(manager != NULL, "Upgrade rehearsal requires an elevated disposable host");
       {
@@ -148,7 +148,6 @@ static int test(const std::wstring &candidate, const std::wstring &legacy, const
         const std::wstring set = L"set " + quoted(owned.name) + L" ";
         command(active, set + L"AppDirectory " + quoted(dir.path));
         command(active, set + L"AppParameters -NoProfile -NonInteractive -ExecutionPolicy Bypass -File " + quoted(script) + L" -Directory " + quoted(dir.path));
-        command(active, set + L"AppStdin " + quoted(file(dir.path, L"stdin.txt")));
         command(active, set + L"AppStdout " + quoted(file(dir.path, L"stdout.log")));
         command(active, set + L"AppStderr " + quoted(file(dir.path, L"stderr.log")));
         command(active, set + L"AppEnvironmentExtra " + quoted(L"NSSM_UPGRADE_VALUE=persistent value"));
@@ -170,7 +169,7 @@ static int test(const std::wstring &candidate, const std::wstring &legacy, const
       CloseServiceHandle(manager); manager = NULL;
     }
     require(! service_fixture::cleanup_failed, "Upgrade fixtures cleaned up");
-    puts("Legacy -> candidate -> legacy rollback passed: same service and executable path, unchanged SCM/Parameters, persistent PowerShell state, stdin/environment, restart and log tails.");
+    puts("Legacy -> candidate -> legacy rollback passed: same service and executable path, unchanged SCM/Parameters, persistent PowerShell state, file input/environment, restart and log tails.");
     return 0;
   }
   catch (const std::exception &error) { if (manager) CloseServiceHandle(manager); fprintf(stderr, "Upgrade rehearsal failed: %s\n", error.what()); return 1; }

@@ -1,6 +1,6 @@
 param([Parameter(Mandatory=$true)][string]$Directory)
 $ErrorActionPreference = 'Stop'
-if ([Console]::In.ReadLine() -ne 'upgrade stdin' -or $env:NSSM_UPGRADE_VALUE -ne 'persistent value') { exit 11 }
+if ([IO.File]::ReadAllText((Join-Path $Directory 'input.txt')) -ne "upgrade input`n" -or $env:NSSM_UPGRADE_VALUE -ne 'persistent value') { exit 11 }
 if ([Environment]::CurrentDirectory.TrimEnd('\') -ne $Directory.TrimEnd('\')) { exit 12 }
 $statePath = Join-Path $Directory 'state.txt'
 $generation = 1

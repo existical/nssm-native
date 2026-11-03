@@ -23,7 +23,7 @@ The scenario uses one uniquely named NSSM-Upgrade-Test service, one temporary
 directory, and a PowerShell background worker with a persistent counter:
 
 1. Configure the disabled service with the legacy CLI. Use a stable wrapper
-   path containing spaces, a script path containing spaces, stdin redirection,
+   path containing spaces, a script path containing spaces, an input data file,
    an environment value containing a space, stdout/stderr logs and a graceful
    stop hook. Enable only this owned fixture and export its configuration.
 2. Start legacy, verify application readiness and advancing heartbeats, then
@@ -42,8 +42,12 @@ The worker has a 60-second watchdog; service cleanup and readiness waits are
 bounded and CTest allows 180 seconds. PID files are used only to retain process
 observer handles. The test never terminates an arbitrary PID. The graceful
 stop hook ends with an unquoted marker so the baseline does not hit its known
-hook quote-stripping defect. Empty environment entries and other corrected
-behavior belong to the separate candidate lifecycle/regression suites.
+hook quote-stripping defect. The worker reads an input file directly: legacy
+AppStdin is not inherited correctly ([NSSM-012](../fixes/NSSM-012.md)), so requiring
+it would reject the known baseline before any upgrade. Empty environment entries,
+stdin inheritance and other corrected behavior belong to the separate candidate
+lifecycle/regression suites. Baseline limitations are not weakened expectations
+for the candidate's existing regression tests.
 
 On a disposable elevated test host, after a complete-history checkout:
 
