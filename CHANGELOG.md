@@ -7,6 +7,12 @@
   releases state ownership while waiting. Add deterministic overlap cases and
   repeated real lifecycle acceptance. [NSSM-037](docs/fixes/NSSM-037.md).
 
+- Add an opt-in legacy-to-candidate-to-legacy upgrade rehearsal with a persistent
+  PowerShell worker, unchanged service configuration, restart and shutdown
+  checks. The legacy comparison is rebuilt from pinned, unmodified source;
+  no original distributed executable is claimed. See the
+  [rehearsal](docs/releases/upgrade-rehearsal.md).
+
 - Prepare candidate packages from clean pinned source archives with full build
   and test metadata, SHA-256 checksums and preserved source identity. Support
   distinct beta/RC tags while retaining original version tags. Add a real

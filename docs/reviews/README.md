@@ -40,4 +40,5 @@ Implementation evidence is retained separately in the
 [B11 GUI/account validation](b11-validation.md) and
 [B12 dependency validation](b12-validation.md) and
 [B13 control-wait validation](b13-validation.md) and
-[B14 release preparation validation](b14-validation.md) records.
+[B14 release preparation validation](b14-validation.md) and
+[B15 upgrade/rollback validation](b15-validation.md) records.

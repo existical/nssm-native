@@ -100,8 +100,8 @@ struct observer {
 };
 struct fixture : service_fixture {
   std::wstring dir;
-  fixture(SC_HANDLE manager, const std::wstring &nssm, const std::wstring &directory) :
-    service_fixture(manager, nssm, L"wrapped", L"NSSM-Lifecycle-Test", SERVICE_CHANGE_CONFIG | SERVICE_STOP | SERVICE_QUERY_STATUS), dir(directory) {}
+  fixture(SC_HANDLE manager, const std::wstring &nssm, const std::wstring &directory, const wchar_t *prefix = L"NSSM-Lifecycle-Test") :
+    service_fixture(manager, nssm, L"wrapped", prefix, SERVICE_CHANGE_CONFIG | SERVICE_STOP | SERVICE_QUERY_STATUS), dir(directory) {}
   ~fixture() {
     // Every cleanup operation is restricted to this created service and directory.
     try { write(file(dir, L"release"), "release"); } catch (...) { cleanup_failed = true; }

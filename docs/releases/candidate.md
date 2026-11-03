@@ -47,9 +47,16 @@ quoted hook paths/arguments, application crash/restart, repeated start/stop,
 stdout/stderr tail draining and descendant cleanup. Hidden-dialog tests are
 automated; they are not a manual interactive GUI acceptance pass.
 
+The [B15 upgrade rehearsal](upgrade-rehearsal.md) passed a separate legacy-to-
+candidate-to-legacy replacement check with a persistent PowerShell worker.
+The automation is in [PR 21](https://github.com/existical/nssm-native/pull/21),
+pending merge. Its validation record identifies the exact comparison builds;
+this controlled workload does not establish deployment compatibility for every
+application.
+
 Known acceptance gaps: representative long-running applications, domain
 accounts, manual GUI/accessibility, older Windows releases, large process trees,
-concurrent hook storms, signing and installed-system upgrade/rollback trials.
+concurrent hook storms, signing and application-specific upgrade/rollback trials.
 No broad OS compatibility or production-soak claim is made. CI artifacts may
 expire; a release must publish permanent assets and the matching manifest.
 

@@ -83,7 +83,7 @@ work. P2 tasks share an early group only when they support the same repair.
 | B12 | Dependencies | 023 | Merged in PR 17; typed resets/merges, bounded queries, validation cleanup and SCM round-trip tests pass |
 | B13 | Remaining service control waits | 024 | Merged in PR 18; action budgets, polling, diagnostics and deterministic/live tests pass |
 | B14 | Candidate release and acceptance follow-ups | 035, 036 | Merged; startup/cleanup repairs in PR 20, lifecycle and packaging in PR 19; publication separate |
-| B15 | Startup cancellation follow-up | 037 | [PR 22](https://github.com/existical/nssm-native/pull/22), merge pending; upgrade acceptance continues in PR 21 |
+| B15 | Upgrade/rollback and startup follow-up | 037 | Merge repair [PR 22](https://github.com/existical/nssm-native/pull/22) before acceptance [PR 21](https://github.com/existical/nssm-native/pull/21); [scenario](releases/upgrade-rehearsal.md), [validation](reviews/b15-validation.md) |
 
 ## Shared implementation and test rules
 

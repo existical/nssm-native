@@ -62,7 +62,7 @@ are published. Upload the complete package set, then verify public checksums
 and links before updating first-release fields.
 
 Before a beta: review the automated lifecycle results, the known limitations,
-and upgrade instructions below. Before a stable release: exercise representative
+and the [upgrade/rollback rehearsal](upgrade-rehearsal.md). Before a stable release: exercise representative
 real applications, interactive GUI/account configuration and the Windows
 versions being advertised. Current automated coverage alone does not establish
 support for every historical Windows version or domain configuration.

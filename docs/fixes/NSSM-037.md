@@ -63,6 +63,16 @@ Logs remain in ignored build/b15-race-*.log. CI additionally repeats the real
 crash/restart/STOP lifecycle ten times, stopping on the first failure; results
 are recorded in the PR before merge.
 
+The focused repair at `d995289fd939461839bbd89d464e21eeb922d204` passed the
+four-configuration CI matrix (41 groups in x64 Release; 37 elsewhere) and all
+ten additional lifecycle repetitions in
+[CI 41632491156](https://github.com/existical/nssm-native/actions/runs/41632491156).
+The combined acceptance branch at `9e5a139784bddd59e6335f48bb48f99be171307e`
+also passed its matrix (42 in x64 Release, including upgrade/rollback), plus
+ten repetitions, in
+[CI 41632720465](https://github.com/existical/nssm-native/actions/runs/41632720465).
+See [B15 validation](../reviews/b15-validation.md) for the actual binary identities.
+
 The failing live run has no captured crash dump, so it records the observed
 termination rather than a proven exception instruction. The deterministic tests
 establish the ownership defects independently. Legacy evidence for these races
