@@ -94,7 +94,7 @@ try {
             }
             $stage = Join-Path $work $name
             New-Item -ItemType Directory -Path $stage | Out-Null
-            Copy-Item -LiteralPath $binary, $symbols, (Join-Path $source 'LICENSE'), (Join-Path $source 'README.md') -Destination $stage
+            Copy-Item -LiteralPath $binary, $symbols, (Join-Path $source 'LICENSE'), (Join-Path $source 'README.md'), (Join-Path $source 'CHANGELOG.md'), (Join-Path $source 'CONTRIBUTING.md') -Destination $stage
             Copy-Item -LiteralPath (Join-Path $source 'docs') -Destination $stage -Recurse
             Write-JsonFile $manifest (Join-Path $stage 'build-info.json')
             $archive = Join-Path $work "nssm-native-$label-$name.zip"

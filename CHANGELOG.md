@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+The first beta candidate is `v2.25.0-beta.1`; it includes CONT-001 through
+CONT-005 and NSSM-001 through NSSM-037. All implementations are merged.
+See the [beta notes](docs/releases/v2.25.0-beta.1.md) and
+[QRScanner acceptance checklist](docs/releases/qrscanner-beta-acceptance.md).
+Candidate preparation does not assign a first published release to these fixes.
+
 - Protect startup and monitor publication against concurrent STOP. Startup owns
   its wait handle, rechecks cancellation before launching/registering, and
   releases state ownership while waiting. Add deterministic overlap cases and
