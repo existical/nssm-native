@@ -80,7 +80,28 @@ and five sanitizer groups. [PR 22](https://github.com/existical/nssm-native/pull
 must merge before PR 21. The acceptance branch includes the repair and repeats
 the real lifecycle ten consecutive times on CI, stopping at the first failure.
 The earlier comparison hashes above identify the pre-NSSM-037 run, not the
-updated candidate; passing repaired-build evidence is recorded separately.
+updated candidate.
+
+At combined branch revision `9e5a139784bddd59e6335f48bb48f99be171307e`,
+[CI 41632720465](https://github.com/existical/nssm-native/actions/runs/41632720465)
+passed 42/42 groups in x64 Release and 37/37 in each other configuration. The
+upgrade/rollback test passed again in 14.26 seconds with generations 1-4 and
+the same configuration/state/cleanup assertions. Ten additional consecutive
+lifecycle runs passed; the downloaded repeat log contains ten passed records.
+The full matrix log is retained as matrix-tests.log before CTest writes the
+separate repeat log and JUnit result.
+
+| Repaired-run comparison executable | Identity |
+| --- | --- |
+| Legacy rebuild | Source `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`; SHA-256 `9a0356554497b816926fa67f462d9f4dc83f722ff090da2af9b6a9d2131c8a1f`; original source files unchanged |
+| Candidate matrix build | Temporary PR integration commit `ff78d37ce3f29659a947308f306c3fedc805e4f1`; version `NSSM 2.24-192-gff78d37 64-bit 2026-11-03`; SHA-256 `9b25961ad4bb7d1227452c40e421cc2ef719f4d0305689feb24a7f68866adb7d` |
+
+The focused repair separately passed its four-configuration matrix and ten
+consecutive lifecycle repetitions in
+[CI 41632491156](https://github.com/existical/nssm-native/actions/runs/41632491156)
+at `d995289fd939461839bbd89d464e21eeb922d204`. Source-archive packaging checks are
+part of the same linked workflows; package manifests identify their exact
+branch revisions separately from the temporary integration builds above.
 
 This acceptance uses a controlled persistent PowerShell worker, not QRScanner
 or a user's installed service. It exercises a currently rebuilt legacy binary;
