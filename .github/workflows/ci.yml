@@ -24,10 +24,14 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Enable isolated SCM configuration and control tests on the disposable runner
+      - name: Build the pinned legacy comparison executable
         if: matrix.architecture == 'x64' && matrix.configuration == 'Release'
         shell: pwsh
-        run: cmake --preset windows-x64 -DNSSM_ENABLE_SCM_TESTS=ON
+        run: ./tests/build-legacy.ps1 -OutputDirectory build/legacy-baseline
+      - name: Enable isolated SCM configuration, lifecycle and upgrade tests
+        if: matrix.architecture == 'x64' && matrix.configuration == 'Release'
+        shell: pwsh
+        run: cmake --preset windows-x64 -DNSSM_ENABLE_SCM_TESTS=ON "-DNSSM_LEGACY_EXECUTABLE=$((Resolve-Path build/legacy-baseline/build/bin/Release/nssm.exe).Path)"
       - name: Configure, compile and check executable
         shell: pwsh
         run: ./scripts/build.ps1 -Architecture '${{ matrix.architecture }}' -Configuration '${{ matrix.configuration }}'
@@ -38,6 +42,25 @@ jobs:
           path: |
             build/windows-${{ matrix.architecture }}/bin/${{ matrix.configuration }}/nssm.exe
             build/windows-${{ matrix.architecture }}/bin/${{ matrix.configuration }}/nssm.pdb
+          if-no-files-found: error
+      - name: Record candidate comparison identity
+        if: matrix.architecture == 'x64' && matrix.configuration == 'Release'
+        shell: pwsh
+        run: |
+          $exe = 'build/windows-x64/bin/Release/nssm.exe'
+          @{source_commit=(git rev-parse HEAD); sha256=(Get-FileHash $exe -Algorithm SHA256).Hash; version=(& $exe version); run_id=$env:GITHUB_RUN_ID} |
+            ConvertTo-Json | Set-Content build/upgrade-candidate.json
+      - name: Retain upgrade comparison evidence
+        if: always() && matrix.architecture == 'x64' && matrix.configuration == 'Release'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: nssm-upgrade-evidence
+          path: |
+            build/legacy-baseline/build-info.json
+            build/legacy-baseline/configure.log
+            build/legacy-baseline/build.log
+            build/upgrade-candidate.json
+            build/windows-x64/Testing/Temporary/LastTest.log
           if-no-files-found: error
       - name: Show fixture NSSM events on failure
         if: failure() && matrix.architecture == 'x64' && matrix.configuration == 'Release'

@@ -9,8 +9,9 @@ distinct from the original v2.24 release.
 Included work: CONT-001 through CONT-005 and NSSM-001 through NSSM-036.
 The [fix records](../fixes/README.md) link every issue to its implementation,
 tests and behavior differences. The original 34 tasks are merged. NSSM-035 and NSSM-036
-are the startup and cleanup blockers found and repaired during B14 acceptance;
-merge its focused PR 20 before PR 19. No review task remains unimplemented. New
+are the startup and cleanup blockers found during B14 acceptance, now merged
+in PR 20 before release-preparation PR 19. All 36 tasks are fixed and unreleased.
+No review task remains unimplemented. New
 findings and release acceptance gaps remain possible; completion of this review
 is not a claim that all bugs have been eliminated.
 
@@ -44,6 +45,11 @@ real NSSM wrapper with stdin, an empty environment entry followed by a value,
 quoted hook paths/arguments, application crash/restart, repeated start/stop,
 stdout/stderr tail draining and descendant cleanup. Hidden-dialog tests are
 automated; they are not a manual interactive GUI acceptance pass.
+
+The [B15 upgrade rehearsal](upgrade-rehearsal.md) adds a separate legacy-to-
+candidate-to-legacy replacement check with a persistent PowerShell worker.
+Consult its validation record for the actual CI result; this is a controlled
+workload, not a deployment test for every application.
 
 Known acceptance gaps: representative long-running applications, domain
 accounts, manual GUI/accessibility, older Windows releases, large process trees,

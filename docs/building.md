@@ -266,3 +266,12 @@ See [release preparation](releases/README.md) for clean pinned builds,
 manifests, checksums and source ZIPs. The packaging CI job builds and tests all
 four configurations from its generated source archive and verifies the outputs.
 It creates candidate artifacts, not a GitHub release.
+
+The [B15 upgrade/rollback rehearsal](releases/upgrade-rehearsal.md) adds
+`nssm.upgrade_live` only when SCM tests and NSSM_LEGACY_EXECUTABLE are explicitly
+supplied. CI builds that comparison binary from preserved, unchanged legacy
+source and adds the test only to matrix x64 Release (42 groups). Packaging's
+source archive runs its existing 41 groups without a legacy build. Other
+configurations retain 37 groups. Legacy build metadata, candidate identity and
+the CTest log are uploaded as nssm-upgrade-evidence. Local default builds do not
+install or start services.

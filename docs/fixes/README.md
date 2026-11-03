@@ -135,8 +135,8 @@ B14 acceptance found two release blockers beyond the original review:
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |
-| [NSSM-035](NSSM-035.md) | Pass byte capacity to standard-I/O registry readers | In progress | Not yet released |
-| [NSSM-036](NSSM-036.md) | Wait for in-flight exit cleanup before STOPPED | In progress | Not yet released |
+| [NSSM-035](NSSM-035.md) | Pass byte capacity to standard-I/O registry readers | Fixed, unreleased | Not yet released |
+| [NSSM-036](NSSM-036.md) | Wait for in-flight exit cleanup before STOPPED | Fixed, unreleased | Not yet released |
 
 The [implementation plan](../remediation-plan.md) tracks NSSM-001 through
 NSSM-036. Check each record's state before assuming inclusion in a build.

@@ -3,8 +3,9 @@
 Release preparation now has automated checks; publication is a separate step.
 No continuation tag or public release has been created. All 34 review fixes
 are merged and unreleased. Acceptance additionally found NSSM-035 and NSSM-036, repaired in
-[PR 20](https://github.com/existical/nssm-native/pull/20), pending merge before
-[PR 19](https://github.com/existical/nssm-native/pull/19). See the [candidate notes](candidate.md) and
+[PR 20](https://github.com/existical/nssm-native/pull/20), now merged along with
+release preparation in [PR 19](https://github.com/existical/nssm-native/pull/19).
+All 36 tasks are fixed and unreleased. See the [candidate notes](candidate.md) and
 [fix index](../fixes/README.md).
 
 From a clean checkout with full history and tags:
@@ -60,7 +61,7 @@ are published. Upload the complete package set, then verify public checksums
 and links before updating first-release fields.
 
 Before a beta: review the automated lifecycle results, the known limitations,
-and upgrade instructions below. Before a stable release: exercise representative
+and the [upgrade/rollback rehearsal](upgrade-rehearsal.md). Before a stable release: exercise representative
 real applications, interactive GUI/account configuration and the Windows
 versions being advertised. Current automated coverage alone does not establish
 support for every historical Windows version or domain configuration.

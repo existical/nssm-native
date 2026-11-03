@@ -107,8 +107,11 @@ static result run(const std::wstring &exe, const std::wstring &arguments) {
 #include "dependencies_live_cases.h"
 #include "controls_live_cases.h"
 #include "lifecycle_live_cases.h"
+#include "upgrade_live_cases.h"
 
 int wmain(int argc, wchar_t **argv) {
+  if (argc == 4 && ! wcscmp(argv[1], L"--upgrade-stop")) return upgrade_live::stop(argv[2]);
+  if (argc == 5 && ! wcscmp(argv[2], L"upgrade")) return upgrade_live::test(argv[1], argv[3], argv[4]);
   if (argc == 3 && ! wcscmp(argv[1], L"--wrapped-app")) return lifecycle_live::app(argv[2]);
   if (argc == 3 && ! wcscmp(argv[1], L"--wrapped-child")) return lifecycle_live::child(argv[2]);
   if (argc == 5 && ! wcscmp(argv[1], L"--wrapped-hook")) return lifecycle_live::hook(argv[2], argv[3], argv[4]);
