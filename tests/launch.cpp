@@ -10,6 +10,12 @@ static unsigned closes, output_closes, creates, resumes, waits, tree_calls;
 static DWORD wait_result, create_error, launch_flags;
 static int process_token, thread_token;
 static HANDLE process_handle = &process_token, thread_handle = &thread_token;
+static int duplicate_token, registration_token;
+static HANDLE startup_handle = &duplicate_token, registration_handle = &registration_token;
+static bool duplicate_ok, duplicate_open, startup_race, startup_waiting, waited_handle_closed;
+static HANDLE startup_entered, startup_release, waited_handle;
+static unsigned registrations, invalid_registrations, unregistrations;
+static const TCHAR *cancel_hook_action;
 static std::basic_string<TCHAR> live_image;
 const TCHAR *imagepath() { return live_image.empty() ? nssm_imagepath() : &live_image[0]; }
 
@@ -20,6 +26,8 @@ static void reset() {
   wait_result = WAIT_OBJECT_0;
   create_error = ERROR_ACCESS_DENIED;
   launch_flags = 0;
+  duplicate_ok = true; duplicate_open = startup_race = startup_waiting = waited_handle_closed = false;
+  registrations = invalid_registrations = unregistrations = 0; cancel_hook_action = NULL;
 }
 BOOL WINAPI create(LPCTSTR app, LPTSTR cmd, LPSECURITY_ATTRIBUTES ps, LPSECURITY_ATTRIBUTES ts,
   BOOL inherit, DWORD flags, LPVOID env, LPCTSTR dir, LPSTARTUPINFO si, LPPROCESS_INFORMATION pi) {
@@ -31,11 +39,31 @@ BOOL WINAPI create(LPCTSTR app, LPTSTR cmd, LPSECURITY_ATTRIBUTES ps, LPSECURITY
   return TRUE;
 }
 BOOL WINAPI close(HANDLE h) {
+  if (active && startup_waiting && h == waited_handle) waited_handle_closed = true;
+  if (active && h == startup_handle) { CHECK(duplicate_open); duplicate_open = false; closes++; return TRUE; }
   if (! active || (h != process_handle && h != thread_handle)) return CloseHandle(h);
   if (h == process_handle) { CHECK(! process_closed); process_closed = true; }
   else { CHECK(! thread_closed); thread_closed = true; }
   closes++;
   return TRUE;
+}
+BOOL WINAPI duplicate(HANDLE source, HANDLE h, HANDLE target, LPHANDLE out, DWORD access, BOOL inherit, DWORD options) {
+  if (! active) return DuplicateHandle(source, h, target, out, access, inherit, options);
+  CHECK(h == process_handle && ! process_closed && ! duplicate_open);
+  CHECK(access == SYNCHRONIZE && ! inherit && ! options);
+  if (! duplicate_ok) { SetLastError(ERROR_NOT_ENOUGH_MEMORY); return FALSE; }
+  *out = startup_handle; duplicate_open = true; return TRUE;
+}
+BOOL WINAPI register_wait(PHANDLE out, HANDLE h, WAITORTIMERCALLBACK callback, PVOID context, ULONG timeout, ULONG flags) {
+  if (! active) return RegisterWaitForSingleObject(out, h, callback, context, timeout, flags);
+  registrations++;
+  if (h != process_handle || process_closed) invalid_registrations++;
+  *out = registration_handle; return TRUE;
+}
+BOOL WINAPI unregister_wait(HANDLE h) {
+  if (! active) return UnregisterWait(h);
+  unregistrations++;
+  CHECK(h == registration_handle); return TRUE;
 }
 BOOL WINAPI terminate(HANDLE h, UINT result) {
   if (! active) return TerminateProcess(h, result);
@@ -46,9 +74,16 @@ BOOL WINAPI terminate(HANDLE h, UINT result) {
 }
 DWORD WINAPI wait(HANDLE h, DWORD timeout) {
   if (! active) return WaitForSingleObject(h, timeout);
-  CHECK(h == process_handle && ! process_closed);
+  CHECK((h == process_handle && ! process_closed) || (h == startup_handle && duplicate_open));
   CHECK(timeout <= 5000);
   waits++;
+  if (startup_race) {
+    waited_handle = h; startup_waiting = true;
+    SetEvent(startup_entered);
+    REQUIRE(WaitForSingleObject(startup_release, 10000) == WAIT_OBJECT_0);
+    startup_waiting = false;
+    return WAIT_OBJECT_0;
+  }
   return wait_result;
 }
 DWORD WINAPI resume(HANDLE h) {
@@ -97,6 +132,10 @@ unsigned long kill_tree(kill_t *k, unsigned long pid) {
 }
 int hook(hook_thread_t *list, nssm_service_t *service, TCHAR *event, TCHAR *action, unsigned long *control, unsigned long deadline, bool async) {
   if (! active) return nssm_hook(list, service, event, action, control, deadline, async);
+  if (cancel_hook_action && ! _tcscmp(event, NSSM_HOOK_EVENT_START) && ! _tcscmp(action, cancel_hook_action)) {
+    cancel_hook_action = NULL;
+    stop_service(service, 0, true, true);
+  }
   return abort_hook && ! _tcscmp(event, NSSM_HOOK_EVENT_START) && ! _tcscmp(action, NSSM_HOOK_ACTION_PRE) ? NSSM_HOOK_STATUS_ABORT : NSSM_HOOK_STATUS_NOTFOUND;
 }
 int hook(hook_thread_t *l, nssm_service_t *s, TCHAR *e, TCHAR *a, unsigned long *c, unsigned long d) { return hook(l,s,e,a,c,d,true); }
@@ -111,8 +150,8 @@ static void environment_case(bool created, bool terminated, DWORD waited, int ex
   if (created) CHECK(launch_flags & CREATE_SUSPENDED);
   active = false;
 }
-static void service_case(bool suspended, bool created, bool resume_success, bool abort, unsigned long throttle = 1) {
-  reset(); create_ok = created; resume_ok = resume_success; abort_hook = abort; wait_result = WAIT_TIMEOUT;
+static void service_case(bool suspended, bool created, bool resume_success, bool abort, unsigned long throttle = 1, bool duplicate_success = true) {
+  reset(); create_ok = created; resume_ok = resume_success; abort_hook = abort; wait_result = WAIT_TIMEOUT; duplicate_ok = duplicate_success;
   nssm_service_t *service = new nssm_service_t();
   _tcscpy_s(service->name, _T("Launch test")); _tcscpy_s(service->exe, _T("fake.exe"));
   service->allow_restart = true; service->no_console = true; service->throttle_delay = throttle;
@@ -120,7 +159,7 @@ static void service_case(bool suspended, bool created, bool resume_success, bool
   service->kill_process_tree = true;
   InitializeCriticalSection(&service->hook_section);
   int result = start_service(service);
-  if (abort || ! created || (suspended && ! resume_success)) {
+  if (abort || ! created || (suspended && ! resume_success) || ! duplicate_success) {
     CHECK(result != 0);
     CHECK(service->status.dwCurrentState == SERVICE_STOPPED);
     CHECK(! service->process_handle);
@@ -134,7 +173,9 @@ static void service_case(bool suspended, bool created, bool resume_success, bool
     CHECK(tree_calls == 1 && process_closed);
   }
   CHECK(output_closes == 1);
-  CHECK(closes == (created && ! abort ? 2U : 0U));
+  unsigned expected = created && ! abort ? 2U : 0U;
+  if (expected && (! suspended || resume_success) && duplicate_success) expected++; // Owned startup observer.
+  CHECK(closes == expected && ! duplicate_open);
   DeleteCriticalSection(&service->hook_section);
   delete service; active = false;
 }
@@ -203,7 +244,57 @@ static void test_cleanup_overlap() {
   cleanup_race = active = false;
 }
 
+static DWORD WINAPI startup_monitor_thread(void *service) { return monitor_service(static_cast<nssm_service_t *>(service)); }
+static DWORD WINAPI startup_stop_thread(void *service) { return stop_service(static_cast<nssm_service_t *>(service), 0, true, true); }
+static nssm_service_t *startup_fixture() {
+  nssm_service_t *service = new nssm_service_t();
+  _tcscpy_s(service->name, _T("Startup cancellation test")); _tcscpy_s(service->exe, _T("fake.exe"));
+  service->allow_restart = true; service->no_console = true; service->throttle_delay = 1;
+  InitializeCriticalSection(&service->hook_section); service->hook_section_initialised = true;
+  return service;
+}
+static void test_startup_cancellation() {
+  using namespace launch_test;
+  reset(); startup_race = true;
+  startup_entered = CreateEvent(NULL, TRUE, FALSE, NULL); startup_release = CreateEvent(NULL, TRUE, FALSE, NULL);
+  REQUIRE(startup_entered && startup_release);
+  nssm_service_t *service = startup_fixture();
+  HANDLE starting = CreateThread(NULL, 0, startup_monitor_thread, service, 0, NULL); REQUIRE(starting);
+  REQUIRE(WaitForSingleObject(startup_entered, 5000) == WAIT_OBJECT_0);
+  HANDLE stopping = CreateThread(NULL, 0, startup_stop_thread, service, 0, NULL); REQUIRE(stopping);
+  CHECK(WaitForSingleObject(stopping, 2000) == WAIT_OBJECT_0); // Startup wait must not hold the cleanup lock.
+  SetEvent(startup_release);
+  REQUIRE(WaitForSingleObject(starting, 5000) == WAIT_OBJECT_0);
+  REQUIRE(WaitForSingleObject(stopping, 5000) == WAIT_OBJECT_0);
+  CHECK(! waited_handle_closed);
+  CHECK(! registrations && ! invalid_registrations && ! service->wait_handle);
+  CHECK(service->status.dwCurrentState == SERVICE_STOPPED && ! service->process_handle && ! duplicate_open);
+  CloseHandle(starting); CloseHandle(stopping); CloseHandle(startup_entered); CloseHandle(startup_release);
+  DeleteCriticalSection(&service->hook_section); delete service;
+  for (const TCHAR *action : {NSSM_HOOK_ACTION_PRE, NSSM_HOOK_ACTION_POST}) {
+    reset(); wait_result = WAIT_TIMEOUT; cancel_hook_action = action; service = startup_fixture();
+    CHECK(monitor_service(service) == 0);
+    CHECK(! registrations && ! invalid_registrations && ! service->wait_handle);
+    if (! _tcscmp(action, NSSM_HOOK_ACTION_PRE)) CHECK(! creates);
+    CHECK(service->status.dwCurrentState == SERVICE_STOPPED && ! service->process_handle);
+    if (service->process_handle) { service->stopping = false; stop_service(service, 0, true, true); }
+    DeleteCriticalSection(&service->hook_section); delete service;
+  }
+  reset(); service = startup_fixture(); service->allow_restart = false; service->stopping = true;
+  service->status.dwCurrentState = SERVICE_STOPPED;
+  CHECK(monitor_service(service) == 0 && ! creates && ! registrations);
+  CHECK(service->stopping && service->status.dwCurrentState == SERVICE_STOPPED);
+  DeleteCriticalSection(&service->hook_section); delete service;
+  reset(); wait_result = WAIT_TIMEOUT; service = startup_fixture(); service->wait_handle = registration_handle;
+  CHECK(monitor_service(service) == 0 && registrations == 1 && unregistrations == 1);
+  CHECK(! invalid_registrations && service->wait_handle == registration_handle);
+  CHECK(stop_service(service, 0, true, true) == 0 && unregistrations == 2);
+  DeleteCriticalSection(&service->hook_section); delete service;
+  active = false;
+}
+
 void test_launch_handles() {
+  test_startup_cancellation();
   test_cleanup_overlap();
   launch_test::environment_case(true, true, WAIT_OBJECT_0, 0);
   launch_test::environment_case(true, false, WAIT_FAILED, -1);
@@ -216,6 +307,7 @@ void test_launch_handles() {
   launch_test::service_case(false, false, true, false);
   launch_test::service_case(false, true, true, true);
   launch_test::service_case(true, true, false, false);
+  launch_test::service_case(false, true, true, false, 1, false); // Failed observer duplication must clean up.
   launch_test::reset();
   launch_test::create_ok = false;
   launch_test::create_error = ERROR_INVALID_PARAMETER;

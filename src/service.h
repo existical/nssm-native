@@ -102,7 +102,7 @@ typedef struct {
   HANDLE wait_handle;
   unsigned long exitcode;
   bool stopping;
-  bool allow_restart;
+  volatile LONG allow_restart;
   unsigned long throttle;
   CRITICAL_SECTION throttle_section;
   bool throttle_section_initialised;
