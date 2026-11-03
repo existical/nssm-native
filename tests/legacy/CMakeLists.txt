@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(nssm_legacy LANGUAGES CXX RC)
+file(TO_CMAKE_PATH "${NSSM_LEGACY_SOURCE_DIR}" NSSM_LEGACY_SOURCE_DIR)
 if(NOT WIN32 OR NOT MSVC OR NOT EXISTS "${NSSM_LEGACY_SOURCE_DIR}/nssm.cpp")
   message(FATAL_ERROR "Supply the extracted legacy source on Windows with MSVC.")
 endif()
