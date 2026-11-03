@@ -148,6 +148,8 @@ static int test(const std::wstring &candidate, const std::wstring &legacy, const
       std::wstring active = file(dir.path, L"nssm with spaces.exe");
       require(CopyFileW(self, helper.c_str(), TRUE) && CopyFileW(worker.c_str(), script.c_str(), TRUE), "Copy owned helper and representative worker");
       replace(legacy, active, old_version.output); write(file(dir.path, L"input.txt"), "upgrade input\n");
+      std::wstring marker = L"cwd-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()) + L".marker";
+      write(file(dir.path, marker.c_str()), "owned working directory");
       manager = OpenSCManagerW(NULL, NULL, SC_MANAGER_CONNECT | SC_MANAGER_CREATE_SERVICE);
       require(manager != NULL, "Upgrade rehearsal requires an elevated disposable host");
       {
@@ -158,7 +160,7 @@ static int test(const std::wstring &candidate, const std::wstring &legacy, const
         service_fixture::set(owned.key, L"Application", powershell, REG_EXPAND_SZ);
         const std::wstring set = L"set " + quoted(owned.name) + L" ";
         command(active, set + L"AppDirectory " + quoted(dir.path));
-        std::wstring parameters = L"-NoProfile -NonInteractive -ExecutionPolicy Bypass -File " + quoted(script) + L" -Directory " + quoted(dir.path);
+        std::wstring parameters = L"-NoProfile -NonInteractive -ExecutionPolicy Bypass -File " + quoted(script) + L" -Directory " + quoted(dir.path) + L" -WorkingDirectoryMarker " + marker;
         command(active, set + L"AppParameters " + argument(parameters));
         result stored = run(active, L"get " + quoted(owned.name) + L" AppParameters");
         require(! stored.code && stored.output.find(parameters) != std::wstring::npos, "Legacy CLI preserves the complete application command line");

@@ -1,7 +1,14 @@
-param([Parameter(Mandatory=$true)][string]$Directory)
+param([Parameter(Mandatory=$true)][string]$Directory,
+      [Parameter(Mandatory=$true)][string]$WorkingDirectoryMarker)
 $ErrorActionPreference = 'Stop'
-if ([IO.File]::ReadAllText((Join-Path $Directory 'input.txt')) -ne "upgrade input`n" -or $env:NSSM_UPGRADE_VALUE -ne 'persistent value') { exit 11 }
-if ([Environment]::CurrentDirectory.TrimEnd('\') -ne $Directory.TrimEnd('\')) { exit 12 }
+if ([IO.File]::ReadAllText((Join-Path $Directory 'input.txt')) -ne "upgrade input`n" -or $env:NSSM_UPGRADE_VALUE -ne 'persistent value') {
+    [Console]::Error.WriteLine("Worker input/environment mismatch; environment='$env:NSSM_UPGRADE_VALUE'"); exit 11
+}
+# A unique relative marker proves the working directory without comparing
+# Windows short and long path spellings (for example RUNNER~1 vs runneradmin).
+if (-not [IO.File]::Exists($WorkingDirectoryMarker)) {
+    [Console]::Error.WriteLine("Worker directory mismatch: $([Environment]::CurrentDirectory); expected $Directory"); exit 12
+}
 $statePath = Join-Path $Directory 'state.txt'
 $generation = 1
 if (Test-Path -LiteralPath $statePath) { $generation += [int]([IO.File]::ReadAllText($statePath)) }
