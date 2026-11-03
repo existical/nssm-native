@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Protect startup and monitor publication against concurrent STOP. Startup owns
+  its wait handle, rechecks cancellation before launching/registering, and
+  releases state ownership while waiting. Add deterministic overlap cases and
+  repeated real lifecycle acceptance. [NSSM-037](docs/fixes/NSSM-037.md).
+
 - Add an opt-in legacy-to-candidate-to-legacy upgrade rehearsal with a persistent
   PowerShell worker, unchanged service configuration, restart and shutdown
   checks. The legacy comparison is rebuilt from pinned, unmodified source;

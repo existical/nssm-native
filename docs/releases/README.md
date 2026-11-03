@@ -5,7 +5,8 @@ No continuation tag or public release has been created. All 34 review fixes
 are merged and unreleased. Acceptance additionally found NSSM-035 and NSSM-036, repaired in
 [PR 20](https://github.com/existical/nssm-native/pull/20), now merged along with
 release preparation in [PR 19](https://github.com/existical/nssm-native/pull/19).
-All 36 tasks are fixed and unreleased. See the [candidate notes](candidate.md) and
+All 36 tasks are fixed and unreleased. B15 then identified the startup/STOP
+race [NSSM-037](../fixes/NSSM-037.md), repaired in PR 22 and pending merge. See the [candidate notes](candidate.md) and
 [fix index](../fixes/README.md).
 
 From a clean checkout with full history and tags:

@@ -12,20 +12,50 @@ const TCHAR *priority_strings[] = { _T("REALTIME_PRIORITY_CLASS"), _T("HIGH_PRIO
 
 static hook_thread_t hook_threads = { NULL, 0 };
 
-/* Serialize exit cleanup and explicit STOP with the existing service-side
+/* Serialize launch publication, monitoring and cleanup with the service-side
    hook/logger lock. Workers own snapshots and do not acquire this lock.
    Critical sections are recursive: STOP may call end_service while owning it. */
 class service_cleanup_lock {
   CRITICAL_SECTION *section;
+  bool owned;
 public:
-  explicit service_cleanup_lock(nssm_service_t *service) : section(service->hook_section_initialised ? &service->hook_section : NULL) {
-    if (section) EnterCriticalSection(section);
-  }
-  ~service_cleanup_lock() { if (section) LeaveCriticalSection(section); }
+  explicit service_cleanup_lock(nssm_service_t *service) : section(service->hook_section_initialised ? &service->hook_section : NULL), owned(false) { lock(); }
+  void lock() { if (section && ! owned) { EnterCriticalSection(section); owned = true; } }
+  void unlock() { if (owned) { LeaveCriticalSection(section); owned = false; } }
+  ~service_cleanup_lock() { unlock(); }
 private:
   service_cleanup_lock(const service_cleanup_lock &);
   service_cleanup_lock &operator=(const service_cleanup_lock &);
 };
+
+static bool restart_allowed(nssm_service_t *service) {
+  return InterlockedCompareExchange(&service->allow_restart, 0, 0) != 0;
+}
+
+/* The caller owns a separate SYNCHRONIZE handle. Never hold the cleanup lock
+   across the wait: STOP must be able to terminate the child and wake us. */
+static int await_startup(nssm_service_t *service, HANDLE process, unsigned long timeout) {
+  unsigned long waited = 0;
+  do {
+    unsigned long interval = timeout - waited;
+    if (interval > NSSM_SERVICE_STATUS_DEADLINE) interval = NSSM_SERVICE_STATUS_DEADLINE;
+    {
+      service_cleanup_lock state(service);
+      if (! restart_allowed(service) || service->stopping) return 0;
+      if (interval) {
+        if (service->status.dwWaitHint > MAXDWORD - interval) service->status.dwWaitHint = MAXDWORD;
+        else service->status.dwWaitHint += interval;
+        service->status.dwCheckPoint++;
+        SetServiceStatus(service->status_handle, &service->status);
+      }
+    }
+    DWORD result = WaitForSingleObject(process, interval);
+    if (result == WAIT_OBJECT_0) return 0;
+    if (result != WAIT_TIMEOUT) return -1;
+    waited += interval;
+  } while (waited < timeout);
+  return 1;
+}
 
 typedef struct {
   int first;
@@ -1621,7 +1651,7 @@ void WINAPI service_main(unsigned long argc, TCHAR **argv) {
   /* Remember our creation time. */
   if (get_process_creation_time(GetCurrentProcess(), &service->nssm_creation_time)) ZeroMemory(&service->nssm_creation_time, sizeof(service->nssm_creation_time));
 
-  service->allow_restart = true;
+  InterlockedExchange(&service->allow_restart, 1);
   if (! CreateThread(NULL, 0, launch_service, (void *) service, 0, NULL)) {
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_CREATETHREAD_FAILED, error_string(GetLastError()));
     stop_service(service, 0, true, true);
@@ -1653,9 +1683,16 @@ int monitor_service(nssm_service_t *service) {
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_START_SERVICE_FAILED, service->exe, service->name, code);
     return ret;
   }
+  service_cleanup_lock state(service);
+  if (! restart_allowed(service) || service->stopping || ! service->process_handle) return 0;
   log_event(EVENTLOG_INFORMATION_TYPE, NSSM_EVENT_STARTED_SERVICE, service->exe, service->flags, service->name, service->dir);
 
   /* Monitor service */
+  if (service->wait_handle) {
+    /* A previous one-shot callback may be this thread; do not wait for it. */
+    UnregisterWait(service->wait_handle);
+    service->wait_handle = 0;
+  }
   if (! RegisterWaitForSingleObject(&service->wait_handle, service->process_handle, end_service, (void *) service, INFINITE, WT_EXECUTEONLYONCE | WT_EXECUTELONGFUNCTION)) {
     log_event(EVENTLOG_WARNING_TYPE, NSSM_EVENT_REGISTERWAITFORSINGLEOBJECT_FAILED, service->name, service->exe, error_string(GetLastError()));
   }
@@ -1735,10 +1772,13 @@ unsigned long WINAPI service_control_handler(unsigned long control, unsigned lon
       log_service_control(service->name, control, true);
 
       /* Immediately block further controls. */
-      service->allow_restart = false;
-      service->status.dwCurrentState = SERVICE_STOP_PENDING;
-      service->status.dwControlsAccepted = 0;
-      SetServiceStatus(service->status_handle, &service->status);
+      InterlockedExchange(&service->allow_restart, 0);
+      {
+        service_cleanup_lock state(service);
+        service->status.dwCurrentState = SERVICE_STOP_PENDING;
+        service->status.dwControlsAccepted = 0;
+        SetServiceStatus(service->status_handle, &service->status);
+      }
 
       /* Pre-stop hook. */
       nssm_hook(&hook_threads, service, NSSM_HOOK_EVENT_STOP, NSSM_HOOK_ACTION_PRE, &control, NSSM_SERVICE_STATUS_DEADLINE, false);
@@ -1823,10 +1863,11 @@ unsigned long WINAPI service_control_handler(unsigned long control, unsigned lon
 
 /* Start the service */
 int start_service(nssm_service_t *service) {
-  service->stopping = false;
-
+  service_cleanup_lock state(service);
+  if (! restart_allowed(service)) return 0;
   if (service->process_handle) return 0;
   service->start_requested_count++;
+  HANDLE startup_process = NULL;
 
   /* Allocate a STARTUPINFO structure for a new process */
   STARTUPINFO si;
@@ -1853,7 +1894,14 @@ int start_service(nssm_service_t *service) {
     return stop_service(service, 2, true, true);
   }
 
+  /* Registry expansion temporarily changes the process environment. Restore
+     it before releasing state ownership for a potentially long throttle. */
+  unset_service_environment(service);
+  state.unlock();
   throttle_restart(service);
+  state.lock();
+  if (! restart_allowed(service)) return 0;
+  service->stopping = false;
 
   service->status.dwCurrentState = SERVICE_START_PENDING;
   service->status.dwControlsAccepted = SERVICE_ACCEPT_POWEREVENT | SERVICE_ACCEPT_SHUTDOWN | SERVICE_ACCEPT_STOP;
@@ -1862,7 +1910,7 @@ int start_service(nssm_service_t *service) {
   unsigned long control = NSSM_SERVICE_CONTROL_START;
 
   /* Did another thread receive a stop control? */
-  if (service->allow_restart) {
+  if (restart_allowed(service)) {
     /* Set up I/O redirection. */
     if (get_output_handles(service, &si)) {
       log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_GET_OUTPUT_HANDLES_FAILED, service->name);
@@ -1881,6 +1929,12 @@ int start_service(nssm_service_t *service) {
       close_output_handles(&si);
       unset_service_environment(service);
       return stop_service(service, 5, true, true);
+    }
+
+    if (! restart_allowed(service)) {
+      close_output_handles(&si);
+      unset_service_environment(service);
+      return 0;
     }
 
     /* The pre-start hook will have cleaned the environment. */
@@ -1945,6 +1999,11 @@ int start_service(nssm_service_t *service) {
       }
     }
     CloseHandle(pi.hThread);
+    if (! DuplicateHandle(GetCurrentProcess(), service->process_handle, GetCurrentProcess(), &startup_process, SYNCHRONIZE, false, 0)) {
+      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_DUPLICATEHANDLE_FAILED, _T("application process"), _T("startup wait"), error_string(GetLastError()));
+      unset_service_environment(service);
+      return stop_service(service, 3, true, true);
+    }
   }
 
   /* Restore our environment. */
@@ -1955,10 +2014,15 @@ int start_service(nssm_service_t *service) {
     but be mindful of the fact that we are blocking the service control manager
     so abandon the wait before too much time has elapsed.
   */
-  if (await_single_handle(service->status_handle, &service->status, service->process_handle, service->name, _T("start_service"), service->throttle_delay) == 1) service->throttle = 0;
+  unsigned long startup_delay = service->throttle_delay;
+  state.unlock();
+  int waited = startup_process ? await_startup(service, startup_process, startup_delay) : 0;
+  if (startup_process) CloseHandle(startup_process);
+  state.lock();
 
   /* Did another thread receive a stop control? */
-  if (! service->allow_restart) return 0;
+  if (! restart_allowed(service) || service->stopping) return 0;
+  if (waited == 1) service->throttle = 0;
 
   /* Signal successful start */
   service->status.dwCurrentState = SERVICE_RUNNING;
@@ -1978,7 +2042,7 @@ int start_service(nssm_service_t *service) {
 
 /* Stop the service */
 int stop_service(nssm_service_t *service, unsigned long exitcode, bool graceful, bool default_action) {
-  service->allow_restart = false;
+  InterlockedExchange(&service->allow_restart, 0);
   service_cleanup_lock cleanup(service);
   if (service->wait_handle) {
     UnregisterWait(service->wait_handle);
@@ -2096,7 +2160,7 @@ void CALLBACK end_service(void *arg, unsigned char why) {
     this is a controlled shutdown, and don't take any restart action.
   */
   if (why) return;
-  if (! service->allow_restart) return;
+  if (! restart_allowed(service)) return;
 
   /* What action should we take? */
   int action = NSSM_EXIT_RESTART;
@@ -2144,6 +2208,8 @@ void CALLBACK end_service(void *arg, unsigned char why) {
 }
 
 void throttle_restart(nssm_service_t *service) {
+  service_cleanup_lock state(service);
+  if (! restart_allowed(service)) return;
   /* This can't be a restart if the service is already running. */
   if (! service->throttle++) return;
 
@@ -2173,6 +2239,7 @@ void throttle_restart(nssm_service_t *service) {
   service->status.dwControlsAccepted |= SERVICE_ACCEPT_PAUSE_CONTINUE;
   SetServiceStatus(service->status_handle, &service->status);
 
+  state.unlock();
   if (use_critical_section) {
     imports.SleepConditionVariableCS(&service->throttle_condition, &service->throttle_section, ms);
     LeaveCriticalSection(&service->throttle_section);

@@ -6,12 +6,13 @@ All original tags and history are preserved. The legacy development comparison
 baseline is v2.24-103-gdee49fc (`dee49fc1a0804f06687299b8e9612a3fce1c5e9a`),
 distinct from the original v2.24 release.
 
-Included work: CONT-001 through CONT-005 and NSSM-001 through NSSM-036.
+Included work: CONT-001 through CONT-005 and NSSM-001 through NSSM-037.
 The [fix records](../fixes/README.md) link every issue to its implementation,
 tests and behavior differences. The original 34 tasks are merged. NSSM-035 and NSSM-036
-are the startup and cleanup blockers found during B14 acceptance, now merged
-in PR 20 before release-preparation PR 19. All 36 tasks are fixed and unreleased.
-No review task remains unimplemented. New
+are the B14 startup and cleanup blockers, now merged in PR 20 before PR 19.
+The further startup/STOP race NSSM-037 is repaired in PR 22, pending merge before
+the extended acceptance in PR 21. All original 34 tasks and the B14 follow-ups
+are merged; no original review task remains unimplemented. New
 findings and release acceptance gaps remain possible; completion of this review
 is not a claim that all bugs have been eliminated.
 

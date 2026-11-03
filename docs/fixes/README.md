@@ -138,8 +138,14 @@ B14 acceptance found two release blockers beyond the original review:
 | [NSSM-035](NSSM-035.md) | Pass byte capacity to standard-I/O registry readers | Fixed, unreleased | Not yet released |
 | [NSSM-036](NSSM-036.md) | Wait for in-flight exit cleanup before STOPPED | Fixed, unreleased | Not yet released |
 
+B15 acceptance found a further startup/STOP race:
+
+| ID | Change | State | First release |
+| --- | --- | --- | --- |
+| [NSSM-037](NSSM-037.md) | Own startup waits and cancel launch/monitor publication safely | In progress | Not yet released |
+
 The [implementation plan](../remediation-plan.md) tracks NSSM-001 through
-NSSM-036. Check each record's state before assuming inclusion in a build.
+NSSM-037. Check each record's state before assuming inclusion in a build.
 NSSM-001 through NSSM-009 are P1. NSSM-034 was confirmed by B11; the plan explains
 the evidence for the other tasks. Add rows and individual records here as work
 starts; never reuse an ID.

@@ -4,8 +4,9 @@ Validation date: 2026 November 3. Baseline:
 `9812f2ecaf1ccf7ea8788885d0105d62db4312a7`, after PRs 20 and 19 merged.
 [Master CI 41546780619](https://github.com/existical/nssm-native/actions/runs/41546780619)
 passed all five jobs at that revision. All 36 identified fix tasks are merged
-and unreleased; B15 adds acceptance coverage and merge-status documentation,
-without changing production C++ behavior or publishing a release.
+and unreleased. B15 adds acceptance coverage and merge-status documentation.
+A later rerun exposed NSSM-037; the focused production repair in PR 22 is now
+included in this acceptance branch. No release is published.
 
 The [upgrade rehearsal](../releases/upgrade-rehearsal.md) records the exact
 scenario and safety boundaries. The legacy baseline is a fresh build of
@@ -30,7 +31,7 @@ The initial stdin dependency was removed because legacy has the already-recorded
 directly; the candidate's separate stdin regression/lifecycle expectations are
 unchanged.
 
-## Live acceptance evidence
+## Initial live acceptance evidence
 
 At branch revision `681b8f3b4d4635be5c10bc9ddc26714b8e262354`,
 [CI 41629118946](https://github.com/existical/nssm-native/actions/runs/41629118946)
@@ -63,6 +64,23 @@ The artifact retains legacy configure/build logs, both identity manifests and
 the CTest log. CI artifact retention is temporary; this committed record retains
 the observed identities and outcomes, but does not replace permanent release
 assets. No bitwise reproducibility is claimed for the historical rebuild.
+
+## Startup/STOP follow-up
+
+The documentation-only rerun at `bd94d75db99855a34f05933ef5f564ca20acb26b`
+passed the upgrade test but the existing lifecycle test reported unexpected
+wrapper termination during STOP while restarting in
+[CI 41629829699](https://github.com/existical/nssm-native/actions/runs/41629829699).
+That failure was not accepted as a successful run or bypassed by retrying.
+
+The focused [NSSM-037 record](../fixes/NSSM-037.md) documents six deterministic
+startup cancellation/wait ownership failures, repair commit
+`ab23475f71d700e1705d5be1681c49eb72775466`, local four-configuration validation
+and five sanitizer groups. [PR 22](https://github.com/existical/nssm-native/pull/22)
+must merge before PR 21. The acceptance branch includes the repair and repeats
+the real lifecycle ten consecutive times on CI, stopping at the first failure.
+The earlier comparison hashes above identify the pre-NSSM-037 run, not the
+updated candidate; passing repaired-build evidence is recorded separately.
 
 This acceptance uses a controlled persistent PowerShell worker, not QRScanner
 or a user's installed service. It exercises a currently rebuilt legacy binary;

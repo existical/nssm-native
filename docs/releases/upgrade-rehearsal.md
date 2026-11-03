@@ -66,7 +66,10 @@ runs this additional group (42 groups total). Source-archive packaging retains
 legacy executable. All other configurations run 37 groups. CI uploads the
 legacy build metadata/logs, candidate identity and CTest output as
 `nssm-upgrade-evidence`; candidate release packages never include the legacy
-executable.
+executable. The existing crash/restart/STOP lifecycle also repeats ten times
+after the matrix suite; its logs/JUnit report are retained separately as
+nssm-lifecycle-repeat-evidence. matrix-tests.log preserves the full suite before
+the repeat overwrites CTest's LastTest.log.
 
 See [B15 validation](../reviews/b15-validation.md) for actual outcomes. Passing
 this controlled PowerShell scenario is not a QRScanner deployment, production

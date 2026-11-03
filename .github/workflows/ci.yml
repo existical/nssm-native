@@ -35,6 +35,22 @@ jobs:
       - name: Configure, compile and check executable
         shell: pwsh
         run: ./scripts/build.ps1 -Architecture '${{ matrix.architecture }}' -Configuration '${{ matrix.configuration }}'
+      - name: Repeat restart and stop acceptance on the disposable runner
+        if: matrix.architecture == 'x64' && matrix.configuration == 'Release'
+        shell: pwsh
+        run: |
+          Copy-Item build/windows-x64/Testing/Temporary/LastTest.log build/windows-x64/matrix-tests.log
+          ctest --preset windows-x64-release -R '^nssm.lifecycle_live$' --repeat until-fail:10 --output-junit "$env:GITHUB_WORKSPACE/build/lifecycle-repeat.xml"
+      - name: Retain repeated lifecycle evidence
+        if: always() && matrix.architecture == 'x64' && matrix.configuration == 'Release'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: nssm-lifecycle-repeat-evidence
+          path: |
+            build/windows-x64/matrix-tests.log
+            build/windows-x64/Testing/Temporary/LastTest.log
+            build/lifecycle-repeat.xml
+          if-no-files-found: warn
       - name: Upload executable and debugging symbols
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
@@ -60,6 +76,7 @@ jobs:
             build/legacy-baseline/configure.log
             build/legacy-baseline/build.log
             build/upgrade-candidate.json
+            build/windows-x64/matrix-tests.log
             build/windows-x64/Testing/Temporary/LastTest.log
           if-no-files-found: error
       - name: Show fixture NSSM events on failure
