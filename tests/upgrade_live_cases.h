@@ -5,6 +5,17 @@ using lifecycle_live::file;
 using lifecycle_live::read;
 using lifecycle_live::write;
 using lifecycle_live::command;
+// One CreateProcess/CRT argument containing a complete stored command line.
+// The outer CLI quoting must preserve the inner application's literal quotes.
+static std::wstring argument(const std::wstring &value) {
+  std::wstring result = L"\""; size_t slashes = 0;
+  for (wchar_t c : value) {
+    if (c == L'\\') { slashes++; continue; }
+    result.append(c == L'"' ? slashes*2+1 : slashes, L'\\');
+    result += c; slashes = 0;
+  }
+  result.append(slashes*2, L'\\'); result += L'"'; return result;
+}
 struct registry_key {
   HKEY key;
   registry_key(HKEY parent, const std::wstring &path) : key(NULL) {
@@ -147,7 +158,10 @@ static int test(const std::wstring &candidate, const std::wstring &legacy, const
         service_fixture::set(owned.key, L"Application", powershell, REG_EXPAND_SZ);
         const std::wstring set = L"set " + quoted(owned.name) + L" ";
         command(active, set + L"AppDirectory " + quoted(dir.path));
-        command(active, set + L"AppParameters -NoProfile -NonInteractive -ExecutionPolicy Bypass -File " + quoted(script) + L" -Directory " + quoted(dir.path));
+        std::wstring parameters = L"-NoProfile -NonInteractive -ExecutionPolicy Bypass -File " + quoted(script) + L" -Directory " + quoted(dir.path);
+        command(active, set + L"AppParameters " + argument(parameters));
+        result stored = run(active, L"get " + quoted(owned.name) + L" AppParameters");
+        require(! stored.code && stored.output.find(parameters) != std::wstring::npos, "Legacy CLI preserves the complete application command line");
         command(active, set + L"AppStdout " + quoted(file(dir.path, L"stdout.log")));
         command(active, set + L"AppStderr " + quoted(file(dir.path, L"stderr.log")));
         command(active, set + L"AppEnvironmentExtra " + quoted(L"NSSM_UPGRADE_VALUE=persistent value"));
