@@ -43,7 +43,9 @@ that correction, real wrapper execution exposed two release blockers:
   unsynchronized early-return pattern; an original executable was not run.
 
 Both repairs are isolated in [PR 20](https://github.com/existical/nssm-native/pull/20),
-which must merge before [PR 19](https://github.com/existical/nssm-native/pull/19).
+merged as `aff12fa057227f93453cf014a0d931f2ea2c930b` before
+[PR 19](https://github.com/existical/nssm-native/pull/19), merged as
+`9812f2ecaf1ccf7ea8788885d0105d62db4312a7`.
 At `4a03eeecbaf59059df3e1e6d82700700a28429da`,
 [CI 41544366647](https://github.com/existical/nssm-native/actions/runs/41544366647)
 passed all four repair-branch jobs: 38 groups in x64 Release and 35 in each other
@@ -83,8 +85,9 @@ the final fixture cleanup, which removes only each successful test's generated
 Git metadata to avoid nested repositories in editor discovery. SCM tests were
 not run on the local development host.
 
-The original 34 tasks are merged and unreleased. These two additional repairs
-and release preparation remain pending in PRs 20 and 19. No tag or release has
+All 36 tasks and release preparation are now merged and unreleased.
+[Post-merge CI 41546780619](https://github.com/existical/nssm-native/actions/runs/41546780619)
+passed all five jobs at `9812f2ecaf1ccf7ea8788885d0105d62db4312a7`. No tag or release has
 been created by this validation. Local diagnostic logs and downloaded packages
 stay under ignored build/dist directories.
 

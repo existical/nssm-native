@@ -36,7 +36,7 @@ jobs:
         shell: pwsh
         run: |
           Copy-Item build/windows-x64/Testing/Temporary/LastTest.log build/windows-x64/matrix-tests.log
-          ctest --preset windows-x64-release -R '^nssm.lifecycle_live$' --repeat until-fail:10 --output-junit build/lifecycle-repeat.xml
+          ctest --preset windows-x64-release -R '^nssm.lifecycle_live$' --repeat until-fail:10 --output-junit "$env:GITHUB_WORKSPACE/build/lifecycle-repeat.xml"
       - name: Retain repeated lifecycle evidence
         if: always() && matrix.architecture == 'x64' && matrix.configuration == 'Release'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
