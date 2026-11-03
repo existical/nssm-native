@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Protect startup and monitor publication against concurrent STOP. Startup owns
+  its wait handle, rechecks cancellation before launching/registering, and
+  releases state ownership while waiting. Add deterministic overlap cases and
+  repeated real lifecycle acceptance. [NSSM-037](docs/fixes/NSSM-037.md).
+
 - Prepare candidate packages from clean pinned source archives with full build
   and test metadata, SHA-256 checksums and preserved source identity. Support
   distinct beta/RC tags while retaining original version tags. Add a real

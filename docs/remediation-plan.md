@@ -11,7 +11,7 @@ NSSM-001 through NSSM-024 match its numbered findings. NSSM-025 through NSSM-034
 split its additional follow-ups into independent tasks. The latter ten are
 follow-ups, not ten additional reproduced high-priority defects.
 
-**Status:** B00 through B13 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
+**Status:** B00 through B14 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
 are fixed but unreleased through
 [PR 5](https://github.com/existical/nssm-native/pull/5); see the
 [fix records](fixes/README.md) and [validation](reviews/b01-validation.md).
@@ -42,8 +42,10 @@ are now merged and unreleased. B08 merged in
 [validation](reviews/b13-validation.md). All 34 review tasks are now merged
 and unreleased. B14 found two release blockers, [NSSM-035](fixes/NSSM-035.md) and
 [NSSM-036](fixes/NSSM-036.md),
-repaired in [PR 20](https://github.com/existical/nssm-native/pull/20), pending merge.
-B14 release preparation in [PR 19](https://github.com/existical/nssm-native/pull/19) is in progress: lifecycle acceptance,
+merged in [PR 20](https://github.com/existical/nssm-native/pull/20). All 36 are fixed
+and unreleased. B15 then found [NSSM-037](fixes/NSSM-037.md), repaired in
+[PR 22](https://github.com/existical/nssm-native/pull/22), pending merge.
+B14 release preparation merged in [PR 19](https://github.com/existical/nssm-native/pull/19): lifecycle acceptance,
 clean-commit packaging, source identity and candidate documentation. See
 [release preparation](releases/README.md) and [B14 validation](reviews/b14-validation.md).
 No continuation release has been published.
@@ -80,7 +82,8 @@ work. P2 tasks share an early group only when they support the same repair.
 | B11 | GUI and accounts | 020, 025, 026, 027, 034 | Merged in PR 16; five confirmed fixes, GUI retries, account failures and hook round trips validated |
 | B12 | Dependencies | 023 | Merged in PR 17; typed resets/merges, bounded queries, validation cleanup and SCM round-trip tests pass |
 | B13 | Remaining service control waits | 024 | Merged in PR 18; action budgets, polling, diagnostics and deterministic/live tests pass |
-| B14 | Candidate release and acceptance follow-ups | 035, 036 | In progress; startup/cleanup repairs in PR 20, lifecycle and packaging in PR 19; publication separate |
+| B14 | Candidate release and acceptance follow-ups | 035, 036 | Merged; startup/cleanup repairs in PR 20, lifecycle and packaging in PR 19; publication separate |
+| B15 | Startup cancellation follow-up | 037 | [PR 22](https://github.com/existical/nssm-native/pull/22), merge pending; upgrade acceptance continues in PR 21 |
 
 ## Shared implementation and test rules
 
@@ -763,6 +766,22 @@ workers must not need it while being joined. Force the overlap with real events
 and verify one cleanup, no premature STOPPED, and eventual completion. Retain
 the actual SCM lifecycle check in PR 19. This is an additional finding beyond
 the original 34-task review and is a release prerequisite.
+
+### NSSM 037
+
+**Startup cancellation and wait ownership — P1, B15 acceptance follow-up.**
+A repeated wrapped-service run reported unexpected termination during STOP
+while restarting. Deterministic tests then found process-handle closure during
+startup waits, late invalid monitoring and process creation after cancellation.
+The [repair record](fixes/NSSM-037.md) separates live observations, forced
+regression evidence and legacy source inspection.
+
+Protect launch/status/monitor publication with the existing service-side lock,
+use interlocked cancellation and retain a separate startup wait handle. Release
+ownership while throttling or waiting so STOP remains responsive. Test STOP in
+the startup wait and both start hooks, cancellation before launch, duplicate
+failure and registration replacement. Repeat real lifecycle acceptance ten
+times on disposable CI, and retain identities and results before release.
 
 ## Documentation required with every fix
 

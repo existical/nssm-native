@@ -154,6 +154,9 @@ static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
 #undef CreateProcess
 #define CreateProcess launch_test::create
 #define CloseHandle launch_test::close
+#define DuplicateHandle launch_test::duplicate
+#define RegisterWaitForSingleObject launch_test::register_wait
+#define UnregisterWait launch_test::unregister_wait
 #define WaitForSingleObject wait_test::wait
 #define ResumeThread launch_test::resume
 #define GetExitCodeProcess launch_test::code
@@ -177,6 +180,9 @@ static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
 #define QueryServiceConfig QueryServiceConfigW
 #undef CreateProcess
 #undef CloseHandle
+#undef DuplicateHandle
+#undef RegisterWaitForSingleObject
+#undef UnregisterWait
 #undef WaitForSingleObject
 #undef ResumeThread
 #undef GetExitCodeProcess

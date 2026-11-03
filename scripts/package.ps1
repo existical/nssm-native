@@ -89,7 +89,7 @@ try {
                 built_at_utc=[DateTime]::UtcNow.ToString('o'); source_date_epoch=$epoch
                 workflow=[ordered]@{repository=$env:GITHUB_REPOSITORY; name=$env:GITHUB_WORKFLOW; run_id=$env:GITHUB_RUN_ID; attempt=$env:GITHUB_RUN_ATTEMPT; sha=$env:GITHUB_SHA}
                 validation=[ordered]@{tests=[int]$testResults.testsuite.tests; failures=0; scm_enabled=[bool]$scm; report="$name-tests.xml"}
-                fixes=@(1..36 | ForEach-Object {'NSSM-{0:D3}' -f $_}); continuation_changes=@(1..5 | ForEach-Object {'CONT-{0:D3}' -f $_})
+                fixes=@(1..37 | ForEach-Object {'NSSM-{0:D3}' -f $_}); continuation_changes=@(1..5 | ForEach-Object {'CONT-{0:D3}' -f $_})
                 release_status='Candidate only; publication and first-release assignments are separate'; limitations='See docs/releases/README.md and docs/releases/candidate.md'; artifacts=$files
             }
             $stage = Join-Path $work $name

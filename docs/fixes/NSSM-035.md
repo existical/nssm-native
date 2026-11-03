@@ -3,7 +3,8 @@
 | Field | Value |
 | --- | --- |
 | Priority and origin | P1; startup blocker discovered during B14 acceptance |
-| State | In progress; merge pending |
+| State | Fixed, unreleased |
+| Merge commit | `aff12fa057227f93453cf014a0d931f2ea2c930b` (PR 20) |
 | Reproduced against | `0f856a4dedb7e5c9dc08fc010fb69bf90398a05d` |
 | Introduced startup rejection | `1ecfc6be59e80fe78ea94553634d02a6ed9524d0` (B01) |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a` |

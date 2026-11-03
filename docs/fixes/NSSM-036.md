@@ -3,7 +3,8 @@
 | Field | Value |
 | --- | --- |
 | Priority and origin | P1; B14 lifecycle acceptance follow-up |
-| State | In progress; merge pending |
+| State | Fixed, unreleased |
+| Merge commit | `aff12fa057227f93453cf014a0d931f2ea2c930b` (PR 20) |
 | Reproduced against | `502ba2202d56db8c1d2c955504e6324a4075b176` with forced overlap; real SCM failure in PR 19 |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a` |
 | Fix PR | [PR 20](https://github.com/existical/nssm-native/pull/20) |
