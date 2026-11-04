@@ -10,6 +10,11 @@ local tag; no public continuation tag or release has been published. See the
 [candidate notes](candidate.md), [fix index](../fixes/README.md) and
 [QRScanner acceptance checklist](qrscanner-beta-acceptance.md).
 
+The [completed QRScanner record](qrscanner-beta-results.md) now includes a passed
+24-hour x64/LocalSystem trial, reboot and exact legacy rollback. Its test-only
+helper exception and separate production adoption requirement remain explicit.
+The candidate tag and packages retain their original tested identities.
+
 From a clean checkout with full history and tags:
 
 ```powershell
@@ -75,7 +80,9 @@ retain their own exact identity and do not require the local tag to rebuild.
 Review the concrete candidate and application results before publishing the
 tag or release. Keep its tag on the reviewed source commit when merging the
 preparation PR; do not move it to a different merge commit. If the candidate
-source changes, use a new candidate version and rebuild it. Public publication
+source changes, use a new candidate version and rebuild it. Later documentation
+commits may add acceptance results without moving that tag or rebuilding its
+archives; provide the follow-up record with the release notes. Public publication
 must upload the archives matching that exact tag, not ordinary PR artifacts.
 Do not claim a first release in fix records until the tag and matching assets
 are published. Upload the complete package set, then verify public checksums

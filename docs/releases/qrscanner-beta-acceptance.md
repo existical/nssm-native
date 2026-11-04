@@ -1,10 +1,15 @@
 # QRScanner beta acceptance checklist
 
-Status: prepared, not executed. This document does not claim that QRScanner
-has run on the candidate. It is the handoff for testing
-[NSSM Native 2.25.0-beta.1](v2.25.0-beta.1.md) against the actual application.
-Complete the record on an isolated VM or an explicitly designated test service.
-Do not replace a production service while following this preparation document.
+The initial [NSSM Native 2.25.0-beta.1](v2.25.0-beta.1.md) application trial
+**passed on 4 November 2026**, including reboot, 24 monitored hours and exact
+rollback. See the [completed summary](qrscanner-beta-results.md).
+Its scope was Windows 11 x64/LocalSystem with a test-only helper admitting the
+beta hash; production helper/policy adoption remains separate.
+
+This checklist remains a reusable procedure. Blank boxes and "Record outcome"
+cells below are for a future run, not pending items in the completed receipt.
+Use an isolated VM or explicitly designated test service and retain a new result
+record for any different application, configuration or binary.
 
 ## Record before testing
 
@@ -53,17 +58,17 @@ If a shared path cannot be isolated and all owners stopped, use a dedicated VM.
 
 | Check | Pass condition | Result/evidence |
 | --- | --- | --- |
-| Identity and settings | Executable reports 2.25.0-beta.1 with the expected hash; stored settings and service account/startup/dependencies remain unchanged | Pending |
-| Start and readiness | Start command succeeds, SCM reports RUNNING, and the application-specific readiness probe succeeds within its own timeout | Pending |
-| Representative work | QRScanner produces expected results on the same inputs as the baseline, including its persistent application state | Pending |
-| Environment and paths | Existing empty/nonempty environment values and paths/arguments with spaces reach the application correctly | Pending |
-| Hooks | Configured hook commands preserve quoting/literal expressions and run with expected arguments, timing and exit results | Pending |
-| Streams and rotation | Configured input works; stdout/stderr, timestamps, final output and enabled rotation are correct | Pending |
-| Controlled application failure | An application-owned failure mechanism exits the intended process; NSSM applies the configured restart policy and readiness returns with retained state | Pending |
-| STOP during restart/startup | Bounded repeated trials end in STOPPED with intended child/hook cleanup, final logs and no unexpected wrapper termination | Pending |
-| Repeated start/stop | At least ten bounded cycles pass without leftover processes or progressive resource growth | Pending |
-| Reboot | Reboot the disposable test host; service follows its configured startup policy and the application becomes ready | Pending |
-| GUI, if used | View/edit/save required settings without unintended changes; stored hooks retain literal expressions and quoting | Pending |
+| Identity and settings | Executable reports 2.25.0-beta.1 with the expected hash; stored settings and service account/startup/dependencies remain unchanged | Record outcome |
+| Start and readiness | Start command succeeds, SCM reports RUNNING, and the application-specific readiness probe succeeds within its own timeout | Record outcome |
+| Representative work | QRScanner produces expected results on the same inputs as the baseline, including its persistent application state | Record outcome |
+| Environment and paths | Existing empty/nonempty environment values and paths/arguments with spaces reach the application correctly | Record outcome |
+| Hooks | Configured hook commands preserve quoting/literal expressions and run with expected arguments, timing and exit results | Record outcome |
+| Streams and rotation | Configured input works; stdout/stderr, timestamps, final output and enabled rotation are correct | Record outcome |
+| Controlled application failure | An application-owned failure mechanism exits the intended process; NSSM applies the configured restart policy and readiness returns with retained state | Record outcome |
+| STOP during restart/startup | Bounded repeated trials end in STOPPED with intended child/hook cleanup, final logs and no unexpected wrapper termination | Record outcome |
+| Repeated start/stop | At least ten bounded cycles pass without leftover processes or progressive resource growth | Record outcome |
+| Reboot | Reboot the disposable test host; service follows its configured startup policy and the application becomes ready | Record outcome |
+| GUI, if used | View/edit/save required settings without unintended changes; stored hooks retain literal expressions and quoting | Record outcome |
 
 Use an application-owned failure trigger where possible. Never terminate a
 process selected only by a stale PID or a generic image name. Record the actual
@@ -103,5 +108,6 @@ or application failure using the [control policies](../usage.md).
 
 The publication decision should cite this record and any accepted limitations.
 Share a sanitized summary in Git; retain sensitive settings and application
-data privately. Candidate preparation and automated CI do not authorize or
-claim this application's deployment, reboot or production acceptance.
+data privately. This procedure alone is not an execution record; use the linked
+results for the completed trial. Its test scope does not establish production
+installer/helper adoption.

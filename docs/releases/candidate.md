@@ -58,10 +58,17 @@ Its validation record identifies the exact comparison builds;
 this controlled workload does not establish deployment compatibility for every
 application.
 
-Known acceptance gaps: representative long-running applications, domain
-accounts, manual GUI/accessibility, older Windows releases, large process trees,
-concurrent hook storms, signing and application-specific upgrade/rollback trials.
-No broad OS compatibility or production-soak claim is made. CI artifacts may
+The supplied [QRScanner acceptance](qrscanner-beta-results.md) passed on
+4 November 2026 at 16:38 Riga: Windows 11 x64/LocalSystem, reboot, 24 monitored
+hours, 289 samples, 339,235 received events, no observed wrapper/application
+restarts and exact legacy rollback. This used the unchanged beta bytes and a
+test-only application helper admitting their hash. QRScanner's production helper
+still rejects that hash; its helper/provenance adoption change remains separate.
+
+Remaining acceptance gaps include other applications, domain accounts, manual
+GUI/accessibility, other Windows builds, large process trees, concurrent hook
+storms, signing and production QRScanner installer/helper adoption. No broad OS
+compatibility or production-soak claim is made. CI artifacts may
 expire; a release must publish permanent assets and the matching manifest.
 
 See [release preparation](README.md) for package commands and publication steps,

@@ -11,7 +11,7 @@ NSSM-001 through NSSM-024 match its numbered findings. NSSM-025 through NSSM-034
 split its additional follow-ups into independent tasks. The latter ten are
 follow-ups, not ten additional reproduced high-priority defects.
 
-**Status:** B00 through B14 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
+**Status:** B00 through B15 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
 are fixed but unreleased through
 [PR 5](https://github.com/existical/nssm-native/pull/5); see the
 [fix records](fixes/README.md) and [validation](reviews/b01-validation.md).
@@ -47,8 +47,11 @@ merged in [PR 20](https://github.com/existical/nssm-native/pull/20). B15 then fo
 [PR 22](https://github.com/existical/nssm-native/pull/22) before acceptance
 [PR 21](https://github.com/existical/nssm-native/pull/21). All 37 findings are
 fixed and unreleased. [Post-merge validation](reviews/b15-validation.md#post-merge-validation)
-passed all five CI jobs. The next delivery is the unpublished
-[first beta candidate](releases/v2.25.0-beta.1.md) and application acceptance.
+passed all five CI jobs. The unpublished
+[first beta candidate](releases/v2.25.0-beta.1.md) is prepared; the supplied
+[QRScanner acceptance](releases/qrscanner-beta-results.md) passed its 24-hour
+x64/LocalSystem scope. Publication review and QRScanner's production helper/policy
+adoption remain separate from that completed trial.
 B14 release preparation merged in [PR 19](https://github.com/existical/nssm-native/pull/19): lifecycle acceptance,
 clean-commit packaging, source identity and candidate documentation. See
 [release preparation](releases/README.md) and [B14 validation](reviews/b14-validation.md).

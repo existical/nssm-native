@@ -19,7 +19,10 @@ first beta, `v2.25.0-beta.1`, is being prepared as an unpublished candidate.
 See the [beta notes](docs/releases/v2.25.0-beta.1.md) for included changes,
 package identities and remaining acceptance work, and the
 [QRScanner checklist](docs/releases/qrscanner-beta-acceptance.md) for application
-testing before publication.
+testing before publication. The [completed QRScanner trial](docs/releases/qrscanner-beta-results.md)
+passed 24 monitored hours, reboot and exact rollback on Windows 11 x64/LocalSystem;
+the report records the test-only helper exception and remaining production
+adoption work.
 
 ## Build
 
