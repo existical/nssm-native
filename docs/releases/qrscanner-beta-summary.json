@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "evidence_type": "Sanitized summary of supplied QRScanner acceptance report; original receipts reviewed locally and excluded from Git.",
+  "candidate": {
+    "version": "2.25.0-beta.1",
+    "architecture": "x64",
+    "configuration": "Release",
+    "source_commit": "739b5feabdc768a4524fe28bad2c000b05ee5e07",
+    "tag": "v2.25.0-beta.1",
+    "executable_sha256": "80c08adcae80cfc7e1e6128d5e1c5a8e4aa9d4cedfa7ad5020a29af03488933d",
+    "release_zip_sha256": "a835731a012d2ac3b6310a4851f6519ff25496efb3fc894f282df1ad9165a7df",
+    "bundle_sha256": "2f2c022621babe1b1a56b6dbd5a34d235cad9df7ca1ac8a4fcbbdbb5eca71d82"
+  },
+  "scope": {
+    "os": "Windows 11 x64",
+    "service_account": "LocalSystem",
+    "workload": "Synthetic loopback recognition workload across four channels",
+    "test_only_helper_admission_change": true,
+    "production_helper_adoption_required": true
+  },
+  "result": "passed within the stated test scope",
+  "completed_at_riga": "2026-11-04T16:38:32+02:00",
+  "timezone": "Europe/Riga",
+  "monitored_hours": 24,
+  "sample_count": 289,
+  "received_events": 339235,
+  "channel_count": 4,
+  "observed_restarts": {
+    "nssm": 0,
+    "application": 0
+  },
+  "nssm_resources": {
+    "working_set_first_mib": 8.71,
+    "working_set_last_mib": 8.11,
+    "working_set_min_mib": 8.09,
+    "working_set_max_mib": 8.71,
+    "handles_first": 138,
+    "handles_last": 137,
+    "threads_first": 7,
+    "threads_last": 4
+  },
+  "reported_foreground_validation": {
+    "real_service_checks": 195,
+    "application_assertions": 248,
+    "start_stop_cycles": 10,
+    "stop_during_restart_trials": 3,
+    "stop_during_startup_trials": 3,
+    "initial_harness_failure_preserved_locally": true
+  },
+  "reboot_verified": true,
+  "database_integrity_preserved": true,
+  "unicode_data_preserved": true,
+  "configuration_preserved": true,
+  "exact_legacy_rollback_passed": true,
+  "remaining_owned_resources": {
+    "services": 0,
+    "processes": 0,
+    "monitoring_tasks": 0
+  },
+  "verification": "Candidate/package hashes and receipt aggregates checked locally; this documentation update did not rerun the VM trial.",
+  "limits": [
+    "The unchanged production QRScanner helper rejects the beta hash; the trial used a test-only admission change.",
+    "No GUI, x86, domain-account, other-Windows-build or production-installer qualification is claimed.",
+    "Observed events are not an exactly-once delivery or unique-frame-rate qualification.",
+    "Raw application and operational receipts remain local; this file contains only selected aggregate results and already-public NSSM candidate identities."
+  ]
+}

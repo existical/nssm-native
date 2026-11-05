@@ -1,6 +1,9 @@
 # NSSM Native candidate notes
 
-Status: preparation only; no release tag is assigned and nothing is published.
+Status: unpublished `v2.25.0-beta.1` candidate preparation. See the
+[beta notes](v2.25.0-beta.1.md) for the proposed public release and the
+[QRScanner checklist](qrscanner-beta-acceptance.md) for application acceptance.
+The candidate tag is local during preparation; no public release is published.
 Candidate artifacts are identified by the full commit in build-info.json.
 All original tags and history are preserved. The legacy development comparison
 baseline is v2.24-103-gdee49fc (`dee49fc1a0804f06687299b8e9612a3fce1c5e9a`),
@@ -10,9 +13,10 @@ Included work: CONT-001 through CONT-005 and NSSM-001 through NSSM-037.
 The [fix records](../fixes/README.md) link every issue to its implementation,
 tests and behavior differences. The original 34 tasks are merged. NSSM-035 and NSSM-036
 are the B14 startup and cleanup blockers, now merged in PR 20 before PR 19.
-The further startup/STOP race NSSM-037 is repaired in PR 22, pending merge before
-the extended acceptance in PR 21. All original 34 tasks and the B14 follow-ups
-are merged; no original review task remains unimplemented. New
+The further startup/STOP race NSSM-037 merged in PR 22 before
+the extended acceptance in PR 21. All 37 tasks are merged; no original review
+task remains unimplemented. [Post-merge CI](https://github.com/existical/nssm-native/actions/runs/41643001489)
+passed all five jobs at `f0fdfdd5d3f3762bd825694a3288e9fd99aa07e6`. New
 findings and release acceptance gaps remain possible; completion of this review
 is not a claim that all bugs have been eliminated.
 
@@ -49,15 +53,22 @@ automated; they are not a manual interactive GUI acceptance pass.
 
 The [B15 upgrade rehearsal](upgrade-rehearsal.md) passed a separate legacy-to-
 candidate-to-legacy replacement check with a persistent PowerShell worker.
-The automation is in [PR 21](https://github.com/existical/nssm-native/pull/21),
-pending merge. Its validation record identifies the exact comparison builds;
+The automation merged in [PR 21](https://github.com/existical/nssm-native/pull/21).
+Its validation record identifies the exact comparison builds;
 this controlled workload does not establish deployment compatibility for every
 application.
 
-Known acceptance gaps: representative long-running applications, domain
-accounts, manual GUI/accessibility, older Windows releases, large process trees,
-concurrent hook storms, signing and application-specific upgrade/rollback trials.
-No broad OS compatibility or production-soak claim is made. CI artifacts may
+The supplied [QRScanner acceptance](qrscanner-beta-results.md) passed on
+4 November 2026 at 16:38 Riga: Windows 11 x64/LocalSystem, reboot, 24 monitored
+hours, 289 samples, 339,235 received events, no observed wrapper/application
+restarts and exact legacy rollback. This used the unchanged beta bytes and a
+test-only application helper admitting their hash. QRScanner's production helper
+still rejects that hash; its helper/provenance adoption change remains separate.
+
+Remaining acceptance gaps include other applications, domain accounts, manual
+GUI/accessibility, other Windows builds, large process trees, concurrent hook
+storms, signing and production QRScanner installer/helper adoption. No broad OS
+compatibility or production-soak claim is made. CI artifacts may
 expire; a release must publish permanent assets and the matching manifest.
 
 See [release preparation](README.md) for package commands and publication steps,

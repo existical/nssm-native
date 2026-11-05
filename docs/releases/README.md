@@ -1,13 +1,19 @@
 # Preparing NSSM Native releases
 
 Release preparation now has automated checks; publication is a separate step.
-No continuation tag or public release has been created. All 34 review fixes
-are merged and unreleased. Acceptance additionally found NSSM-035 and NSSM-036, repaired in
-[PR 20](https://github.com/existical/nssm-native/pull/20), now merged along with
-release preparation in [PR 19](https://github.com/existical/nssm-native/pull/19).
-All 36 tasks are fixed and unreleased. B15 then identified the startup/STOP
-race [NSSM-037](../fixes/NSSM-037.md), repaired in PR 22 and pending merge. See the [candidate notes](candidate.md) and
-[fix index](../fixes/README.md).
+All 37 identified fixes are merged and unreleased. PR 22 repaired the final
+startup/STOP finding before the upgrade/rollback coverage in PR 21 merged.
+[Post-merge CI](https://github.com/existical/nssm-native/actions/runs/41643001489)
+passed all five jobs at `f0fdfdd5d3f3762bd825694a3288e9fd99aa07e6`.
+The first candidate is [v2.25.0-beta.1](v2.25.0-beta.1.md), prepared with a
+local tag; no public continuation tag or release has been published. See the
+[candidate notes](candidate.md), [fix index](../fixes/README.md) and
+[QRScanner acceptance checklist](qrscanner-beta-acceptance.md).
+
+The [completed QRScanner record](qrscanner-beta-results.md) now includes a passed
+24-hour x64/LocalSystem trial, reboot and exact legacy rollback. Its test-only
+helper exception and separate production adoption requirement remain explicit.
+The candidate tag and packages retain their original tested identities.
 
 From a clean checkout with full history and tags:
 
@@ -36,7 +42,8 @@ build/package-*.
 
 Outputs include four ZIPs (x64/x86 Release/Debug), a source ZIP, an external
 build-info.json, SHA256SUMS.txt, and build/test evidence. Binary ZIPs contain
-nssm.exe, nssm.pdb, license, documentation and their own build-info.json. The
+nssm.exe, nssm.pdb, license, README, changelog, contributing guide, documentation
+and their own build-info.json. The
 external manifest hashes the completed archives; it is not embedded in them.
 The checksum file covers all other output files, including evidence and the
 external manifest. Metadata records the full commit, description/tag, legacy
@@ -50,13 +57,33 @@ this file still uses VERSION as a prerelease fallback and does not identify
 an exact continuation revision. Hashes establish file identity, not publisher
 authentication; these candidate executables and manifests are unsigned.
 
-For a later release, choose a distinct unused continuation tag. The supported
-format includes v2.25.0-beta.1, v2.25.0-rc.1 and v2.25.0; these are examples,
-not assigned tags. Preserve all original upstream tags. Prepare docs/releases/<tag>.md from candidate.md and commit the actual
-included IDs, compatibility changes, evidence and known limits before tagging.
-After review and approval of that concrete candidate, create the tag on the
-chosen clean commit. Build with `-Tag <tag>`;
-the script verifies that tag and HEAD agree and version generation selects it.
+Preserve all original upstream tags. Prepare docs/releases/<tag>.md and commit
+the actual included IDs, compatibility changes, evidence and known limits
+before tagging. Candidate preparation may use an unpublished local annotated
+tag on that clean commit so the actual beta version can be built and tested.
+The first candidate uses `v2.25.0-beta.1`; later RC/stable names remain unassigned.
+
+```powershell
+# Run only at the candidate commit, after the local tag has been prepared.
+$revision = git rev-parse HEAD
+./scripts/package.ps1 -Commit $revision -Tag v2.25.0-beta.1
+./tests/package.ps1 -PackageDirectory dist/v2.25.0-beta.1 -WorkDirectory build
+```
+
+The script verifies that tag and HEAD agree and version generation selects it.
+Local packages run 37 unprivileged groups in each configuration. Ordinary PR
+CI sees only remote tags, so its commit-labelled artifacts can have a different
+version from the locally tagged beta at the same source commit. Keep the two
+identities and their validation evidence distinct. Supplied source archives
+retain their own exact identity and do not require the local tag to rebuild.
+
+Review the concrete candidate and application results before publishing the
+tag or release. Keep its tag on the reviewed source commit when merging the
+preparation PR; do not move it to a different merge commit. If the candidate
+source changes, use a new candidate version and rebuild it. Later documentation
+commits may add acceptance results without moving that tag or rebuilding its
+archives; provide the follow-up record with the release notes. Public publication
+must upload the archives matching that exact tag, not ordinary PR artifacts.
 Do not claim a first release in fix records until the tag and matching assets
 are published. Upload the complete package set, then verify public checksums
 and links before updating first-release fields.

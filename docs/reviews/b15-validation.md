@@ -3,8 +3,8 @@
 Validation date: 2026 November 3. Baseline:
 `9812f2ecaf1ccf7ea8788885d0105d62db4312a7`, after PRs 20 and 19 merged.
 [Master CI 41546780619](https://github.com/existical/nssm-native/actions/runs/41546780619)
-passed all five jobs at that revision. All 36 identified fix tasks are merged
-and unreleased. B15 adds acceptance coverage and merge-status documentation.
+passed all five jobs at that revision. At that baseline, 36 identified fix tasks
+were merged and unreleased. B15 adds acceptance coverage and merge-status documentation.
 A later rerun exposed NSSM-037; the focused production repair in PR 22 is now
 included in this acceptance branch. No release is published.
 
@@ -77,7 +77,7 @@ The focused [NSSM-037 record](../fixes/NSSM-037.md) documents six deterministic
 startup cancellation/wait ownership failures, repair commit
 `ab23475f71d700e1705d5be1681c49eb72775466`, local four-configuration validation
 and five sanitizer groups. [PR 22](https://github.com/existical/nssm-native/pull/22)
-must merge before PR 21. The acceptance branch includes the repair and repeats
+merged before PR 21. The acceptance branch includes the repair and repeats
 the real lifecycle ten consecutive times on CI, stopping at the first failure.
 The earlier comparison hashes above identify the pre-NSSM-037 run, not the
 updated candidate.
@@ -108,4 +108,32 @@ or a user's installed service. It exercises a currently rebuilt legacy binary;
 it makes no claim that an original distributed executable was executed. Manual
 GUI, domain accounts, older Windows, long-running application soak, signing and
 application-specific data migrations remain outside this scenario. No tag or
-public release has been created.
+public release has been created by B15.
+
+## Post-merge validation
+
+PR 22 merged at `6ff83e100dddabc879000c3122b93759c0848a66`, followed by
+PR 21 at `f0fdfdd5d3f3762bd825694a3288e9fd99aa07e6`, on 2026 November 3.
+All 37 findings are now merged and unreleased. The merged tree equals the
+combined candidate at `cca249bd5835e822bdb675576281db7ecfe4195c`.
+
+[Master CI 41643001489](https://github.com/existical/nssm-native/actions/runs/41643001489)
+passed all five jobs: 42/42 groups in x64 Release, 37/37 in each other matrix
+configuration, ten additional lifecycle repetitions and source-archive
+packaging. Package suites passed 41 groups in x64 Release and 37 elsewhere;
+CI verified all archive checksums, executable versions and source identity.
+Downloaded upgrade and repeat evidence independently confirms 42 passed matrix
+records, successful legacy-to-candidate-to-legacy replacement and ten passed
+lifecycle records. The legacy source files remained unchanged.
+
+| Post-merge executable | Identity |
+| --- | --- |
+| Candidate matrix build | Commit `f0fdfdd5d3f3762bd825694a3288e9fd99aa07e6`; `NSSM 2.24-194-gf0fdfdd 64-bit 2026-11-03`; SHA-256 `ec3bf10f9e2fa2b0b7ec887ba7d7f87e7d16b5cbf0c404d87389d341683c4262` |
+| Legacy rebuild | Commit `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`; `NSSM 2.24-103-gdee49fc 64-bit 2017-05-16`; SHA-256 `ff0c7ce4426b834b11a3ed9ebf59c006ef5b58cba64a1cc47ad5c52bbffd9ae0` |
+
+These hashes identify the post-merge comparison, not the later named beta.
+Beta manifests carry their own commit, local tag, versions and hashes. The
+[beta notes](../releases/v2.25.0-beta.1.md) and
+[application checklist](../releases/qrscanner-beta-acceptance.md) retain the
+remaining acceptance boundaries. No QRScanner deployment or soak was performed
+by this CI run.

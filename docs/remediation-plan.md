@@ -11,7 +11,7 @@ NSSM-001 through NSSM-024 match its numbered findings. NSSM-025 through NSSM-034
 split its additional follow-ups into independent tasks. The latter ten are
 follow-ups, not ten additional reproduced high-priority defects.
 
-**Status:** B00 through B14 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
+**Status:** B00 through B15 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
 are fixed but unreleased through
 [PR 5](https://github.com/existical/nssm-native/pull/5); see the
 [fix records](fixes/README.md) and [validation](reviews/b01-validation.md).
@@ -42,9 +42,16 @@ are now merged and unreleased. B08 merged in
 [validation](reviews/b13-validation.md). All 34 review tasks are now merged
 and unreleased. B14 found two release blockers, [NSSM-035](fixes/NSSM-035.md) and
 [NSSM-036](fixes/NSSM-036.md),
-merged in [PR 20](https://github.com/existical/nssm-native/pull/20). All 36 are fixed
-and unreleased. B15 then found [NSSM-037](fixes/NSSM-037.md), repaired in
-[PR 22](https://github.com/existical/nssm-native/pull/22), pending merge.
+merged in [PR 20](https://github.com/existical/nssm-native/pull/20). B15 then found
+[NSSM-037](fixes/NSSM-037.md), merged in
+[PR 22](https://github.com/existical/nssm-native/pull/22) before acceptance
+[PR 21](https://github.com/existical/nssm-native/pull/21). All 37 findings are
+fixed and unreleased. [Post-merge validation](reviews/b15-validation.md#post-merge-validation)
+passed all five CI jobs. The unpublished
+[first beta candidate](releases/v2.25.0-beta.1.md) is prepared; the supplied
+[QRScanner acceptance](releases/qrscanner-beta-results.md) passed its 24-hour
+x64/LocalSystem scope. Publication review and QRScanner's production helper/policy
+adoption remain separate from that completed trial.
 B14 release preparation merged in [PR 19](https://github.com/existical/nssm-native/pull/19): lifecycle acceptance,
 clean-commit packaging, source identity and candidate documentation. See
 [release preparation](releases/README.md) and [B14 validation](reviews/b14-validation.md).
@@ -83,7 +90,7 @@ work. P2 tasks share an early group only when they support the same repair.
 | B12 | Dependencies | 023 | Merged in PR 17; typed resets/merges, bounded queries, validation cleanup and SCM round-trip tests pass |
 | B13 | Remaining service control waits | 024 | Merged in PR 18; action budgets, polling, diagnostics and deterministic/live tests pass |
 | B14 | Candidate release and acceptance follow-ups | 035, 036 | Merged; startup/cleanup repairs in PR 20, lifecycle and packaging in PR 19; publication separate |
-| B15 | Upgrade/rollback and startup follow-up | 037 | Merge repair [PR 22](https://github.com/existical/nssm-native/pull/22) before acceptance [PR 21](https://github.com/existical/nssm-native/pull/21); [scenario](releases/upgrade-rehearsal.md), [validation](reviews/b15-validation.md) |
+| B15 | Upgrade/rollback and startup follow-up | 037 | Merged: repair [PR 22](https://github.com/existical/nssm-native/pull/22), then acceptance [PR 21](https://github.com/existical/nssm-native/pull/21); [scenario](releases/upgrade-rehearsal.md), [validation](reviews/b15-validation.md) |
 
 ## Shared implementation and test rules
 
@@ -768,6 +775,10 @@ the actual SCM lifecycle check in PR 19. This is an additional finding beyond
 the original 34-task review and is a release prerequisite.
 
 ### NSSM 037
+
+**Implementation status:** merged in PR 22, unreleased; merge commit
+`6ff83e100dddabc879000c3122b93759c0848a66`. Post-merge matrix, repeated lifecycle
+and packaging checks pass; see [B15 validation](reviews/b15-validation.md).
 
 **Startup cancellation and wait ownership — P1, B15 acceptance follow-up.**
 A repeated wrapped-service run reported unexpected termination during STOP

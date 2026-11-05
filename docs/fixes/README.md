@@ -138,11 +138,15 @@ B14 acceptance found two release blockers beyond the original review:
 | [NSSM-035](NSSM-035.md) | Pass byte capacity to standard-I/O registry readers | Fixed, unreleased | Not yet released |
 | [NSSM-036](NSSM-036.md) | Wait for in-flight exit cleanup before STOPPED | Fixed, unreleased | Not yet released |
 
-B15 acceptance found a further startup/STOP race:
+B15 acceptance found a further startup/STOP race, merged in
+[PR 22](https://github.com/existical/nssm-native/pull/22) at `6ff83e1` before
+the upgrade/rollback coverage in [PR 21](https://github.com/existical/nssm-native/pull/21).
+All 37 findings are now fixed and unreleased; see the
+[post-merge evidence](../reviews/b15-validation.md#post-merge-validation).
 
 | ID | Change | State | First release |
 | --- | --- | --- | --- |
-| [NSSM-037](NSSM-037.md) | Own startup waits and cancel launch/monitor publication safely | In progress | Not yet released |
+| [NSSM-037](NSSM-037.md) | Own startup waits and cancel launch/monitor publication safely | Fixed, unreleased | Not yet released |
 
 The [implementation plan](../remediation-plan.md) tracks NSSM-001 through
 NSSM-037. Check each record's state before assuming inclusion in a build.

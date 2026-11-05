@@ -14,6 +14,16 @@ the [implementation plan](docs/remediation-plan.md) for open review findings,
 and [comparing builds](docs/comparing-builds.md) for exact legacy baselines,
 behavior differences and release identification.
 
+All 37 recorded review and acceptance fixes are merged and unreleased. The
+first beta, `v2.25.0-beta.1`, is being prepared as an unpublished candidate.
+See the [beta notes](docs/releases/v2.25.0-beta.1.md) for included changes,
+package identities and remaining acceptance work, and the
+[QRScanner checklist](docs/releases/qrscanner-beta-acceptance.md) for application
+testing before publication. The [completed QRScanner trial](docs/releases/qrscanner-beta-results.md)
+passed 24 monitored hours, reboot and exact rollback on Windows 11 x64/LocalSystem;
+the report records the test-only helper exception and remaining production
+adoption work.
+
 ## Build
 
 Install Visual Studio 2022 or its Build Tools with **Desktop development with C++**,
@@ -67,11 +77,12 @@ environment variables and hooks.
 | `src/` | C++ implementation and private headers |
 | `resources/` | Windows dialogs, icon, resource IDs and translated messages |
 | `cmake/` | Version generation |
-| `scripts/` | Build entry point |
-| `tests/` | Smoke, environment, hook, startup, registry and MULTI_SZ checks |
+| `scripts/` | Build and packaging entry points |
+| `tests/` | Regression tests and opt-in live-service/upgrade checks |
 | `docs/` | Build instructions, usage, fix history, plans and upstream records |
-| `.github/workflows/` | x86/x64 Debug/Release builds and checks |
+| `.github/workflows/` | x86/x64 Debug/Release tests, lifecycle acceptance and packaging |
 | `build/` | Ignored generated projects, resources, symbols and executables |
+| `dist/` | Ignored candidate archives, manifests, checksums and test evidence |
 
 The current presets use MSVC and the Windows SDK. Runtime compatibility with
 older Windows versions has not been revalidated with this toolchain; the legacy

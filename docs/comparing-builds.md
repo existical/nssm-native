@@ -131,6 +131,9 @@ archive builds. Retain release notes in `docs/releases/<tag>.md` and publish
 matching release assets. CI artifacts can expire; the explanation of fixes
 must remain in Git.
 
-No continuation release tag is assigned by this documentation change.
+The [first beta candidate](releases/v2.25.0-beta.1.md) uses a local tag during
+preparation. It is still unpublished; first-release fields remain unassigned.
 Version generation, source-archive identity, dirty-tree checks and packaging
-automation are covered by B14; permanent release publication remains separate.
+automation are covered by B14. Ordinary PR CI and a locally tagged beta can
+report different versions at the same source commit; compare their manifests
+and do not substitute untagged CI binaries for the named beta assets.
