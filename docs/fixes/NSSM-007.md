@@ -3,14 +3,14 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P1; finding 7 in the 2026 November 2 review |
-| State | Fixed, unreleased |
+| State | Released |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`, `v2.24-103-gdee49fc` |
 | Reproduced against | `7fa9ca9e99e2a862b04b524b3ed312d81b987630` |
 | Evidence | Invalid waits reproduced; controlled failure schedules and real pipe/worker/child tests |
 | Fix PR | [PR 10](https://github.com/existical/nssm-native/pull/10) |
 | Implementation commit | `6dd5f6382cfaca5a39347f75d0a8bc856ac82256` |
 | Merge commit | `b41b26e4c304b0dfd5202e1bb3fd99286766f178` |
-| First release | Not yet released |
+| First release | [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) (beta) |
 
 The legacy cleanup closed the logger's thread handle, remembered its numeric
 value and then waited on that closed handle. Cleanup also closed the read end

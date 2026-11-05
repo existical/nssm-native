@@ -3,14 +3,14 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P1; finding 6 in the 2026 November 2 review |
-| State | Fixed, unreleased |
+| State | Released |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`, `v2.24-103-gdee49fc` |
 | Reproduced against | `3982016dcd89358feafb156d19a91e4f7598c1f2` |
 | Evidence | Injected CreateThread failure and duplicate-free detection |
 | Fix PR | [PR 9](https://github.com/existical/nssm-native/pull/9) |
 | Implementation commit | `e406363257cb6edd553006c55cd518b77f139876` |
 | Merge commit | `7fa9ca9e99e2a862b04b524b3ed312d81b987630` |
-| First release | Not yet released |
+| First release | [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) (beta) |
 
 When worker creation failed, `nssm_hook` called `await_hook` synchronously.
 That function freed both the hook name and state; the caller freed them again.
@@ -36,5 +36,5 @@ fallback result. See [tests/hook_lifecycle.cpp](../../tests/hook_lifecycle.cpp)
 and [B04 validation](../reviews/b04-validation.md).
 
 The affected hook source matches the checked 2.24-103 snapshot. This is not a
-claim that every legacy binary was tested. The change remains unreleased until
-a tagged build includes its merged implementation.
+claim that every legacy binary was tested. The merged implementation is included
+in the first public beta identified above.

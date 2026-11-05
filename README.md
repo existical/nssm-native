@@ -10,19 +10,22 @@ tags. The continuation provides a maintained source layout, repeatable builds,
 automated checks and targeted fixes. See [upstream provenance](docs/upstream.md).
 
 See the [fix history](docs/fixes/README.md) for changes already merged,
-the [implementation plan](docs/remediation-plan.md) for open review findings,
+the [implementation plan](docs/remediation-plan.md) for review findings and their delivery status,
 and [comparing builds](docs/comparing-builds.md) for exact legacy baselines,
 behavior differences and release identification.
 
-All 37 recorded review and acceptance fixes are merged and unreleased. The
-first beta, `v2.25.0-beta.1`, is being prepared as an unpublished candidate.
-See the [beta notes](docs/releases/v2.25.0-beta.1.md) for included changes,
-package identities and remaining acceptance work, and the
-[QRScanner checklist](docs/releases/qrscanner-beta-acceptance.md) for application
-testing before publication. The [completed QRScanner trial](docs/releases/qrscanner-beta-results.md)
-passed 24 monitored hours, reboot and exact rollback on Windows 11 x64/LocalSystem;
-the report records the test-only helper exception and remaining production
-adoption work.
+The first public beta, [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1), is available for testing. It includes all
+37 recorded review/acceptance fixes and CONT-001 through CONT-005. Download
+[x64 Release](https://github.com/existical/nssm-native/releases/download/v2.25.0-beta.1/nssm-native-v2.25.0-beta.1-x64-Release.zip)
+for normal 64-bit Windows testing; the release also supplies x86 builds, Debug
+builds, source, symbols, checksums and build/test evidence. The binaries are unsigned.
+
+See the [beta notes](docs/releases/v2.25.0-beta.1.md) for package identities and
+acceptance limits. The [QRScanner trial](docs/releases/qrscanner-beta-results.md)
+passed 24 monitored hours, reboot and exact rollback on Windows 11 x64/LocalSystem.
+It used a test-only helper admission change; production QRScanner adoption needs
+a separate helper/provenance update. Broader compatibility testing is needed
+before a stable release.
 
 ## Build
 

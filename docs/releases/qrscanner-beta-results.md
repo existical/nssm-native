@@ -28,8 +28,8 @@ that installed QRScanner package can adopt the beta.
 These match the prepared candidate exactly. The trial used QRScanner's actual
 bundled legacy executable for comparison and rollback, rather than B15's separate
 rebuilt-source baseline. The supplied four 37-test package reports were inspected;
-they were not four new runs by QRScanner. The candidate remains unsigned and
-unpublished.
+they were not four new runs by QRScanner. The candidate is unsigned. These exact bytes were published as
+[v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) on 5 November 2026.
 
 ## Results
 
@@ -75,10 +75,10 @@ The beta tag and original package hashes remain pinned to the tested commit.
 This later documentation commit is not a new candidate build. Notes inside the
 original archives reflect the earlier handoff when application acceptance was
 pending; this summary supplies the later result without replacing those archives.
-Include this summary with any eventual publication.
+This summary accompanies the published beta assets.
 
 The planned first application acceptance gate is satisfied within the stated
-scope. Merge/release review and publication of a GitHub prerelease remain separate
-actions. QRScanner production adoption needs its helper/policy change, while
-stable-release support claims need broader acceptance. No beta tag was moved,
-archive rebuilt or public release created by this update.
+scope. PR 23 merged before GitHub prerelease publication on 5 November 2026.
+QRScanner production adoption needs its helper/policy change, while stable-release
+support claims need broader acceptance. The beta tag and original archives
+retain their tested identities.

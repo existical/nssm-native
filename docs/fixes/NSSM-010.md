@@ -3,14 +3,14 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P2; finding 10 in the 2026 November 2 review |
-| State | Fixed, unreleased; merged in PR 5 |
+| State | Released; merged in PR 5 |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`, `v2.24-103-gdee49fc` |
 | Reproduced against | Production code at `05205d7784dbd0e90dc6d26957d3133f7a1c62a9` with the new regression harness |
 | Evidence | Malformed HKCU values, injected query changes and legacy source inspection |
 | Fix PR | [PR 5](https://github.com/existical/nssm-native/pull/5) |
 | Implementation commit | [1ecfc6be59e80fe78ea94553634d02a6ed9524d0](https://github.com/existical/nssm-native/commit/1ecfc6be59e80fe78ea94553634d02a6ed9524d0) |
 | Merge commit | [bdeca1cf21314b8fc88b1927333aa69197a8571b](https://github.com/existical/nssm-native/commit/bdeca1cf21314b8fc88b1927333aa69197a8571b) |
-| First release | Not yet released |
+| First release | [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) (beta) |
 
 The readers previously trusted registry data to contain its terminators.
 An unterminated environment block was accepted and scanned past its returned

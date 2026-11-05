@@ -3,13 +3,13 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P2; follow-up C, B08 |
-| State | Fixed, unreleased |
+| State | Released |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a` |
 | Reproduced against | `0ba9551903b5a47568bd317c5447fe4eed54d685` |
 | Fix PR | [PR 13](https://github.com/existical/nssm-native/pull/13) |
 | Implementation commit | `ce6581da064e5c6006f81162e93b31e6604ca998` |
 | Merge commit | `38224b13c24eff70e404fe85e1ed67d35f9e975b` |
-| First release | Not yet released |
+| First release | [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) (beta) |
 
 `get_debug_token` used an uninitialized handle after some failures, ignored
 ImpersonateSelf and retry-open results, and treated a successful BOOL from

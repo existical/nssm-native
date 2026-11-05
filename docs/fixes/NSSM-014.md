@@ -3,13 +3,13 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P2; finding 14, B09 |
-| State | Fixed, unreleased |
+| State | Released |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a` |
 | Reproduced against | `38224b13c24eff70e404fe85e1ed67d35f9e975b` |
 | Fix PR | [PR 14](https://github.com/existical/nssm-native/pull/14) |
 | Implementation commit | `d2c5ad91605af6ee98439cb8071cd11f9f429fea` |
 | Merge commit | `0497d8a4d37881e89c3762c3957d1abf775a2190` |
-| First release | Not yet released |
+| First release | [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) (beta) |
 
 Legacy timestamping used uninitialized result/complaint values and accumulated
 into an output counter that was not reset for each write. BOM/timestamp/data
@@ -44,7 +44,7 @@ rotation refreshes observed size. Filename formatting now retains its local
 timestamp for the entire function and bounds its path copy. Archive collisions
 remain failures, not overwrites; external concurrent writers are not coordinated.
 Offline rotation's metadata and post-copy failure caveats in
-[NSSM-008](NSSM-008.md) remain open.
+[NSSM-008](NSSM-008.md) still apply.
 
 Tests cover empty writes, short/zero writes, a failure at every byte offset
 0–64 (including BOM and timestamp), exact byte totals, metadata failures,

@@ -3,13 +3,13 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P2; finding 12, B09 |
-| State | Fixed, unreleased |
+| State | Released |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a` |
 | Reproduced against | `38224b13c24eff70e404fe85e1ed67d35f9e975b` |
 | Fix PR | [PR 14](https://github.com/existical/nssm-native/pull/14) |
 | Implementation commit | `d2c5ad91605af6ee98439cb8071cd11f9f429fea` |
 | Merge commit | `0497d8a4d37881e89c3762c3957d1abf775a2190` |
-| First release | Not yet released |
+| First release | [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) (beta) |
 
 The legacy `get_output_handles` opened AppStdin without inheritable security
 attributes. STARTF_USESTDHANDLES and CreateProcess's inheritance flag alone

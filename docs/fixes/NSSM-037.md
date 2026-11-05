@@ -3,14 +3,14 @@
 | Field | Value |
 | --- | --- |
 | Priority and origin | P1; B15 release acceptance follow-up |
-| State | Fixed, unreleased |
+| State | Released |
 | Reproduced against | `9812f2ecaf1ccf7ea8788885d0105d62db4312a7`, with forced startup/STOP overlap |
 | Live failing revision | `bd94d75db99855a34f05933ef5f564ca20acb26b` in PR 21; production source matches that baseline |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a` |
 | Fix PR | [PR 22](https://github.com/existical/nssm-native/pull/22) |
 | Implementation commit | `ab23475f71d700e1705d5be1681c49eb72775466` |
 | Merge commit | `6ff83e100dddabc879000c3122b93759c0848a66` |
-| First release | Not yet released |
+| First release | [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) (beta) |
 
 During B15's final rerun, the upgrade/rollback scenario passed but the existing
 wrapped lifecycle test reported that NSSM terminated unexpectedly while STOP

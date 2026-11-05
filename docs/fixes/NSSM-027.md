@@ -3,13 +3,13 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P2; B11 |
-| State | Fixed, unreleased |
+| State | Released |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a` |
 | Reproduced against | `f28a43141a576033713190fe9b716fb503ac227a` |
 | Fix PR | [PR 16](https://github.com/existical/nssm-native/pull/16) |
 | Implementation commit | `b91392150c23ecec4299c4eec75a7fcb65f867fb` |
 | Merge commit | `f969dd985039a8d2fe77a0ed0a24e077894c2bef` |
-| First release | Not yet released |
+| First release | [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) (beta) |
 
 The service-logon-right check compared an LSA string using MaximumLength,
 a byte capacity, as a wchar_t count. LSA results need not contain a terminator.
