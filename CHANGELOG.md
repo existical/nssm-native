@@ -2,11 +2,18 @@
 
 ## Unreleased
 
-The first beta candidate is `v2.25.0-beta.1`; it includes CONT-001 through
+No additional implementation changes recorded since the first beta.
+
+## [2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) - 2026-11-05
+
+First public beta of the NSSM Native continuation, including CONT-001 through
 CONT-005 and NSSM-001 through NSSM-037. All implementations are merged.
-See the [beta notes](docs/releases/v2.25.0-beta.1.md) and
+See the [beta notes](docs/releases/v2.25.0-beta.1.md),
+[publication record](docs/releases/v2.25.0-beta.1-publication.json) and
 [QRScanner acceptance checklist](docs/releases/qrscanner-beta-acceptance.md).
-Candidate preparation does not assign a first published release to these fixes.
+The tag and original packages retain tested source commit
+`739b5feabdc768a4524fe28bad2c000b05ee5e07`; later documentation records acceptance
+and publication without rebuilding the candidate.
 
 - Record the supplied [QRScanner beta acceptance](docs/releases/qrscanner-beta-results.md):
   24 monitored hours, 289 samples, no observed wrapper/application restart,
@@ -29,7 +36,7 @@ Candidate preparation does not assign a first published release to these fixes.
   and test metadata, SHA-256 checksums and preserved source identity. Support
   distinct beta/RC tags while retaining original version tags. Add a real
   NSSM-wrapped lifecycle acceptance test and packaging validation in CI.
-  See [release preparation](docs/releases/README.md). No release is published.
+  See [release preparation](docs/releases/README.md).
 
 - Serialize explicit STOP with exit-callback cleanup so STOPPED is not reported
   before in-flight descendant/hook/logger cleanup completes. Add a forced

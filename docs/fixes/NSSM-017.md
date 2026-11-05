@@ -3,14 +3,14 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P2; finding 17 in the 2026 November 2 review |
-| State | Fixed, unreleased |
+| State | Released |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`, `v2.24-103-gdee49fc` |
 | Reproduced against | `3982016dcd89358feafb156d19a91e4f7598c1f2` |
 | Evidence | Checked API handles, launch failure injection and real repeated-child handle counts |
 | Fix PR | [PR 9](https://github.com/existical/nssm-native/pull/9) |
 | Implementation commit | `e406363257cb6edd553006c55cd518b77f139876` |
 | Merge commit | `7fa9ca9e99e2a862b04b524b3ed312d81b987630` |
-| First release | Not yet released |
+| First release | [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) (beta) |
 
 Hook and application launches retained the primary-thread handle returned by
 `CreateProcess`. Environment validation retained both returned handles after

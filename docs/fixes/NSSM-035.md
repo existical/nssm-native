@@ -3,14 +3,14 @@
 | Field | Value |
 | --- | --- |
 | Priority and origin | P1; startup blocker discovered during B14 acceptance |
-| State | Fixed, unreleased |
+| State | Released |
 | Merge commit | `aff12fa057227f93453cf014a0d931f2ea2c930b` (PR 20) |
 | Reproduced against | `0f856a4dedb7e5c9dc08fc010fb69bf90398a05d` |
 | Introduced startup rejection | `1ecfc6be59e80fe78ea94553634d02a6ed9524d0` (B01) |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a` |
 | Fix PR | [PR 20](https://github.com/existical/nssm-native/pull/20) |
 | Implementation commit | `3146ceca98065907f5f4b5d999139e287065b2ed` |
-| First release | Not yet released |
+| First release | [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) (beta) |
 
 The first real NSSM-wrapped lifecycle test reached SERVICE_STOPPED with
 service-specific code 2 during START. get_parameters failed in its standard-I/O

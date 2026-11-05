@@ -3,13 +3,13 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P2; B13; review finding 24 |
-| State | Fixed, unreleased |
+| State | Released |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a` |
 | Reproduced against | `89c918c6d33a3f7548d4899a718e55e4f61c5be4` |
 | Fix PR | [PR 18](https://github.com/existical/nssm-native/pull/18) |
 | Implementation commit | `d92c27cb022d1d573070e8f6a62b1964339db42b` |
 | Merge commit | `0f856a4dedb7e5c9dc08fc010fb69bf90398a05d` |
-| First release | Not yet released |
+| First release | [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) (beta) |
 
 Legacy stop/pause/continue called await_service_control_response with a zero
 cutoff. Its growing polling interval stopped at 500 ms, but its loop had

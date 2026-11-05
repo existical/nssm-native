@@ -2,8 +2,8 @@
 
 These records backfill the changes merged before the full review of
 `5d7454b2cd878b66bcd4b036c33a5b53b184cf3a`. They distinguish existing fixes from
-the open NSSM review tasks. **First continuation release: not yet released**
-for each record below.
+the NSSM review tasks. **First continuation release:** [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1)
+(beta, 5 November 2026) for each record below.
 
 The source comparison baseline is
 [dee49fc1a0804f06687299b8e9612a3fce1c5e9a](https://github.com/existical/nssm-native/commit/dee49fc1a0804f06687299b8e9612a3fce1c5e9a),
@@ -14,7 +14,7 @@ binary labelled 2.24 or 2.24-103.
 
 ### CONT 001
 
-**Source layout and maintained builds. Status: implemented, unreleased.**
+**Source layout and maintained builds. Status: released (beta).**
 
 Legacy source and build resources lived together with Visual Studio 2008
 project files. The continuation separates C++ into `src/`, resources into
@@ -41,7 +41,7 @@ manual claims apply to original builds. See [building](../building.md) and
 
 ### CONT 002
 
-**Typed registry values in dump helpers. Status: fixed, unreleased.**
+**Typed registry values in dump helpers. Status: released (beta).**
 
 The legacy `setting_dump_string` routed a numeric registry type through
 `void *` and cast it back to `unsigned long`. On x64 that crossed different
@@ -60,11 +60,11 @@ compiler enforcement, not a comprehensive dump/import behavior test.
 
 **Compatibility:** no intended CLI or registry format change. This corrects
 the helper's type contract; the separate AppExit export defect in
-[NSSM-016](../remediation-plan.md#nssm-016) remains open.
+[NSSM-016](NSSM-016.md) was subsequently fixed and is included in this beta.
 
 ### CONT 003
 
-**Empty environment values. Status: fixed, unreleased.**
+**Empty environment values. Status: released (beta).**
 
 When an environment block contained an empty value, the legacy iterator could
 advance past the following entry, or past the final terminator. A block such
@@ -85,13 +85,12 @@ at the reviewed commit.
 
 **Compatibility:** an empty value remains an empty value; unset still removes
 the named variable. Existing settings require no conversion. Duplicate-key
-updating and malformed registry blocks remain separate open findings
-[NSSM-003](../remediation-plan.md#nssm-003) and
-[NSSM-010](../remediation-plan.md#nssm-010).
+updating and malformed registry blocks were subsequently repaired in
+[NSSM-003](NSSM-003.md) and [NSSM-010](NSSM-010.md), included in this beta.
 
 ### CONT 004
 
-**Hook command quoting. Status: fixed, unreleased.**
+**Hook command quoting. Status: released (beta).**
 
 Legacy `get_hook` applied path sanitization to a complete command line.
 Stripping its outer quotes could break an executable path containing spaces
@@ -111,12 +110,12 @@ reviewed commit.
 
 **Compatibility:** correctly quoted stored commands remain intact. This
 does not add quotes to an incorrectly configured command. GUI preservation of
-literal environment references still requires the separate
-[NSSM-034 investigation](../remediation-plan.md#nssm-034).
+literal environment references was subsequently repaired in
+[NSSM-034](NSSM-034.md), included in this beta.
 
 ### CONT 005
 
-**Startup waiting and failure reporting. Status: fixed, unreleased.**
+**Startup waiting and failure reporting. Status: released (beta).**
 
 The legacy START command used AppThrottle as its waiting cutoff, coupling a
 restart policy to SCM startup observation. Slow startup could return an

@@ -131,8 +131,10 @@ archive builds. Retain release notes in `docs/releases/<tag>.md` and publish
 matching release assets. CI artifacts can expire; the explanation of fixes
 must remain in Git.
 
-The [first beta candidate](releases/v2.25.0-beta.1.md) uses a local tag during
-preparation. It is still unpublished; first-release fields remain unassigned.
+The [first beta](releases/v2.25.0-beta.1.md) was published on 5 November 2026
+as [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1). All included fix records now identify it as their first release.
+The [publication record](releases/v2.25.0-beta.1-publication.json) links the
+original tested source to anonymously downloaded and verified release assets.
 Version generation, source-archive identity, dirty-tree checks and packaging
 automation are covered by B14. Ordinary PR CI and a locally tagged beta can
 report different versions at the same source commit; compare their manifests

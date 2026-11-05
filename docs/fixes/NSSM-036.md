@@ -3,13 +3,13 @@
 | Field | Value |
 | --- | --- |
 | Priority and origin | P1; B14 lifecycle acceptance follow-up |
-| State | Fixed, unreleased |
+| State | Released |
 | Merge commit | `aff12fa057227f93453cf014a0d931f2ea2c930b` (PR 20) |
 | Reproduced against | `502ba2202d56db8c1d2c955504e6324a4075b176` with forced overlap; real SCM failure in PR 19 |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a` |
 | Fix PR | [PR 20](https://github.com/existical/nssm-native/pull/20) |
 | Implementation commit | `024bfdb59d5ad60f0b2a7d716c77330ee16260c4` |
-| First release | Not yet released |
+| First release | [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) (beta) |
 
 A STOP received around application exit can race the registered exit callback.
 end_service marks stopping before doing descendant, hook and logger cleanup.

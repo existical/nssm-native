@@ -3,14 +3,14 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P1; finding 4 in the 2026 November 2 review |
-| State | Fixed, unreleased; merged in PR 8 |
+| State | Released; merged in PR 8 |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`, `v2.24-103-gdee49fc` |
 | Reproduced against | `a3c6260b23b1c229cb9c74a2b172655e41c30c55` |
 | Evidence | Invalid endpoints/reversed ranges reproduced; array overflow source-traced; post-fix boundary and registry tests |
 | Fix PR | [PR 8](https://github.com/existical/nssm-native/pull/8), branch `fix/b03-affinity-parsing` |
 | Implementation commit | [5ffd1ce84e177074e29881dd57c374f155a376d2](https://github.com/existical/nssm-native/commit/5ffd1ce84e177074e29881dd57c374f155a376d2) |
 | Merge commit | [3982016dcd89358feafb156d19a91e4f7598c1f2](https://github.com/existical/nssm-native/commit/3982016dcd89358feafb156d19a91e4f7598c1f2) |
-| First release | Not yet released |
+| First release | [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) (beta) |
 
 The old `affinity_string_to_mask` in [service.cpp](../../src/service.cpp)
 accepted `0-64` and did not validate the upper endpoint before shifting.
@@ -34,7 +34,8 @@ as described in [NSSM-029](NSSM-029.md).
 The companion formatter uses unsigned shifts, correct format argument types
 and checks the allocated pointer on failure. The malformed-affinity registry
 warning now supplies its required null sentinel. This last change repairs
-one NSSM-022 call site; the broader logging task remains open.
+one NSSM-022 call site; the broader logging task was subsequently completed in
+[NSSM-022](NSSM-022.md) and is included in the same beta.
 
 `nssm.affinity` covers every pair of endpoints from 0 through 64 (4,225
 combinations), 64/65-entry lists, one through 130 repeated IDs, trailing commas,

@@ -3,13 +3,13 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P2; B10 |
-| State | Fixed, unreleased |
+| State | Released |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a` |
 | Reproduced against | `0497d8a4d37881e89c3762c3957d1abf775a2190` |
 | Fix PR | [PR 15](https://github.com/existical/nssm-native/pull/15) |
 | Implementation commit | `fc029e716391d3aa9ff3399cd388b428da8e4561` |
 | Merge commit | `f28a43141a576033713190fe9b716fb503ac227a` |
-| First release | Not yet released |
+| First release | [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) (beta) |
 
 MODE_DUMPING previously requested SERVICE_CHANGE_CONFIG in addition to
 SERVICE_QUERY_CONFIG. A caller allowed to inspect a service but not alter it

@@ -3,13 +3,13 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P1; finding 9 in the 2026 November 2 review |
-| State | Fixed, unreleased |
+| State | Released |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`, `v2.24-103-gdee49fc` |
 | Reproduced against | `9a5a14549b1837ba518ed577905aaafe04236d66` |
 | Evidence | Deterministic PID replacement and ownership assertions; isolated live descendant trees |
 | Fix PR | [PR 12](https://github.com/existical/nssm-native/pull/12) |
 | Implementation commit | `329738b85deb0f454ca6cde1e1882d535530f48e`; merged at `0ba9551903b5a47568bd317c5447fe4eed54d685` |
-| First release | Not yet released |
+| First release | [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) (beta) |
 
 The pre-fix `src/process.cpp` is identical to `process.cpp` in the checked
 legacy source. `check_parent` opened a child, checked its creation time, then

@@ -1,14 +1,18 @@
 # Preparing NSSM Native releases
 
-Release preparation now has automated checks; publication is a separate step.
-All 37 identified fixes are merged and unreleased. PR 22 repaired the final
-startup/STOP finding before the upgrade/rollback coverage in PR 21 merged.
-[Post-merge CI](https://github.com/existical/nssm-native/actions/runs/41643001489)
-passed all five jobs at `f0fdfdd5d3f3762bd825694a3288e9fd99aa07e6`.
-The first candidate is [v2.25.0-beta.1](v2.25.0-beta.1.md), prepared with a
-local tag; no public continuation tag or release has been published. See the
-[candidate notes](candidate.md), [fix index](../fixes/README.md) and
+The first public continuation release is [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1), published as a beta on
+5 November 2026. All 37 identified fixes and CONT-001 through CONT-005 are
+included. The original tag and packages retain tested commit
+`739b5feabdc768a4524fe28bad2c000b05ee5e07`.
+See the [release notes](v2.25.0-beta.1.md),
+[verified publication record](v2.25.0-beta.1-publication.json),
+[candidate history](candidate.md), [fix index](../fixes/README.md) and
 [QRScanner acceptance checklist](qrscanner-beta-acceptance.md).
+
+PR 23 merged at `b15004563498180d9f544ddbfbbecb7d98289656`;
+[post-merge CI](https://github.com/existical/nssm-native/actions/runs/42001713362)
+passed all five jobs before publication. Subsequent documentation changes
+record the release without changing the tested package bytes.
 
 The [completed QRScanner record](qrscanner-beta-results.md) now includes a passed
 24-hour x64/LocalSystem trial, reboot and exact legacy rollback. Its test-only
@@ -55,7 +59,7 @@ source-info.json. CMake validates this file and restores the version and
 commit-based build date without .git. An ordinary GitHub source ZIP without
 this file still uses VERSION as a prerelease fallback and does not identify
 an exact continuation revision. Hashes establish file identity, not publisher
-authentication; these candidate executables and manifests are unsigned.
+authentication; the first beta executables and manifests are unsigned.
 
 Preserve all original upstream tags. Prepare docs/releases/<tag>.md and commit
 the actual included IDs, compatibility changes, evidence and known limits
@@ -93,3 +97,12 @@ and the [upgrade/rollback rehearsal](upgrade-rehearsal.md). Before a stable rele
 real applications, interactive GUI/account configuration and the Windows
 versions being advertised. Current automated coverage alone does not establish
 support for every historical Windows version or domain configuration.
+
+For the first beta, the complete `nssm-native-v2.25.0-beta.1-candidate.zip`
+retains the original 25 checksummed files and `SHA256SUMS.txt`, including the
+`evidence/` directory. The release also provides individual archives and the
+manifest. `RELEASE-ASSETS-SHA256SUMS.txt` covers the separately uploaded assets,
+including supplemental release notes and sanitized acceptance summaries.
+All 13 assets were downloaded anonymously and their hashes verified after
+publication. Original archives retain the earlier preparation documentation;
+the supplemental acceptance and publication records state the later outcomes.

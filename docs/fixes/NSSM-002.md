@@ -3,14 +3,14 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P1; finding 2 in the 2026 November 2 review |
-| State | Fixed, unreleased; merged in PR 7 |
+| State | Released; merged in PR 7 |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`, `v2.24-103-gdee49fc` |
 | Reproduced against | `41c22afc60e276e3b4c36c8f6611098d29c9a3f6` with the new bounds regression |
 | Evidence | Guarded destination tests, real cmd.exe child arguments, captured production dump output, and source inspection |
 | Fix PR | [PR 7](https://github.com/existical/nssm-native/pull/7), branch `fix/b02-command-quoting` |
 | Implementation commit | [1bd0b854ae8a774a501728234fbf400b427badaf](https://github.com/existical/nssm-native/commit/1bd0b854ae8a774a501728234fbf400b427badaf) |
 | Merge commit | [a3c6260b23b1c229cb9c74a2b172655e41c30c55](https://github.com/existical/nssm-native/commit/a3c6260b23b1c229cb9c74a2b172655e41c30c55) |
-| First release | Not yet released |
+| First release | [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) (beta) |
 
 ## Trigger and impact
 

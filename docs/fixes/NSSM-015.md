@@ -3,13 +3,13 @@
 | Field | Value |
 | --- | --- |
 | Priority and review | P2; finding 15, B08 |
-| State | Fixed, unreleased |
+| State | Released |
 | Legacy source checked | `dee49fc1a0804f06687299b8e9612a3fce1c5e9a` |
 | Reproduced against | `0ba9551903b5a47568bd317c5447fe4eed54d685` |
 | Fix PR | [PR 13](https://github.com/existical/nssm-native/pull/13) |
 | Implementation commit | `d1e07d4c143d25ab5bb9f0a1e8850ea8c75c9443` |
 | Merge commit | `38224b13c24eff70e404fe85e1ed67d35f9e975b` |
-| First release | Not yet released |
+| First release | [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) (beta) |
 
 `setting_set_string` replaced `value->string` with a borrowed default when
 resetting a setting. The CLI subsequently freed that pointer as if it owned

@@ -1,9 +1,10 @@
 # NSSM Native candidate notes
 
-Status: unpublished `v2.25.0-beta.1` candidate preparation. See the
-[beta notes](v2.25.0-beta.1.md) for the proposed public release and the
-[QRScanner checklist](qrscanner-beta-acceptance.md) for application acceptance.
-The candidate tag is local during preparation; no public release is published.
+Status: published as [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) on 5 November 2026. See the
+[release notes](v2.25.0-beta.1.md) and [publication record](v2.25.0-beta.1-publication.json).
+The tag remains at the original tested source commit, `739b5feabdc768a4524fe28bad2c000b05ee5e07`.
+The [QRScanner checklist](qrscanner-beta-acceptance.md) remains reusable for
+subsequent application acceptance.
 Candidate artifacts are identified by the full commit in build-info.json.
 All original tags and history are preserved. The legacy development comparison
 baseline is v2.24-103-gdee49fc (`dee49fc1a0804f06687299b8e9612a3fce1c5e9a`),
@@ -69,7 +70,8 @@ Remaining acceptance gaps include other applications, domain accounts, manual
 GUI/accessibility, other Windows builds, large process trees, concurrent hook
 storms, signing and production QRScanner installer/helper adoption. No broad OS
 compatibility or production-soak claim is made. CI artifacts may
-expire; a release must publish permanent assets and the matching manifest.
+expire; this beta publishes the original packages, manifest and build/test
+evidence as release assets.
 
 See [release preparation](README.md) for package commands and publication steps,
 and [B14 validation](../reviews/b14-validation.md) for observed results.

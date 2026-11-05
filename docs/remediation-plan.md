@@ -11,52 +11,24 @@ NSSM-001 through NSSM-024 match its numbered findings. NSSM-025 through NSSM-034
 split its additional follow-ups into independent tasks. The latter ten are
 follow-ups, not ten additional reproduced high-priority defects.
 
-**Status:** B00 through B15 are merged. NSSM-001, NSSM-003, NSSM-010 and NSSM-011
-are fixed but unreleased through
-[PR 5](https://github.com/existical/nssm-native/pull/5); see the
-[fix records](fixes/README.md) and [validation](reviews/b01-validation.md).
-[NSSM-002](fixes/NSSM-002.md) is fixed but unreleased through
-[PR 7](https://github.com/existical/nssm-native/pull/7).
-B03 (NSSM-004, NSSM-029 and NSSM-031) is fixed but unreleased through
-[PR 8](https://github.com/existical/nssm-native/pull/8).
-B04 (NSSM-005, NSSM-006 and NSSM-017) is fixed but unreleased through
-[PR 9](https://github.com/existical/nssm-native/pull/9).
-B05 (NSSM-007) is fixed but unreleased through
-[PR 10](https://github.com/existical/nssm-native/pull/10).
-B06 (NSSM-008) is fixed but unreleased through
-[PR 11](https://github.com/existical/nssm-native/pull/11).
-B07 (NSSM-009) is fixed but unreleased through
-[PR 12](https://github.com/existical/nssm-native/pull/12). All nine P1 findings
-are now merged and unreleased. B08 merged in
-[PR 13](https://github.com/existical/nssm-native/pull/13); see its
-[validation](reviews/b08-validation.md). B09 merged in
-[PR 14](https://github.com/existical/nssm-native/pull/14); see its
-[validation](reviews/b09-validation.md). B10 merged in
-[PR 15](https://github.com/existical/nssm-native/pull/15); see its
-[validation](reviews/b10-validation.md). B11 merged in
-[PR 16](https://github.com/existical/nssm-native/pull/16); see its
-[validation](reviews/b11-validation.md). B12 merged in
-[PR 17](https://github.com/existical/nssm-native/pull/17); see its
-[validation](reviews/b12-validation.md). B13 merged in
-[PR 18](https://github.com/existical/nssm-native/pull/18); see its
-[validation](reviews/b13-validation.md). All 34 review tasks are now merged
-and unreleased. B14 found two release blockers, [NSSM-035](fixes/NSSM-035.md) and
-[NSSM-036](fixes/NSSM-036.md),
-merged in [PR 20](https://github.com/existical/nssm-native/pull/20). B15 then found
-[NSSM-037](fixes/NSSM-037.md), merged in
-[PR 22](https://github.com/existical/nssm-native/pull/22) before acceptance
-[PR 21](https://github.com/existical/nssm-native/pull/21). All 37 findings are
-fixed and unreleased. [Post-merge validation](reviews/b15-validation.md#post-merge-validation)
-passed all five CI jobs. The unpublished
-[first beta candidate](releases/v2.25.0-beta.1.md) is prepared; the supplied
+**Status:** B00 through B15 are merged. All 37 findings (NSSM-001 through
+NSSM-037), including the nine P1 findings, first shipped in [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1)
+on 5 November 2026. The [fix records](fixes/README.md) retain each implementation,
+validation and first-release link; [CONT-001 through CONT-005](fixes/implemented.md)
+also first shipped in this beta.
+
+B14 found startup/cleanup blockers NSSM-035 and NSSM-036, repaired in PR 20
+before release preparation PR 19. B15 found the startup/STOP race NSSM-037,
+repaired in PR 22 before upgrade acceptance PR 21. Preparation/acceptance
+documentation PR 23 is merged. Its [post-merge CI](https://github.com/existical/nssm-native/actions/runs/42001713362)
+passed all five jobs before publication.
+
+The [beta release notes](releases/v2.25.0-beta.1.md) and
+[verified publication record](releases/v2.25.0-beta.1-publication.json) preserve
+the original tested source/tag and unchanged assets. The supplied
 [QRScanner acceptance](releases/qrscanner-beta-results.md) passed its 24-hour
-x64/LocalSystem scope. Publication review and QRScanner's production helper/policy
-adoption remain separate from that completed trial.
-B14 release preparation merged in [PR 19](https://github.com/existical/nssm-native/pull/19): lifecycle acceptance,
-clean-commit packaging, source identity and candidate documentation. See
-[release preparation](releases/README.md) and [B14 validation](reviews/b14-validation.md).
-No continuation release has been published.
-[Previously merged changes](fixes/implemented.md) retain separate CONT IDs.
+Windows 11 x64/LocalSystem scope. QRScanner's production helper/provenance update
+and broader stable-release acceptance remain separate work.
 
 The recovered legacy development baseline is
 `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`, described by Git as
@@ -89,7 +61,7 @@ work. P2 tasks share an early group only when they support the same repair.
 | B11 | GUI and accounts | 020, 025, 026, 027, 034 | Merged in PR 16; five confirmed fixes, GUI retries, account failures and hook round trips validated |
 | B12 | Dependencies | 023 | Merged in PR 17; typed resets/merges, bounded queries, validation cleanup and SCM round-trip tests pass |
 | B13 | Remaining service control waits | 024 | Merged in PR 18; action budgets, polling, diagnostics and deterministic/live tests pass |
-| B14 | Candidate release and acceptance follow-ups | 035, 036 | Merged; startup/cleanup repairs in PR 20, lifecycle and packaging in PR 19; publication separate |
+| B14 | Candidate release and acceptance follow-ups | 035, 036 | Merged; startup/cleanup repairs in PR 20, lifecycle and packaging in PR 19; included in v2.25.0-beta.1 |
 | B15 | Upgrade/rollback and startup follow-up | 037 | Merged: repair [PR 22](https://github.com/existical/nssm-native/pull/22), then acceptance [PR 21](https://github.com/existical/nssm-native/pull/21); [scenario](releases/upgrade-rehearsal.md), [validation](reviews/b15-validation.md) |
 
 ## Shared implementation and test rules
@@ -145,7 +117,7 @@ failure. Record that oversized expansions previously could corrupt memory.
 **Command quoting bounds — P1, B02.** Review finding 2; reproduced.
 Touch `src/nssm.cpp:quote` and dump tests.
 
-**Implementation status:** merged in PR 7, unreleased. See the
+**Implementation status:** merged in PR 7, released in v2.25.0-beta.1. See the
 [fix record](fixes/NSSM-002.md) for results and shell-mode limitations.
 
 1. Use a checked output builder, or one escape traversal shared by counting
@@ -188,7 +160,7 @@ duplicate normalization and verify the empty-value behavior from CONT-003.
 acceptance reproduced, array overflow source-traced.
 Touch `src/service.cpp:affinity_string_to_mask`.
 
-**Implementation status:** merged in PR 8, unreleased; see [NSSM-004](fixes/NSSM-004.md).
+**Implementation status:** merged in PR 8, released in v2.25.0-beta.1; see [NSSM-004](fixes/NSSM-004.md).
 
 1. Parse validated tokens directly into an unsigned 64-bit mask, or bound
    every temporary-array access before writing. Prefer eliminating the array.
@@ -209,7 +181,7 @@ Document accepted syntax and treatment of CPUs outside the active group.
 forcing completion before CreateThread returns.
 Touch `src/hook.cpp:nssm_hook`, `await_hook`, and thread-list ownership.
 
-**Implementation status:** merged in PR 9, unreleased; see [NSSM-005](fixes/NSSM-005.md).
+**Implementation status:** merged in PR 9, released in v2.25.0-beta.1; see [NSSM-005](fixes/NSSM-005.md).
 
 1. Define which object owns the hook name, process handle, worker handle and
    completion result. Keep caller metadata alive independently of worker data.
@@ -228,7 +200,7 @@ all forced schedules. Preserve existing hook result codes.
 **Hook thread-creation fallback — P1, B04.** Review finding 6; two duplicate
 frees reproduced. Touch `src/hook.cpp:nssm_hook`.
 
-**Implementation status:** merged in PR 9, unreleased; see [NSSM-006](fixes/NSSM-006.md).
+**Implementation status:** merged in PR 9, released in v2.25.0-beta.1; see [NSSM-006](fixes/NSSM-006.md).
 
 1. Let synchronous `await_hook` retain sole ownership of its cleanup when
    CreateThread fails, removing the caller's duplicate frees.
@@ -248,7 +220,7 @@ hook. Document the corrected fallback result.
 reproduced. Touch `src/io.cpp:cleanup_loggers`, `close_handle`,
 `create_logging_thread`, `log_and_rotate`, and shutdown/restart calls.
 
-**Implementation status:** merged in PR 10, unreleased; see [NSSM-007](fixes/NSSM-007.md).
+**Implementation status:** merged in PR 10, released in v2.25.0-beta.1; see [NSSM-007](fixes/NSSM-007.md).
 
 1. Write down ownership of each file, pipe end and thread handle. Close all
    parent-held writer ends, retain a live thread handle while joining, and
@@ -272,7 +244,7 @@ any output loss remaining under a forced timeout.
 **Offline rotation parameter order — P1, B06.** Review finding 8; reproduced
 with the long sleep intercepted. Touch `src/io.cpp:rotate_file` and both callers.
 
-**Implementation status:** merged in PR 11, unreleased; see [NSSM-008](fixes/NSSM-008.md).
+**Implementation status:** merged in PR 11, released in v2.25.0-beta.1; see [NSSM-008](fixes/NSSM-008.md).
 
 The B06 audit leaves two filesystem-error follow-ups for B09's logging
 correctness work: decide whether a metadata-query failure should bypass
@@ -299,7 +271,7 @@ source-traced, not a demonstrated unrelated-process kill.
 Touch `src/process.cpp:check_parent`, `walk_process_tree`, termination
 callbacks, and `src/service.cpp:end_service`.
 
-**Implementation status:** merged in PR 12, unreleased;
+**Implementation status:** merged in PR 12, released in v2.25.0-beta.1;
 see the [fix record](fixes/NSSM-009.md) for legacy comparison, identity checks,
 failure policy and Windows signalling limitations. PID reuse is now reproduced
 with simulated API schedules; live tests target only fixture-owned descendants.
@@ -357,7 +329,7 @@ boundary, nonzero following bytes, and format/unformat round trips.
 
 ### NSSM 012
 
-**Implementation status:** merged in PR 14, unreleased;
+**Implementation status:** merged in PR 14, released in v2.25.0-beta.1;
 see [NSSM-012](fixes/NSSM-012.md).
 
 **Inheritable stdin — P2, B09.** Review finding 12; missing handle flag
@@ -375,7 +347,7 @@ existing file-sharing and disposition options.
 
 ### NSSM 013
 
-**Implementation status:** merged in PR 14, unreleased;
+**Implementation status:** merged in PR 14, released in v2.25.0-beta.1;
 see [NSSM-013](fixes/NSSM-013.md).
 
 **UTF-16 timestamp output — P2, B09.** Review finding 13; invalid pointer
@@ -393,7 +365,7 @@ one-byte chunks, split newlines/code units, empty lines, and rotation.
 
 ### NSSM 014
 
-**Implementation status:** merged in PR 14, unreleased;
+**Implementation status:** merged in PR 14, released in v2.25.0-beta.1;
 see [NSSM-014](fixes/NSSM-014.md).
 
 B05 initializes basic read/write outputs and the initial observed file size
@@ -418,7 +390,7 @@ query, short/failed writes, and expected byte totals around rotation.
 **Owned setting values during reset — P2, B08.** Review finding 15; default
 pointer alias reproduced. Touch `setting_set_string` and CLI ownership.
 
-**Implementation status:** merged in PR 13, unreleased;
+**Implementation status:** merged in PR 13, released in v2.25.0-beta.1;
 see [NSSM-015](fixes/NSSM-015.md) for reset semantics and failure coverage.
 
 1. Keep borrowed defaults in a local pointer or make an owned copy; never
@@ -433,7 +405,7 @@ Document the actual default written/deleted for each reset.
 
 ### NSSM 016
 
-**Implementation status:** merged in PR 15, unreleased;
+**Implementation status:** merged in PR 15, released in v2.25.0-beta.1;
 see [NSSM-016](fixes/NSSM-016.md).
 
 **Correct AppExit export — P2, B10.** Review finding 16; lost numeric rule
@@ -463,7 +435,7 @@ source-inspected; B03's AppExit integration tests cover canonical decimal IDs.
 **Launch handle cleanup — P2, B04.** Review finding 17; hook leak reproduced.
 Touch service/hook CreateProcess paths and `env.cpp:test_environment`.
 
-**Implementation status:** merged in PR 9, unreleased; see [NSSM-017](fixes/NSSM-017.md).
+**Implementation status:** merged in PR 9, released in v2.25.0-beta.1; see [NSSM-017](fixes/NSSM-017.md).
 
 1. Close primary-thread handles after any required ResumeThread operation.
 2. Close process and thread handles from environment-validation children,
@@ -481,7 +453,7 @@ a bounded stress test with stable post-cleanup handle counts.
 **Correct administrator-check output type — P2, B08.** Review finding 18;
 four-byte write reproduced.
 
-**Implementation status:** merged in PR 13, unreleased;
+**Implementation status:** merged in PR 13, released in v2.25.0-beta.1;
 see [NSSM-018](fixes/NSSM-018.md) for guarded API-contract evidence.
 
 Use a local BOOL initialized to FALSE for CheckTokenMembership, check its
@@ -493,7 +465,7 @@ balanced. Test member/nonmember/API failure and guard adjacent storage.
 
 **Defined zero-duration waits — P2, B08.** Review finding 19; source-traced.
 
-**Implementation status:** merged in PR 13, unreleased;
+**Implementation status:** merged in PR 13, released in v2.25.0-beta.1;
 see [NSSM-019](fixes/NSSM-019.md) for the reproduced missing poll and defined results.
 
 Make `await_single_handle` perform a nonblocking wait when timeout is zero,
@@ -505,7 +477,7 @@ AppThrottle and stop-delay callers.
 
 ### NSSM 020
 
-**Implementation status:** merged in PR 16, unreleased;
+**Implementation status:** merged in PR 16, released in v2.25.0-beta.1;
 see [NSSM-020](fixes/NSSM-020.md) and [B11 validation](reviews/b11-validation.md).
 
 **GUI borrowed service handle — P2, B11.** Review finding 20; source-traced.
@@ -523,7 +495,7 @@ in a fixture and perform an interactive smoke check.
 
 **Caller-owned install object — P2, B08.** Review finding 21; source-traced.
 
-**Implementation status:** merged in PR 13, unreleased;
+**Implementation status:** merged in PR 13, released in v2.25.0-beta.1;
 see [NSSM-021](fixes/NSSM-021.md) for CLI and hidden-GUI reproduction/coverage.
 
 Keep `install_service` from destroying its caller's service object. Release
@@ -534,7 +506,7 @@ failures through both callers.
 
 ### NSSM 022
 
-**Implementation status:** merged in PR 14, unreleased;
+**Implementation status:** merged in PR 14, released in v2.25.0-beta.1;
 see [NSSM-022](fixes/NSSM-022.md).
 
 **Safe error-log insertions — P2, B09.** Review finding 22; source-traced.
@@ -542,7 +514,7 @@ see [NSSM-022](fixes/NSSM-022.md).
 B03 includes the missing sentinel on the invalid-affinity warning, needed for
 its stricter rejection path. B05 adds the missing sentinel on the pipe-creation
 failure message while repairing that setup path. The remaining calls and typed wrapper below are
-merged in B09 through PR 14, unreleased.
+merged in B09 through PR 14, released in v2.25.0-beta.1.
 
 1. Pass the formatted return-code string and add missing null terminators at
    the identified log_event calls. Audit all calls against message resources.
@@ -556,7 +528,7 @@ The broader wrapper can be a follow-up commit after the direct fixes.
 
 ### NSSM 023
 
-**Implementation status:** merged in PR 17, unreleased;
+**Implementation status:** merged in PR 17, released in v2.25.0-beta.1;
 see [NSSM-023](fixes/NSSM-023.md) and [B12 validation](reviews/b12-validation.md).
 
 **Dependency reset and merge semantics — P2, B12.** Review finding 23;
@@ -574,7 +546,7 @@ unit tests and query a disposable service after real SCM updates.
 
 ### NSSM 024
 
-**Implementation status:** merged in PR 18, unreleased;
+**Implementation status:** merged in PR 18, released in v2.25.0-beta.1;
 see [NSSM-024](fixes/NSSM-024.md) and [B13 validation](reviews/b13-validation.md).
 
 **Bounded stop, pause and continue waits — P2, B13.** Review finding 24;
@@ -599,7 +571,7 @@ timeout as failure, without regressing startup tests.
 
 ### NSSM 025
 
-**Implementation status:** merged in PR 16, unreleased;
+**Implementation status:** merged in PR 16, released in v2.25.0-beta.1;
 see [NSSM-025](fixes/NSSM-025.md) and [B11 validation](reviews/b11-validation.md).
 
 **Password-confirmation cleanup — P2, B11.** Review follow-up A.
@@ -614,7 +586,7 @@ to another user or process.
 
 ### NSSM 026
 
-**Implementation status:** merged in PR 16, unreleased;
+**Implementation status:** merged in PR 16, released in v2.25.0-beta.1;
 see [NSSM-026](fixes/NSSM-026.md) and [B11 validation](reviews/b11-validation.md).
 
 **Account lookup resource cleanup — P2, B11.** First part of follow-up B.
@@ -628,7 +600,7 @@ and handles balance on every path.
 
 ### NSSM 027
 
-**Implementation status:** merged in PR 16, unreleased;
+**Implementation status:** merged in PR 16, released in v2.25.0-beta.1;
 see [NSSM-027](fixes/NSSM-027.md) and [B11 validation](reviews/b11-validation.md).
 
 **Counted LSA right comparison — P2, B11.** Second part of follow-up B.
@@ -643,7 +615,7 @@ comparison never reads beyond either counted string and recognition is exact.
 
 **Debug-token failure handling — P2, B08.** Follow-up C.
 
-**Implementation status:** merged in PR 13, unreleased;
+**Implementation status:** merged in PR 13, released in v2.25.0-beta.1;
 see [NSSM-028](fixes/NSSM-028.md) for scoped ownership and fatal restoration failures.
 
 Initialize the token handle, check ImpersonateSelf and the retrying
@@ -659,7 +631,7 @@ consistent.
 
 **CPU detection boundaries — P2, B03.** Follow-up D.
 
-**Implementation status:** merged in PR 8, unreleased; see [NSSM-029](fixes/NSSM-029.md).
+**Implementation status:** merged in PR 8, released in v2.25.0-beta.1; see [NSSM-029](fixes/NSSM-029.md).
 
 Bound shifts before evaluation, count set bits correctly, and audit callers
 that assume CPU indices are dense. Use the actual allowed mask in affinity
@@ -670,7 +642,7 @@ supported masks are handled without undefined shifts or phantom CPU choices.
 
 ### NSSM 030
 
-**Implementation status:** merged in PR 15, unreleased;
+**Implementation status:** merged in PR 15, released in v2.25.0-beta.1;
 see [NSSM-030](fixes/NSSM-030.md).
 
 **Read-only configuration export access — P2, B10.** Follow-up E.
@@ -685,7 +657,7 @@ rights. Done when export succeeds with the documented minimum access.
 
 **Checked unsigned numeric parsing — P2, B03.** Follow-up F.
 
-**Implementation status:** merged in PR 8, unreleased; see [NSSM-031](fixes/NSSM-031.md).
+**Implementation status:** merged in PR 8, released in v2.25.0-beta.1; see [NSSM-031](fixes/NSSM-031.md).
 The implementation retains legacy base-zero parsing (decimal, octal and hex),
 leading whitespace and an optional plus sign, while rejecting negatives,
 missing digits, overflow and standalone suffixes.
@@ -703,7 +675,7 @@ Done when each caller enforces its range and documents any newly rejected input.
 **Error-message buffer units — P2, B08.** Follow-up G; capacity mismatch
 confirmed, long system-message overflow not reproduced.
 
-**Implementation status:** merged in PR 13, unreleased;
+**Implementation status:** merged in PR 13, released in v2.25.0-beta.1;
 see [NSSM-032](fixes/NSSM-032.md) for guarded capacity tests and automatic
 thread-local buffer ownership replacing manual TLS-slot setup.
 
@@ -715,7 +687,7 @@ and repeated error_string calls retain no stale pointer or extra allocation.
 
 ### NSSM 033
 
-**Implementation status:** merged in PR 15, unreleased;
+**Implementation status:** merged in PR 15, released in v2.25.0-beta.1;
 see [NSSM-033](fixes/NSSM-033.md).
 
 **Initialized AppExit fallback — P2, B10.** First part of follow-up H.
@@ -729,7 +701,7 @@ text; validate alongside NSSM-016's export round trip.
 
 ### NSSM 034
 
-**Implementation status:** merged in PR 16, unreleased;
+**Implementation status:** merged in PR 16, released in v2.25.0-beta.1;
 see [NSSM-034](fixes/NSSM-034.md) and [B11 validation](reviews/b11-validation.md).
 
 **Literal hook environment references — confirmed P2, B11.**
@@ -776,7 +748,7 @@ the original 34-task review and is a release prerequisite.
 
 ### NSSM 037
 
-**Implementation status:** merged in PR 22, unreleased; merge commit
+**Implementation status:** merged in PR 22, released in v2.25.0-beta.1; merge commit
 `6ff83e100dddabc879000c3122b93759c0848a66`. Post-merge matrix, repeated lifecycle
 and packaging checks pass; see [B15 validation](reviews/b15-validation.md).
 
@@ -816,9 +788,9 @@ do not attempt to embed a commit's own hash inside itself. Mark "fixed" only
 after merge and required checks. Mark "released" only when the public tag and
 matching artifacts exist.
 
-Existing CONT records are backfilled now. They remain **fixed but unreleased**
-for code fixes, and **implemented but unreleased** for build infrastructure.
-Review tasks remain planned or in progress until their own implementation lands.
+Existing CONT records are backfilled and released in v2.25.0-beta.1, along
+with all 37 review/acceptance tasks. New findings must retain their actual
+state until their implementation and release are verified.
 
 ## Release and comparison acceptance
 
