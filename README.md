@@ -14,10 +14,10 @@ the [implementation plan](docs/remediation-plan.md) for review findings and thei
 and [comparing builds](docs/comparing-builds.md) for exact legacy baselines,
 behavior differences and release identification.
 
-The second public beta includes 34 additional fixes to service supervision, logging,
-configuration editing and export. For 64-bit Windows use the x64 Release ZIP.
+The third public beta fixes shared log writes, startup reporting and configuration
+backups. For 64-bit Windows use the x64 Release ZIP.
 The release also provides x86 and Debug builds, symbols, source and SHA-256
-checksums. The executables are unsigned. [Beta.2 downloads](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.2) · [Release notes](docs/releases/v2.25.0-beta.2.md)
+checksums. The executables are unsigned. [Beta.3 downloads](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.3) · [Release notes](docs/releases/v2.25.0-beta.3.md)
 
 ## Build
 

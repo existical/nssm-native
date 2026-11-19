@@ -100,7 +100,13 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Build and test candidate packages from the source archive
         shell: pwsh
-        run: ./scripts/package.ps1 -Commit (git rev-parse HEAD) -OutputDirectory dist/candidate -EnableScmTests
+        run: |
+          $options = @{}
+          $tags = @(git tag --points-at HEAD --list 'v[0-9]*' | Where-Object { $_ -match '^v\d+\.\d+\.\d+(-(beta|rc)\.\d+)?$' })
+          if ($LASTEXITCODE) { throw 'Could not read release tags.' }
+          if ($tags.Count -gt 1) { throw 'Multiple release tags identify this commit.' }
+          if ($tags.Count -eq 1) { $options.Tag = $tags[0] }
+          ./scripts/package.ps1 -Commit (git rev-parse HEAD) -OutputDirectory dist/candidate -EnableScmTests @options
       - name: Verify checksums and archive identity
         shell: pwsh
         run: ./tests/package.ps1 -PackageDirectory dist/candidate -WorkDirectory build

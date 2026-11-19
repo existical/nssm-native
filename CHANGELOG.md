@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.25.0-beta.3
+
+- Preserve concurrent log writes and report startup progress during configured rotation delays.
+- Preserve redirected Unicode, long arguments, registry string types, dynamic working directories and empty replacement environments during configuration edits and backups.
+- Honor delegated service removal, reject oversized GUI names before confirmation and report additional configuration failures.
+- Test upgrade and rollback against the packaged x64 Release executable and verify matching symbols and test evidence. [Release notes](docs/releases/v2.25.0-beta.3.md)
+
 ## 2.25.0-beta.2
 
 - Fix child relaunch, stop confirmation, resume timing, exit monitoring and manual log rotation.

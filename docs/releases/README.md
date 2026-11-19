@@ -1,5 +1,6 @@
 # Preparing NSSM Native releases
 
+The [third beta](v2.25.0-beta.3.md) includes the subsequent logging, configuration and service-management repairs.
 The [second beta](v2.25.0-beta.2.md) includes fixes NSSM-038 through NSSM-071.
 The [first beta](v2.25.0-beta.1.md), published on 5 November 2026, introduced
 NSSM-001 through NSSM-037 and CONT-001 through CONT-005. Its historical
@@ -28,8 +29,8 @@ retains logs and JUnit results. SOURCE_DATE_EPOCH is set to the commit timestamp
 for version dates. This does not promise byte-for-byte reproducible binaries.
 
 Use `-EnableScmTests` only on an elevated disposable Windows host. It enables
-the four owned-service suites for x64 Release: export, dependencies, native
-controls and the NSSM-wrapped application lifecycle. Other configurations stay
+five owned-service suites for x64 Release covering export, dependencies, native
+controls, the NSSM-wrapped application lifecycle and pinned legacy upgrade/rollback. Other configurations stay
 unprivileged. The CI `Release packaging` job runs this mode after the four
 ordinary matrix jobs pass, then verifies all checksums and source identity.
 CI produces five required jobs for this workflow. Failed builds/tests do not
@@ -57,13 +58,13 @@ Preserve all original upstream tags. Prepare docs/releases/<tag>.md and commit
 the actual included IDs, compatibility changes, evidence and known limits
 before tagging. Candidate preparation may use an unpublished local annotated
 tag on that clean commit so the actual beta version can be built and tested.
-The second beta uses `v2.25.0-beta.2`.
+The third beta uses `v2.25.0-beta.3`. When CI checks out an exact release tag, it passes that tag to the packager.
 
 ```powershell
 # Run only at the candidate commit, after the local tag has been prepared.
 $revision = git rev-parse HEAD
-./scripts/package.ps1 -Commit $revision -Tag v2.25.0-beta.2
-./tests/package.ps1 -PackageDirectory dist/v2.25.0-beta.2 -WorkDirectory build
+./scripts/package.ps1 -Commit $revision -Tag v2.25.0-beta.3
+./tests/package.ps1 -PackageDirectory dist/v2.25.0-beta.3 -WorkDirectory build
 ```
 
 The script verifies that tag and HEAD agree and version generation selects it.
