@@ -1,23 +1,15 @@
 # Preparing NSSM Native releases
 
-The first public continuation release is [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1), published as a beta on
-5 November 2026. All 37 identified fixes and CONT-001 through CONT-005 are
-included. The original tag and packages retain tested commit
-`739b5feabdc768a4524fe28bad2c000b05ee5e07`.
-See the [release notes](v2.25.0-beta.1.md),
-[verified publication record](v2.25.0-beta.1-publication.json),
-[candidate history](candidate.md), [fix index](../fixes/README.md) and
-[QRScanner acceptance checklist](qrscanner-beta-acceptance.md).
+The [second beta](v2.25.0-beta.2.md) includes fixes NSSM-038 through NSSM-071.
+The [first beta](v2.25.0-beta.1.md), published on 5 November 2026, introduced
+NSSM-001 through NSSM-037 and CONT-001 through CONT-005. Its historical
+tag identifies commit `739b5feabdc768a4524fe28bad2c000b05ee5e07`.
+See the [fix index](../fixes/README.md) for implementation and test coverage.
 
 PR 23 merged at `b15004563498180d9f544ddbfbbecb7d98289656`;
 [post-merge CI](https://github.com/existical/nssm-native/actions/runs/42001713362)
 passed all five jobs before publication. Subsequent documentation changes
 record the release without changing the tested package bytes.
-
-The [completed QRScanner record](qrscanner-beta-results.md) now includes a passed
-24-hour x64/LocalSystem trial, reboot and exact legacy rollback. Its test-only
-helper exception and separate production adoption requirement remain explicit.
-The candidate tag and packages retain their original tested identities.
 
 From a clean checkout with full history and tags:
 
@@ -65,13 +57,13 @@ Preserve all original upstream tags. Prepare docs/releases/<tag>.md and commit
 the actual included IDs, compatibility changes, evidence and known limits
 before tagging. Candidate preparation may use an unpublished local annotated
 tag on that clean commit so the actual beta version can be built and tested.
-The first candidate uses `v2.25.0-beta.1`; later RC/stable names remain unassigned.
+The second beta uses `v2.25.0-beta.2`.
 
 ```powershell
 # Run only at the candidate commit, after the local tag has been prepared.
 $revision = git rev-parse HEAD
-./scripts/package.ps1 -Commit $revision -Tag v2.25.0-beta.1
-./tests/package.ps1 -PackageDirectory dist/v2.25.0-beta.1 -WorkDirectory build
+./scripts/package.ps1 -Commit $revision -Tag v2.25.0-beta.2
+./tests/package.ps1 -PackageDirectory dist/v2.25.0-beta.2 -WorkDirectory build
 ```
 
 The script verifies that tag and HEAD agree and version generation selects it.
@@ -97,12 +89,3 @@ and the [upgrade/rollback rehearsal](upgrade-rehearsal.md). Before a stable rele
 real applications, interactive GUI/account configuration and the Windows
 versions being advertised. Current automated coverage alone does not establish
 support for every historical Windows version or domain configuration.
-
-For the first beta, the complete `nssm-native-v2.25.0-beta.1-candidate.zip`
-retains the original 25 checksummed files and `SHA256SUMS.txt`, including the
-`evidence/` directory. The release also provides individual archives and the
-manifest. `RELEASE-ASSETS-SHA256SUMS.txt` covers the separately uploaded assets,
-including supplemental release notes and sanitized acceptance summaries.
-All 13 assets were downloaded anonymously and their hashes verified after
-publication. Original archives retain the earlier preparation documentation;
-the supplemental acceptance and publication records state the later outcomes.

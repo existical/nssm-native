@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.25.0-beta.2
 
 - Fix child relaunch, stop confirmation, resume timing, exit monitoring and manual log rotation.
 - Preserve raw configuration during GUI edits, propagate save errors and repair missing wrapper parameters from the CLI.
@@ -11,18 +11,10 @@
 
 First public beta of the NSSM Native continuation, including CONT-001 through
 CONT-005 and NSSM-001 through NSSM-037. All implementations are merged.
-See the [beta notes](docs/releases/v2.25.0-beta.1.md),
-[publication record](docs/releases/v2.25.0-beta.1-publication.json) and
-[QRScanner acceptance checklist](docs/releases/qrscanner-beta-acceptance.md).
+See the [beta notes](docs/releases/v2.25.0-beta.1.md) and [publication record](docs/releases/v2.25.0-beta.1-publication.json).
 The tag and original packages retain tested source commit
 `739b5feabdc768a4524fe28bad2c000b05ee5e07`; later documentation records acceptance
 and publication without rebuilding the candidate.
-
-- Record the supplied [QRScanner beta acceptance](docs/releases/qrscanner-beta-results.md):
-  24 monitored hours, 289 samples, no observed wrapper/application restart,
-  preserved data/configuration, exact legacy rollback and verified cleanup.
-  Retain a sanitized result summary and the test-only helper/production adoption
-  distinction. Original receipts remain local; the tested beta packages are unchanged.
 
 - Protect startup and monitor publication against concurrent STOP. Startup owns
   its wait handle, rechecks cancellation before launching/registering, and

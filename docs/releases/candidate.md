@@ -3,8 +3,6 @@
 Status: published as [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) on 5 November 2026. See the
 [release notes](v2.25.0-beta.1.md) and [publication record](v2.25.0-beta.1-publication.json).
 The tag remains at the original tested source commit, `739b5feabdc768a4524fe28bad2c000b05ee5e07`.
-The [QRScanner checklist](qrscanner-beta-acceptance.md) remains reusable for
-subsequent application acceptance.
 Candidate artifacts are identified by the full commit in build-info.json.
 All original tags and history are preserved. The legacy development comparison
 baseline is v2.24-103-gdee49fc (`dee49fc1a0804f06687299b8e9612a3fce1c5e9a`),
@@ -59,19 +57,9 @@ Its validation record identifies the exact comparison builds;
 this controlled workload does not establish deployment compatibility for every
 application.
 
-The supplied [QRScanner acceptance](qrscanner-beta-results.md) passed on
-4 November 2026 at 16:38 Riga: Windows 11 x64/LocalSystem, reboot, 24 monitored
-hours, 289 samples, 339,235 received events, no observed wrapper/application
-restarts and exact legacy rollback. This used the unchanged beta bytes and a
-test-only application helper admitting their hash. QRScanner's production helper
-still rejects that hash; its helper/provenance adoption change remains separate.
-
 Remaining acceptance gaps include other applications, domain accounts, manual
 GUI/accessibility, other Windows builds, large process trees, concurrent hook
-storms, signing and production QRScanner installer/helper adoption. No broad OS
-compatibility or production-soak claim is made. CI artifacts may
-expire; this beta publishes the original packages, manifest and build/test
-evidence as release assets.
+storms and signing. The release notes document the tested configurations.
 
 See [release preparation](README.md) for package commands and publication steps,
 and [B14 validation](../reviews/b14-validation.md) for observed results.

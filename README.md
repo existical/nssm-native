@@ -14,18 +14,10 @@ the [implementation plan](docs/remediation-plan.md) for review findings and thei
 and [comparing builds](docs/comparing-builds.md) for exact legacy baselines,
 behavior differences and release identification.
 
-The first public beta, [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1), is available for testing. It includes all
-37 recorded review/acceptance fixes and CONT-001 through CONT-005. Download
-[x64 Release](https://github.com/existical/nssm-native/releases/download/v2.25.0-beta.1/nssm-native-v2.25.0-beta.1-x64-Release.zip)
-for normal 64-bit Windows testing; the release also supplies x86 builds, Debug
-builds, source, symbols, checksums and build/test evidence. The binaries are unsigned.
-
-See the [beta notes](docs/releases/v2.25.0-beta.1.md) for package identities and
-acceptance limits. The [QRScanner trial](docs/releases/qrscanner-beta-results.md)
-passed 24 monitored hours, reboot and exact rollback on Windows 11 x64/LocalSystem.
-It used a test-only helper admission change; production QRScanner adoption needs
-a separate helper/provenance update. Broader compatibility testing is needed
-before a stable release.
+The second public beta includes 34 additional fixes to service supervision, logging,
+configuration editing and export. For 64-bit Windows use the x64 Release ZIP.
+The release also provides x86 and Debug builds, symbols, source and SHA-256
+checksums. The executables are unsigned. [Beta.2 downloads](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.2) · [Release notes](docs/releases/v2.25.0-beta.2.md)
 
 ## Build
 
