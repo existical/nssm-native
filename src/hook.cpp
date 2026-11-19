@@ -279,7 +279,7 @@ int nssm_hook(hook_thread_t *hook_threads, nssm_service_t *service, TCHAR *hook_
   SetEnvironmentVariable(NSSM_HOOK_ENV_START_REQUESTED_COUNT, number);
 
   /* Times the service actually did start. */
-  _sntprintf_s(number, _countof(number), _TRUNCATE, _T("%lu"), service->start_count);
+  _sntprintf_s(number, _countof(number), _TRUNCATE, _T("%lu"), (unsigned long) service->start_count);
   SetEnvironmentVariable(NSSM_HOOK_ENV_START_COUNT, number);
 
   /* Times the service exited. */
