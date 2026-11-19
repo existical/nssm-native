@@ -68,7 +68,7 @@ struct output_file {
   ~output_file() { if (! DeleteFileW(path)) service_fixture::cleanup_failed = true; }
 };
 struct result { DWORD code; std::wstring output; };
-static result run(const std::wstring &exe, const std::wstring &arguments, bool read_only_output = false) {
+static result run(const std::wstring &exe, const std::wstring &arguments, bool read_only_output = false, DWORD timeout = 10000) {
   output_file file;
   SECURITY_ATTRIBUTES security = {sizeof(security), NULL, TRUE};
   HANDLE output = CreateFileW(file.path, read_only_output ? GENERIC_READ : GENERIC_WRITE, FILE_SHARE_READ, &security, OPEN_EXISTING, 0, NULL);
@@ -85,7 +85,7 @@ static result run(const std::wstring &exe, const std::wstring &arguments, bool r
   BOOL created = CreateProcessW(exe.c_str(), &command[0], NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &process);
   CloseHandle(output); CloseHandle(input); require(created != FALSE, "Launch isolated NSSM command");
   CloseHandle(process.hThread);
-  DWORD waited = WaitForSingleObject(process.hProcess, 10000);
+  DWORD waited = WaitForSingleObject(process.hProcess, timeout);
   if (waited != WAIT_OBJECT_0) {
     fwprintf(stderr, L"Fixture command '%ls' failed to finish (wait result %lu)\n", arguments.c_str(), waited);
     TerminateProcess(process.hProcess, 9);

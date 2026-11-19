@@ -1621,6 +1621,15 @@ int remove_service(nssm_service_t *service) {
   return 0;
 }
 
+/* The SCM can already be reporting START_PENDING with checkpoint zero and
+   its own short wait hint before the wrapper registers its handler. */
+static void report_start_pending(nssm_service_t *service) {
+  service->status.dwCurrentState = SERVICE_START_PENDING;
+  service->status.dwWaitHint = NSSM_SERVICE_STATUS_DEADLINE + NSSM_WAITHINT_MARGIN;
+  ++service->status.dwCheckPoint;
+  SetServiceStatus(service->status_handle, &service->status);
+}
+
 /* Service initialisation */
 void WINAPI service_main(unsigned long argc, TCHAR **argv) {
   nssm_service_t *service = alloc_nssm_service();
@@ -1654,11 +1663,8 @@ void WINAPI service_main(unsigned long argc, TCHAR **argv) {
     return;
   }
 
+  report_start_pending(service);
   log_service_control(service->name, 0, true);
-
-  service->status.dwCurrentState = SERVICE_START_PENDING;
-  service->status.dwWaitHint = NSSM_SERVICE_STATUS_DEADLINE + NSSM_WAITHINT_MARGIN;
-  SetServiceStatus(service->status_handle, &service->status);
 
   if (is_admin) create_exit_action(service->name, exit_action_strings[0], false);
 
@@ -1943,10 +1949,9 @@ int start_service(nssm_service_t *service) {
   if (! restart_allowed(service)) return 0;
   service->stopping = false;
 
-  service->status.dwCurrentState = SERVICE_START_PENDING;
   service->status.dwControlsAccepted = SERVICE_ACCEPT_SHUTDOWN | SERVICE_ACCEPT_STOP;
   if (service->power_port) service->status.dwControlsAccepted |= SERVICE_ACCEPT_POWEREVENT;
-  SetServiceStatus(service->status_handle, &service->status);
+  report_start_pending(service);
 
   unsigned long control = NSSM_SERVICE_CONTROL_START;
 
@@ -1991,6 +1996,7 @@ int start_service(nssm_service_t *service) {
     if (service->affinity) flags |= CREATE_SUSPENDED;
     if (! service->no_console) flags |= CREATE_NEW_CONSOLE;
 
+    report_start_pending(service);
     if (! CreateProcess(0, cmd, 0, 0, inherit_handles, flags, 0, service->dir, &si, &pi)) {
       unsigned long exitcode = 3;
       unsigned long error = GetLastError();

@@ -295,6 +295,18 @@ static int run_start() {
 
 void test_startup() {
   registry_fixture registry;
+  // An early CLI poll sees the SCM's initial two-second hint. The wrapper's
+  // first report must advance that checkpoint even if no child exists yet.
+  nssm_service_t *wrapper = new nssm_service_t();
+  wait_test::active = true;
+  report_start_pending(wrapper);
+  wait_test::active = false;
+  CHECK(wrapper->status.dwCurrentState == SERVICE_START_PENDING && wrapper->status.dwCheckPoint == 1);
+  scm::reset({{0, SERVICE_START_PENDING, 0, 2000},
+              {100, wrapper->status.dwCurrentState, wrapper->status.dwCheckPoint, wrapper->status.dwWaitHint},
+              {6000, SERVICE_RUNNING}});
+  CHECK(run_start() == 0);
+  delete wrapper;
   // Missing parameters (a native service), then all relevant AppThrottle values.
   const DWORD throttles[] = { MAXDWORD, 0, 1, 1500, 120000 };
   for (unsigned i = 0; i < _countof(throttles); i++) {

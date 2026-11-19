@@ -114,9 +114,9 @@ struct fixture : service_fixture {
     }
   }
 };
-static void command(const std::wstring &nssm, const std::wstring &args) {
-  result r = run(nssm, args);
-  if (r.code) fwprintf(stderr, L"%ls\n", r.output.c_str());
+static void command(const std::wstring &nssm, const std::wstring &args, DWORD timeout = 10000) {
+  result r = run(nssm, args, false, timeout);
+  if (r.code) fwprintf(stderr, L"Command %ls exited %lu\n%ls\n", args.c_str(), r.code, r.output.c_str());
   require(! r.code, "Lifecycle CLI command succeeds");
 }
 static int test(const std::wstring &nssm) {
@@ -157,15 +157,15 @@ static int test(const std::wstring &nssm) {
           service_fixture::set(key, std::wstring(event) == L"Stop" ? L"Pre" : L"Post", hook_command, REG_EXPAND_SZ); RegCloseKey(key);
         }
         require(ChangeServiceConfigW(owned.service, SERVICE_NO_CHANGE, SERVICE_DEMAND_START, SERVICE_NO_CHANGE, NULL, NULL, NULL, NULL, NULL, NULL, NULL) != FALSE, "Enable owned wrapper");
-        command(nssm, L"start " + quoted(owned.name));
+        command(nssm, L"start " + quoted(owned.name), 60000);
         observer first, first_child; first.attach(file(dir.path, L"app.pid")); first_child.attach(file(dir.path, L"child.pid"));
         write(file(dir.path, L"crash"), "crash");
         observer restarted, restarted_child; restarted.attach(file(dir.path, L"app.pid"), first.pid); restarted_child.attach(file(dir.path, L"child.pid"), first_child.pid);
         first.exited("crashed root"); first_child.exited("crashed root descendant");
-        command(nssm, L"stop " + quoted(owned.name)); restarted.exited("restart root"); restarted_child.exited("restart descendant");
-        command(nssm, L"start " + quoted(owned.name));
+        command(nssm, L"stop " + quoted(owned.name), 60000); restarted.exited("restart root"); restarted_child.exited("restart descendant");
+        command(nssm, L"start " + quoted(owned.name), 60000);
         observer second, second_child; second.attach(file(dir.path, L"app.pid"), restarted.pid); second_child.attach(file(dir.path, L"child.pid"), restarted_child.pid);
-        command(nssm, L"stop " + quoted(owned.name)); second.exited("second root"); second_child.exited("second descendant");
+        command(nssm, L"stop " + quoted(owned.name), 60000); second.exited("second root"); second_child.exited("second descendant");
         std::string out = read(file(dir.path, L"stdout.log")), err = read(file(dir.path, L"stderr.log"));
         const char *tokens[] = {"stdin-and-environment-ok", "stdout-final-tail", "hook-start-quoted-ok", "hook-stop-quoted-ok", "hook-exit-quoted-ok"};
         for (const char *token : tokens) require(out.find(token) != std::string::npos, "Captured application and hook output");
