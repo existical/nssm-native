@@ -44,6 +44,40 @@ static BOOL WINAPI show(HWND h, int mode) {
   if (! GetParent(h) && mode == SW_SHOW) PostMessage(h, WM_COMMAND, IDCANCEL, 0);
   return ShowWindow(h, SW_HIDE);
 }
+static unsigned labels, browse_calls;
+static bool long_filter;
+static TCHAR *label(DWORD id) {
+  TCHAR *value;
+  if (long_filter && id == NSSM_GUI_BROWSE_FILTER_APPLICATIONS) {
+    value = (TCHAR *) LocalAlloc(LPTR, 300 * sizeof(TCHAR));
+    REQUIRE(value);
+    std::fill_n(value, 299, _T('a'));
+  } else value = message_string(id);
+  if (value) ++labels;
+  return value;
+}
+static HLOCAL WINAPI release_label(HLOCAL p) {
+  REQUIRE(labels > 0);
+  --labels;
+  return LocalFree(p);
+}
+static BOOL WINAPI browse_file(LPOPENFILENAME info) {
+  ++browse_calls;
+  CHECK(info->lpstrTitle && *info->lpstrTitle && (info->Flags & OFN_NOCHANGEDIR));
+  if (long_filter) CHECK(!info->lpstrFilter);
+  else {
+    const TCHAR *p = info->lpstrFilter;
+    REQUIRE(p && *p);
+    for (const TCHAR *pattern : {_T("*.exe;*.bat;*.cmd"), _T("*.*")}) {
+      REQUIRE(*p);
+      p += _tcslen(p) + 1;
+      CHECK(!_tcscmp(p, pattern));
+      p += _tcslen(p) + 1;
+    }
+    CHECK(!*p);
+  }
+  return FALSE;
+}
 static void reset() { REQUIRE(allocations.empty()); active = true; closes = saves = 0; save_result = read_failure = 0; fail_after = -1; known_account = NULL; }
 static void finish() {
   CHECK(allocations.empty());
@@ -61,7 +95,14 @@ static void finish() {
 #undef GetDlgItemText
 #define GetDlgItemText gui_test::text
 #define set_hook gui_test::write_hook
+#define message_string gui_test::label
+#define LocalFree gui_test::release_label
+#undef GetOpenFileName
+#define GetOpenFileName gui_test::browse_file
 #include "../src/gui.cpp"
+#undef message_string
+#undef LocalFree
+#undef GetOpenFileName
 #undef set_hook
 #undef popup_message
 #undef HeapAlloc
@@ -81,6 +122,16 @@ void test_install_gui() {
   HWND window = dialog(MAKEINTRESOURCE(IDD_INSTALL), NULL, nssm_dlg, reinterpret_cast<LPARAM>(defaults));
   delete defaults;
   REQUIRE(window && ! IsWindowVisible(window));
+  CHECK(gui_test::labels == 0);
+  for (unsigned i = 0; i < 10; i++) set_hook_tab(0, 0, false);
+  CHECK(gui_test::labels == 0);
+  for (bool oversized : {false, true}) {
+    gui_test::long_filter = oversized;
+    browse(window, _T(""), 0, NSSM_GUI_BROWSE_FILTER_APPLICATIONS, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
+    CHECK(gui_test::labels == 0);
+  }
+  gui_test::long_filter = false;
+  CHECK(gui_test::browse_calls == 2);
   const std::basic_string<TCHAR> maximum(256, _T('n'));
   const auto oversized = maximum + _T('x');
   SetDlgItemText(window, IDC_NAME, oversized.c_str());
@@ -95,6 +146,20 @@ void test_install_gui() {
   SetDlgItemText(tablist[NSSM_TAB_DETAILS], IDC_DISPLAYNAME, maximum.c_str());
   CHECK(configure(window, draft, NULL) == 0);
   CHECK(maximum == draft->name && maximum == draft->displayname);
+  TCHAR field[5];
+  HWND application = tablist[NSSM_TAB_APPLICATION];
+  SetDlgItemText(application, IDC_DIR, _T("1234"));
+  CHECK(read_edit_text(application, IDC_DIR, field, _countof(field)) && !_tcscmp(field, _T("1234")));
+  SetDlgItemText(application, IDC_DIR, _T("12345"));
+  CHECK(!read_edit_text(application, IDC_DIR, field, _countof(field)));
+  gui_test::reset(); gui_test::read_failure = IDC_DIR;
+  CHECK(configure(window, draft, NULL) == 3);
+  gui_test::finish();
+  SetDlgItemText(application, IDC_DIR, _T(""));
+  std::wstring long_description(_countof(draft->description), L'x');
+  SetDlgItemText(tablist[NSSM_TAB_DETAILS], IDC_DESCRIPTION, long_description.c_str());
+  CHECK(configure(window, draft, NULL) == 5);
+  SetDlgItemText(tablist[NSSM_TAB_DETAILS], IDC_DESCRIPTION, _T(""));
   cleanup_nssm_service(draft);
   SetDlgItemText(window, IDC_NAME, _T("NSSM-Test-Install"));
   SetDlgItemText(tablist[NSSM_TAB_DETAILS], IDC_DISPLAYNAME, _T(""));
@@ -109,6 +174,13 @@ void test_install_gui() {
   CHECK(install(window) == 6);
   gui_test::fail_hook_save = false;
   install_test::finish();
+  for (unsigned scenario : {6U, 7U}) {
+    install_test::reset(scenario);
+    SendDlgItemMessage(tablist[NSSM_TAB_DETAILS], IDC_STARTUP, CB_SETCURSEL,
+      scenario == 6 ? NSSM_STARTUP_DELAYED : NSSM_STARTUP_AUTOMATIC, 0);
+    CHECK(install(window) == (scenario == 6 ? 6 : 0));
+    install_test::finish();
+  }
   DestroyWindow(window);
 }
 

@@ -121,6 +121,7 @@ typedef struct {
   FILETIME creation_time;
   FILETIME exit_time;
   TCHAR *initial_env;
+  bool environment_restore_failed;
   unsigned long last_control;
   unsigned long start_requested_count;
   volatile LONG start_count;
@@ -154,7 +155,7 @@ int set_service_description(const TCHAR *, SC_HANDLE, TCHAR *);
 int get_service_description(const TCHAR *, SC_HANDLE, unsigned long, TCHAR *);
 int get_service_startup(const TCHAR *, SC_HANDLE, const QUERY_SERVICE_CONFIG *, unsigned long *);
 int get_service_username(const TCHAR *, const QUERY_SERVICE_CONFIG *, TCHAR **, size_t *);
-void set_service_environment(nssm_service_t *);
+int set_service_environment(nssm_service_t *);
 void unset_service_environment(nssm_service_t *);
 int pre_install_service(int, TCHAR **);
 int pre_remove_service(int, TCHAR **);

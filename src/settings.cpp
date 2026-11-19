@@ -397,9 +397,10 @@ static int setting_set_affinity(const TCHAR *service_name, void *param, const TC
     }
   }
 
-  if (RegSetValueEx(key, name, 0, REG_SZ, (const unsigned char *) canon, (unsigned long) (_tcslen(canon) + 1) * sizeof(TCHAR)) != ERROR_SUCCESS) {
+  long write_error = RegSetValueEx(key, name, 0, REG_SZ, (const unsigned char *) canon, (unsigned long) (_tcslen(canon) + 1) * sizeof(TCHAR));
+  if (write_error != ERROR_SUCCESS) {
     if (canon != value->string) HeapFree(GetProcessHeap(), 0, canon);
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, name, error_string(GetLastError()));
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, name, error_string(write_error));
     return -1;
   }
 
@@ -473,6 +474,10 @@ static int setting_set_environment(const TCHAR *service_name, void *param, const
     }
   }
 
+  if (op > 0 && (!value->string[1] || value->string[1] == _T('=') || !_tcschr(value->string + 1, _T('=')))) {
+    print_message(stderr, NSSM_GUI_INVALID_ENVIRONMENT);
+    return -1;
+  }
   if (op) {
     string++;
     TCHAR *env = 0;
@@ -497,10 +502,15 @@ static int setting_set_environment(const TCHAR *service_name, void *param, const
     }
   }
 
-  /* A lone replacement prefix denotes a present, empty block. */
-  if (!op && value && value->string && str_equiv(value->string, _T(":"))) {
+  bool explicit_empty = value && value->string && str_equiv(value->string, _T(":"));
+  bool empty_replacement = op < 0 && unformatted && !*unformatted && str_equiv(name, NSSM_REG_ENV);
+  if (explicit_empty || empty_replacement) {
+    if (unformatted) HeapFree(GetProcessHeap(), 0, unformatted);
     const TCHAR empty[2] = {};
-    return RegSetValueEx(key, name, 0, REG_MULTI_SZ, (const BYTE *) empty, sizeof(empty)) == ERROR_SUCCESS ? 1 : -1;
+    long error = RegSetValueEx(key, name, 0, REG_MULTI_SZ, (const BYTE *)empty, sizeof(empty));
+    if (!error) return 1;
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, name, error_string(error));
+    return -1;
   }
   if (! string || ! string[0]) {
     if (unformatted) HeapFree(GetProcessHeap(), 0, unformatted);
@@ -520,9 +530,10 @@ static int setting_set_environment(const TCHAR *service_name, void *param, const
     return -1;
   }
 
-  if (RegSetValueEx(key, name, 0, REG_MULTI_SZ, (const unsigned char *) unformatted, (unsigned long) newlen * sizeof(TCHAR)) != ERROR_SUCCESS) {
+  long write_error = RegSetValueEx(key, name, 0, REG_MULTI_SZ, (const unsigned char *) unformatted, (unsigned long) newlen * sizeof(TCHAR));
+  if (write_error != ERROR_SUCCESS) {
     if (newlen) HeapFree(GetProcessHeap(), 0, unformatted);
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, NSSM_REG_ENV, error_string(GetLastError()));
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, name, error_string(write_error));
     return -1;
   }
 

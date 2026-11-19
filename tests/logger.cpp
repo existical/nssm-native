@@ -19,7 +19,12 @@ static bool stream_test, fail_info, fail_size, fail_move, fail_truncate, fail_re
 static std::string stream_input;
 static size_t read_position;
 static bool check_short_output;
-static DWORD read_chunk, short_write;
+static DWORD read_chunk, short_write, ticks_per_byte, manual_at;
+static unsigned move_attempts;
+static bool fail_first_move;
+static DWORD WINAPI ticks() {
+  return stream_test ? MAXDWORD - 1500 + static_cast<DWORD>(read_position) * ticks_per_byte : GetTickCount();
+}
 static LONGLONG fail_after;
 static ULONGLONG bytes_written;
 static unsigned rotations, write_errors;
@@ -27,6 +32,10 @@ static std::vector<std::basic_string<TCHAR> > rotated_paths;
 static SYSTEMTIME fixed_time = {2026, 11, 1, 2, 3, 4, 5, 6};
 static BOOL WINAPI read(HANDLE h, LPVOID data, DWORD size, LPDWORD count, LPOVERLAPPED overlap) {
   if (!stream_test || GetFileType(h) == FILE_TYPE_DISK) return ReadFile(h, data, size, count, overlap);
+  if (manual_at && read_position >= manual_at) {
+    InterlockedExchange(&static_cast<logger_t *>(deferred_argument)->rotate_online, NSSM_ROTATE_ONLINE_ASAP);
+    manual_at = 0;
+  }
   if (check_short_output && read_position == stream_input.size()) CHECK(bytes_written == stream_input.size());
   if (fail_read) { *count = 0; SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
   *count = static_cast<DWORD>((std::min)(size_t((std::min)(size, read_chunk)), stream_input.size() - read_position));
@@ -43,7 +52,8 @@ static BOOL WINAPI file_size(HANDLE h, PLARGE_INTEGER size) {
 }
 static void WINAPI now(LPSYSTEMTIME value) { if (stream_test || fixed_rotation_clock) *value = fixed_time; else rotation_test::now(value); }
 static BOOL WINAPI move(LPCTSTR from, LPCTSTR to) {
-  if (stream_test && fail_move) { SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
+  if (stream_test) ++move_attempts;
+  if (stream_test && (fail_move || (fail_first_move && move_attempts == 1))) { SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
   BOOL result = rotation_test::move(from, to);
   if (stream_test && result) rotated_paths.push_back(to);
   return result;
@@ -179,7 +189,9 @@ static void console(nssm_service_t *) {}
 #define GetFileInformationByHandle logger_test::information
 #define Sleep rotation_test::sleep
 #define GetSystemTime logger_test::now
+#define GetTickCount logger_test::ticks
 #include "../src/io.cpp"
+#undef GetTickCount
 #undef CopyFile
 #undef MoveFile
 #undef GetFileInformationByHandle

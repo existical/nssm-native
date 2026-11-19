@@ -102,13 +102,8 @@ static int set_environment_block(TCHAR *env, bool set, bool expand = true) {
       *t++ = _T('\0');
       if (set) {
         TCHAR *expanded = expand ? expand_environment_string(t) : NULL;
-        if (expanded) {
-          if (! SetEnvironmentVariable(s, expanded)) ret++;
-          HeapFree(GetProcessHeap(), 0, expanded);
-        }
-        else {
-          if (! SetEnvironmentVariable(s, t)) ret++;
-        }
+        if ((expand && !expanded) || !SetEnvironmentVariable(s, expand ? expanded : t)) ret++;
+        if (expanded) HeapFree(GetProcessHeap(), 0, expanded);
       }
       else {
         if (! SetEnvironmentVariable(s, NULL)) ret++;
@@ -188,12 +183,12 @@ int test_environment(TCHAR *env) {
   modifies its inputs, this function takes a copy of the input and operates
   on that.
 */
-void duplicate_environment_strings(TCHAR *env) {
+int duplicate_environment_strings(TCHAR *env) {
   TCHAR *newenv = copy_environment_block(env);
-  if (! newenv) return;
-
-  duplicate_environment(newenv);
+  if (!newenv) return 1;
+  int result = duplicate_environment(newenv);
   HeapFree(GetProcessHeap(), 0, newenv);
+  return result;
 }
 
 /* Safely get a copy of the current environment. */

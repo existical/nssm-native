@@ -1,4 +1,5 @@
 #include "nssm.h"
+#include <algorithm>
 
 #define COMPLAINED_READ (1 << 0)
 #define COMPLAINED_WRITE (1 << 1)
@@ -909,8 +910,14 @@ static bool rotate_logger(logger_t *logger, ULONGLONG *size, bool *size_known, i
     logger->write_handle = write_to_file(logger->path, logger->sharing, NULL, OPEN_ALWAYS, logger->flags);
     if (logger->write_handle == INVALID_HANDLE_VALUE) return false;
   }
-  if (ok) log_event(EVENTLOG_INFORMATION_TYPE, NSSM_EVENT_ROTATED, logger->service_name, logger->path, rotated);
+  if (ok) {
+    logger->rotation_retry_delay = 0;
+    *complained &= ~COMPLAINED_ROTATE;
+    log_event(EVENTLOG_INFORMATION_TYPE, NSSM_EVENT_ROTATED, logger->service_name, logger->path, rotated);
+  }
   else {
+    logger->last_rotation_failure = GetTickCount();
+    logger->rotation_retry_delay = logger->rotation_retry_delay ? (std::min)(60000UL, 2 * logger->rotation_retry_delay) : 1000;
     if (! (*complained & COMPLAINED_ROTATE)) log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, logger->service_name, logger->path, function, rotated, error_string(error));
     *complained |= COMPLAINED_ROTATE;
   }
@@ -989,7 +996,8 @@ unsigned long WINAPI log_and_rotate(void *arg) {
       offset = end;
       LONG rotation = InterlockedCompareExchange(&logger->rotate_online, 0, 0);
       if (newline && ! InterlockedCompareExchange(&logger->draining, 0, 0) &&
-          (rotation == NSSM_ROTATE_ONLINE_ASAP || (rotation == NSSM_ROTATE_ONLINE && logger->size && size >= logger->size))) {
+          (rotation == NSSM_ROTATE_ONLINE_ASAP || (rotation == NSSM_ROTATE_ONLINE && logger->size && size >= logger->size &&
+           GetTickCount() - logger->last_rotation_failure >= logger->rotation_retry_delay))) {
         if (! rotate_logger(logger, &size, &size_known, &complained)) return finish_logger(logger, 4);
       }
     }

@@ -283,6 +283,14 @@ void test_registry_bounds() {
   using namespace registry_test;
   registry_fixture fixture;
   test_parameter_saves();
+  REQUIRE(!create_messages());
+  DWORD handles = test_handle_count();
+  for (unsigned i = 0; i < 12; i++) {
+    reject_write = i % 3 == 0 ? NULL : (i % 3 == 1 ? _T("EventMessageFile") : _T("TypesSupported"));
+    CHECK(create_messages() == (reject_write ? 3 : 0));
+  }
+  reject_write = NULL;
+  CHECK(test_handle_count() == handles);
   exit_open_error = true;
   CHECK(set_hook(_T("restricted"), NSSM_HOOK_EVENT_START, NSSM_HOOK_ACTION_PRE, _T("")) != 0);
   exit_open_error = false;

@@ -11,9 +11,26 @@ foreach ($line in [IO.File]::ReadAllLines((Join-Path $package 'SHA256SUMS.txt'))
     if (-not $path.StartsWith($package + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Checksum path escapes the package.' }
     if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw "Checksum mismatch: $relative" }
 }
+$checksumFile = Join-Path $package 'SHA256SUMS.txt'
+foreach ($file in Get-ChildItem -LiteralPath $package -Recurse -File -Force) {
+    if ($file.FullName -ne $checksumFile -and !$checkedFiles.ContainsKey($file.FullName)) {
+        throw "Missing checksum entry for $($file.Name)"
+    }
+}
+function Get-PackageArchive([string]$Name) {
+    if (!$Name -or [IO.Path]::GetFileName($Name) -cne $Name -or
+        $Name.IndexOfAny([IO.Path]::GetInvalidFileNameChars()) -ge 0 -or [IO.Path]::GetExtension($Name) -ine '.zip') {
+        throw 'Expected a top-level ZIP archive name.'
+    }
+    $path = Join-Path $package $Name
+    if (!$checkedFiles.ContainsKey($path)) { throw "Missing checksum-covered archive: $Name" }
+    return $path
+}
 $manifest = Get-Content -LiteralPath (Join-Path $package 'build-info.json') -Raw | ConvertFrom-Json
 if ($manifest.builds.Count -ne 4 -or $manifest.source.commit -notmatch '^[0-9a-f]{40}$' -or -not $manifest.source.clean) { throw 'Invalid package manifest.' }
 if ($manifest.schema -notin @(1, 2)) { throw 'Unsupported package manifest version.' }
+$archivePath = Get-PackageArchive $manifest.source_archive.name
+foreach ($record in $manifest.builds) { $null = Get-PackageArchive $record.archive }
 $combinations = @()
 $work = Join-Path $WorkDirectory ('package-check-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $work | Out-Null
@@ -53,7 +70,7 @@ foreach ($record in $manifest.builds) {
     if ($build.artifacts.Count -ne 2 -or (Compare-Object $expectedFiles @($build.artifacts.name) -CaseSensitive)) {
         throw 'Package must declare an executable and its symbols.'
     }
-    $archive = Join-Path $package $record.archive
+    $archive = Get-PackageArchive $record.archive
     if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $record.sha256) { throw 'Archive hash mismatch.' }
     $name = $record.build.architecture + '-' + $record.build.configuration
     if ($combinations -contains $name) { throw 'Duplicate build configuration.' }
@@ -78,7 +95,6 @@ foreach ($record in $manifest.builds) {
     if ($LASTEXITCODE -ne 0 -or $actual.Trim() -ne $inner.version_output) { throw 'Packaged executable version mismatch.' }
 }
 if (Compare-Object @('x64-Release','x64-Debug','x86-Release','x86-Debug') $combinations) { throw 'Incomplete build matrix.' }
-$archivePath = Join-Path $package $manifest.source_archive.name
 if ((Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $manifest.source_archive.sha256) { throw 'Source ZIP hash mismatch.' }
 $source = Join-Path $work 'source'
 Expand-Archive -LiteralPath $archivePath -DestinationPath $source

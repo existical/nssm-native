@@ -16,6 +16,7 @@ struct stream_fixture : fixture {
     stream_test = true; stream_input = input; read_chunk = chunk; read_position = 0;
     fail_info = fail_size = fail_move = fail_truncate = fail_read = false;
     short_write = MAXDWORD; fail_after = -1; bytes_written = 0;
+    ticks_per_byte = manual_at = move_attempts = 0; fail_first_move = false;
     rotations = write_errors = 0; rotated_paths.clear();
     service->timestamp_log = timestamps;
     service->rotate_stdout_online = NSSM_ROTATE_ONLINE;
@@ -50,6 +51,21 @@ static void test_stream_bytes() {
     check_short_output = true;
     CHECK(f.run() == 0 && f.contents() == "OK\n");
     check_short_output = false;
+  }
+  {
+    stream_fixture f("abc\nx\nx\nx\nx\nx\nx\ntail", 1, false, 4);
+    ticks_per_byte = 250; fail_move = true;
+    CHECK(f.run() == 0 && move_attempts == 3 && !rotations);
+    CHECK(f.contents() == stream_input);
+  }
+  for (bool manual : {false, true}) {
+    stream_fixture f("abc\nx\nx\nx\ntail", 1, false, 4);
+    fail_first_move = true;
+    if (manual) manual_at = 6;
+    else ticks_per_byte = 250;
+    CHECK(f.run() == 0 && move_attempts == 2 && rotations == 1);
+    REQUIRE(rotated_paths.size() == 1);
+    CHECK(read_path(rotated_paths[0].c_str()) == "abc\nx\nx\n" && f.contents() == "x\ntail");
   }
   const std::string ascii = "first\r\n\nlast\nend";
   const std::string expected = stamp + "first\r\n" + stamp + "\n" + stamp + "last\n" + stamp + "end";

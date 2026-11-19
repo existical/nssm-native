@@ -37,7 +37,14 @@ BOOL WINAPI change(SC_HANDLE h, DWORD type, DWORD start, DWORD error, LPCTSTR pa
   if (! active) return ChangeServiceConfig(h, type, start, error, path, group, tag, dependencies, account, password, display);
   CHECK(h == service_handle); SetLastError(ERROR_ACCESS_DENIED); return failure != 2;
 }
-BOOL WINAPI change2(SC_HANDLE h, DWORD level, LPVOID info) { return active ? TRUE : ChangeServiceConfig2(h, level, info); }
+BOOL WINAPI change2(SC_HANDLE h, DWORD level, LPVOID info) {
+  if (!active) return ChangeServiceConfig2(h, level, info);
+  if ((failure == 6 || failure == 7) && level == SERVICE_CONFIG_DELAYED_AUTO_START_INFO) {
+    SetLastError(ERROR_INVALID_LEVEL);
+    return FALSE;
+  }
+  return TRUE;
+}
 BOOL WINAPI remove(SC_HANDLE h) { if (! active) return DeleteService(h); CHECK(h == service_handle); deletes++; return TRUE; }
 int parameters(nssm_service_t *service, bool editing) { return active ? (failure == 3 ? 1 : 0) : create_parameters(service, editing); }
 int popup(HWND, unsigned int, unsigned long, ...) { return IDOK; } // No dialogs in regression tests.
@@ -46,7 +53,7 @@ void finish() {
   if (! objects.empty()) {
     CHECK(manager_closes == (failure == 0 ? 0U : 1U));
     CHECK(service_closes == (failure < 2 ? 0U : 1U));
-    CHECK(deletes == (failure == 2 || failure == 3 || failure == 5 ? 1U : 0U));
+    CHECK(deletes == (failure == 2 || failure == 3 || failure == 5 || failure == 6 ? 1U : 0U));
   }
   for (size_t i = 0; i < objects.size(); i++) HeapFree(GetProcessHeap(), 0, objects[i]);
   objects.clear(); active = false;

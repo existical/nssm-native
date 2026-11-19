@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory = $true)][string]$Executable,
     [Parameter(Mandatory = $true)][ValidateSet('x64', 'x86')][string]$Architecture,
     [Parameter(Mandatory = $true)][string]$Configuration,
-    [Parameter(Mandatory = $true)][string]$VersionHeader
+    [Parameter(Mandatory = $true)][string]$VersionHeader,
+    [switch]$CheckHeadlessUsage
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,6 +18,21 @@ $expected = "NSSM $($versionMatch.Groups[1].Value) $bitness$debugSuffix $($dateM
 $output = & $binaryPath version
 if ($LASTEXITCODE -ne 0) { throw 'nssm.exe version did not exit successfully.' }
 if (($output -join "`n").Trim() -ne $expected) { throw "Unexpected version output: $output; expected: $expected" }
+
+if ($CheckHeadlessUsage) {
+    $start = New-Object Diagnostics.ProcessStartInfo
+    $start.FileName = $binaryPath
+    $start.Arguments = 'get'
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    $start.RedirectStandardError = $true
+    $child = [Diagnostics.Process]::Start($start)
+    try {
+        $diagnostic = $child.StandardError.ReadToEndAsync()
+        if (!$child.WaitForExit(5000)) { $child.Kill(); $child.WaitForExit(); throw 'Headless usage timed out.' }
+        if (!$child.ExitCode -or [string]::IsNullOrWhiteSpace($diagnostic.Result)) { throw 'Missing headless usage diagnostic.' }
+    } finally { $child.Dispose() }
+}
 
 $reader = New-Object IO.BinaryReader([IO.File]::OpenRead($binaryPath))
 try {

@@ -169,7 +169,13 @@ void strip_basename(TCHAR *buffer) {
 
 /* How to use me correctly */
 int usage(int ret) {
-  if ((! GetConsoleWindow() || ! GetStdHandle(STD_OUTPUT_HANDLE)) && GetProcessWindowStation()) popup_message(0, MB_OK, NSSM_MESSAGE_USAGE, NSSM_VERSION, NSSM_CONFIGURATION, NSSM_DATE);
+  DWORD type = GetFileType(GetStdHandle(STD_ERROR_HANDLE));
+  USEROBJECTFLAGS flags = {};
+  DWORD needed;
+  bool dialog = type != FILE_TYPE_PIPE && type != FILE_TYPE_DISK && !GetConsoleWindow() &&
+    GetUserObjectInformation(GetProcessWindowStation(), UOI_FLAGS, &flags, sizeof(flags), &needed) &&
+    (flags.dwFlags & WSF_VISIBLE);
+  if (dialog) popup_message(0, MB_OK, NSSM_MESSAGE_USAGE, NSSM_VERSION, NSSM_CONFIGURATION, NSSM_DATE);
   else print_message(stderr, NSSM_MESSAGE_USAGE, NSSM_VERSION, NSSM_CONFIGURATION, NSSM_DATE);
   return(ret);
 }

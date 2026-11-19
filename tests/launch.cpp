@@ -149,7 +149,7 @@ void cleanup(nssm_service_t *service) {
   }
   if (! active) cleanup_loggers(service);
 }
-void environment(TCHAR *env) { if (! active) duplicate_environment_strings(env); }
+int environment(TCHAR *env) { return active ? 0 : duplicate_environment_strings(env); }
 int time(HANDLE h, FILETIME *value) { if (! active) return get_process_creation_time(h, value); ZeroMemory(value, sizeof(*value)); return 0; }
 int exit_time(HANDLE h, FILETIME *value) { if (! active) return get_process_exit_time(h, value); ZeroMemory(value, sizeof(*value)); return 0; }
 int kill(kill_t *k) { if (! active) return kill_process(k); CHECK(k->process_handle == process_handle); stopped = kill_ok; return kill_ok; }
@@ -518,6 +518,15 @@ static void test_control_overlap() {
 }
 
 void test_launch_handles() {
+  {
+    launch_test::reset();
+    nssm_service_t *service = startup_fixture();
+    TCHAR invalid[] = _T("=invalid\0");
+    service->env_extra = invalid;
+    CHECK(start_service(service) != 0 && !launch_test::creates);
+    DeleteCriticalSection(&service->hook_section);
+    delete service; launch_test::active = false;
+  }
   test_relaunch_and_shutdown();
   test_early_exit();
   test_power_dispatch();

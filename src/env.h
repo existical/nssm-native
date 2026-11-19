@@ -9,7 +9,7 @@ int set_environment_block(TCHAR *);
 int clear_environment();
 int duplicate_environment(TCHAR *);
 int test_environment(TCHAR *);
-void duplicate_environment_strings(TCHAR *);
+int duplicate_environment_strings(TCHAR *);
 TCHAR *copy_environment();
 int append_to_environment_block(TCHAR *, unsigned long, TCHAR *, TCHAR **, unsigned long *);
 int remove_from_environment_block(TCHAR *, unsigned long, const TCHAR *, TCHAR **, unsigned long *);

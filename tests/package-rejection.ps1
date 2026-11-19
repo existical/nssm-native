@@ -2,6 +2,7 @@ param([Parameter(Mandatory=$true)][string]$SourceDirectory, [Parameter(Mandatory
 $ErrorActionPreference = 'Stop'
 $repo = Join-Path $WorkDirectory ('package-reject-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path (Join-Path $repo 'scripts') | Out-Null
+$repo = (Resolve-Path -LiteralPath $repo).Path
 Copy-Item -LiteralPath (Join-Path $SourceDirectory 'scripts/package.ps1') -Destination (Join-Path $repo 'scripts')
 function Run-Git([string[]]$Arguments) {
     $value = & git -C $repo @Arguments
@@ -36,8 +37,8 @@ Remove-Item -LiteralPath $gitDirectory -Recurse -Force
 $pkg = Join-Path $repo 'incomplete-package'
 New-Item -ItemType Directory -Path (Join-Path $pkg 'evidence') | Out-Null
 $report = 'x64-Release-tests.xml'
-$record = @{build=@{architecture='x64'; configuration='Release'; validation=@{tests=37; failures=0; report=$report}}}
-@{schema=1; builds=@($record)*4; source=@{commit=$commit; clean=$true}} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $pkg 'build-info.json')
+$record = @{archive='fixture.zip'; build=@{architecture='x64'; configuration='Release'; validation=@{tests=37; failures=0; report=$report}}}
+@{schema=1; builds=@($record)*4; source_archive=@{name='fixture.zip'}; source=@{commit=$commit; clean=$true}} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $pkg 'build-info.json')
 $sums = Join-Path $pkg 'SHA256SUMS.txt'
 [IO.File]::WriteAllText($sums, '')
 function Reject-Evidence($reason) {
@@ -45,22 +46,43 @@ function Reject-Evidence($reason) {
     catch { if ($_.Exception.Message -like "*$reason*") { return }; throw }
     throw "Expected evidence rejection: $reason"
 }
+$manifestPath = Join-Path $pkg 'build-info.json'
+function Update-Checksums {
+    $lines = foreach ($file in Get-ChildItem -LiteralPath $pkg -File -Recurse) {
+        if ($file.FullName -ne $sums) {
+            $relative = $file.FullName.Substring($pkg.Length + 1).Replace('\', '/')
+            (Get-FileHash -LiteralPath $file.FullName).Hash.ToLowerInvariant() + '  ' + $relative
+        }
+    }
+    [IO.File]::WriteAllLines($sums, [string[]]$lines)
+}
+Reject-Evidence 'Missing checksum entry for build-info.json'
+[IO.File]::WriteAllText((Join-Path $pkg 'fixture.zip'), 'fixture')
+Update-Checksums
 Reject-Evidence 'Missing checksum-covered test report'
 $xml = Join-Path $pkg "evidence/$report"
 [IO.File]::WriteAllText($xml, '<testsuite tests="1" failures="1"><testcase name="example" status="run"/></testsuite>')
-[IO.File]::WriteAllText($sums, ((Get-FileHash -LiteralPath $xml).Hash.ToLowerInvariant() + "  evidence/$report"))
+Update-Checksums
 Reject-Evidence 'Test results disagree'
 $record.build.version_output = 'NSSM fixture'
 $record.build.validation.tests = 1
 $record.build.validation.scm_enabled = $true
-$manifest = @{schema=2; builds=@($record)*4; source=@{commit=$commit; clean=$true}}
-$manifestPath = Join-Path $pkg 'build-info.json'
+$manifest = @{schema=2; builds=@($record)*4; source_archive=@{name='fixture.zip'}; source=@{commit=$commit; clean=$true}}
 $manifest | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $manifestPath
 [IO.File]::WriteAllText($xml, '<testsuite tests="1" failures="0"><testcase name="nssm.smoke" status="run"><system-out>NSSM fixture</system-out></testcase></testsuite>')
-[IO.File]::WriteAllText($sums, ((Get-FileHash -LiteralPath $xml).Hash.ToLowerInvariant() + "  evidence/$report"))
+Update-Checksums
 Reject-Evidence 'Missing upgrade/rollback evidence'
 $record.build.validation.scm_enabled = $false
 $record.build.artifacts = @(@{name='nssm.exe'})
 $manifest | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $manifestPath
+Update-Checksums
 Reject-Evidence 'Package must declare an executable and its symbols'
+$record.archive = 'subdir/fixture.zip'
+$manifest | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $manifestPath
+Update-Checksums
+Reject-Evidence 'top-level ZIP'
+$record.archive = 'absent.zip'
+$manifest | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $manifestPath
+Update-Checksums
+Reject-Evidence 'Missing checksum-covered archive'
 Write-Output 'Revision, cleanliness, incomplete test evidence and missing artifact rejections passed.'

@@ -257,14 +257,14 @@ void test_handle_waits() {
       CHECK(await_single_handle(NULL, &state, NULL, _T("Wait test"), _T("test"), timeout) == expected[i]);
       CHECK(requests.size() == 1);
       if (requests.size()) CHECK(requests[0] == timeout);
-      CHECK(statuses == timeout && state.dwCheckPoint == 42 + timeout && state.dwWaitHint == 100 + timeout);
+      CHECK(statuses == timeout && state.dwCheckPoint == 42 + timeout && state.dwWaitHint == (timeout ? NSSM_WAITHINT_MARGIN + timeout : 100));
     }
   }
   requests.clear(); results.assign(3, WAIT_TIMEOUT); statuses = 0;
-  SERVICE_STATUS state = {};
+  SERVICE_STATUS state = {}; state.dwWaitHint = MAXDWORD;
   CHECK(await_single_handle(NULL, &state, NULL, _T("Wait test"), _T("test"), NSSM_SERVICE_STATUS_DEADLINE * 2 + 7) == 1);
   CHECK(requests.size() == 3 && requests[0] == NSSM_SERVICE_STATUS_DEADLINE && requests[1] == NSSM_SERVICE_STATUS_DEADLINE && requests[2] == 7);
-  CHECK(statuses == 3);
+  CHECK(statuses == 3 && state.dwWaitHint == 7 + NSSM_WAITHINT_MARGIN);
   active = false;
   HANDLE event = CreateEvent(NULL, TRUE, FALSE, NULL); REQUIRE(event);
   CHECK(await_single_handle(NULL, NULL, event, _T("Wait test"), _T("test"), 0) == 1);

@@ -11,7 +11,8 @@ struct handle {
 static std::vector<allocation> memory;
 static std::vector<handle *> handles;
 static bool active, fail_thread, deferred, fail_process, fail_exit_query, fail_worker_exit;
-static bool fail_worker_wait, timeout_worker_wait;
+static bool fail_worker_wait, timeout_worker_wait, fail_environment;
+static const TCHAR *failed_variable;
 static DWORD process_wait, process_exit;
 static int fail_after = -1, hook_lookup;
 static std::vector<unsigned long> events;
@@ -147,9 +148,9 @@ static int creation(HANDLE h, FILETIME *time) {
   ZeroMemory(time, sizeof(*time));
   return 0;
 }
-static void set_env(nssm_service_t *service) { if (! active) set_service_environment(service); }
+static int set_env(nssm_service_t *service) { return active ? (int) fail_environment : set_service_environment(service); }
 static void unset_env(nssm_service_t *service) { if (! active) unset_service_environment(service); }
-static BOOL WINAPI variable(LPCTSTR name, LPCTSTR value) { return active ? TRUE : SetEnvironmentVariable(name, value); }
+static BOOL WINAPI variable(LPCTSTR name, LPCTSTR value) { return active ? (!failed_variable || _tcscmp(name, failed_variable) != 0) : SetEnvironmentVariable(name, value); }
 static int get(TCHAR *name, TCHAR *event, TCHAR *action, TCHAR *buffer, unsigned long bytes) {
   if (! active) return get_hook(name, event, action, buffer, bytes);
   _tcscpy_s(buffer, bytes / sizeof(TCHAR), hook_lookup == 1 ? _T("") : _T("test-hook"));
@@ -228,6 +229,20 @@ struct fixture {
 #undef log_event
 
 void test_hook_lifecycle() {
+  {
+    hook_test::fixture f;
+    hook_test::fail_environment = true;
+    CHECK(f.run() == NSSM_HOOK_STATUS_ERROR && hook_test::handles.empty());
+    hook_test::fail_environment = false;
+    f.drain();
+  }
+  for (const TCHAR *name : {NSSM_HOOK_ENV_EVENT, NSSM_HOOK_ENV_RUNTIME, NSSM_HOOK_ENV_COMMAND_LINE}) {
+    hook_test::fixture f;
+    hook_test::failed_variable = name;
+    CHECK(f.run() == NSSM_HOOK_STATUS_ERROR && hook_test::handles.empty());
+    hook_test::failed_variable = NULL;
+    f.drain();
+  }
   { hook_test::fixture f; CHECK(f.run() == NSSM_HOOK_STATUS_SUCCESS); f.drain(); }
   { hook_test::fixture f; CHECK(f.run(false) == NSSM_HOOK_STATUS_SUCCESS); f.drain(); }
   { hook_test::fixture f; hook_test::fail_thread = true; CHECK(f.run() == NSSM_HOOK_STATUS_SUCCESS); f.drain(); }

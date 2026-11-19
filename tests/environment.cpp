@@ -7,7 +7,18 @@
 #define WaitForSingleObject launch_test::wait
 #define CloseHandle launch_test::close
 #define nssm_imagepath launch_test::imagepath
+static bool reject_expansion;
+static DWORD WINAPI expand_for_test(LPCTSTR source, LPTSTR output, DWORD capacity) {
+  if (reject_expansion && !_tcscmp(source, _T("%NSSM_TEST_LITERAL%"))) {
+    SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+    return 0;
+  }
+  return ExpandEnvironmentStrings(source, output, capacity);
+}
+#undef ExpandEnvironmentStrings
+#define ExpandEnvironmentStrings expand_for_test
 #include "../src/env.cpp"
+#undef ExpandEnvironmentStrings
 #undef nssm_imagepath
 #undef CreateProcess
 #undef TerminateProcess
@@ -65,11 +76,29 @@ void test_environment_entries() {
     HeapFree(GetProcessHeap(), 0, result);
   }
   REQUIRE(SetEnvironmentVariable(_T("NSSM_TEST_LITERAL"), _T("%SystemRoot%")));
+  SetEnvironmentVariable(_T("NSSM_TEST_PHASE"), NULL);
   TCHAR *snapshot = copy_environment();
   REQUIRE(snapshot);
   SetEnvironmentVariable(_T("NSSM_TEST_LITERAL"), _T("changed"));
   duplicate_environment_strings(snapshot);
   expect_variable(_T("NSSM_TEST_LITERAL"), _T("%SystemRoot%"));
+  nssm_service_t *service = new nssm_service_t();
+  TCHAR extra[] = _T("NSSM_TEST_PHASE=partial\0NSSM_TEST_LITERAL=%NSSM_TEST_LITERAL%\0");
+  service->initial_env = snapshot;
+  service->env_extra = extra;
+  reject_expansion = true;
+  CHECK(set_service_environment(service) != 0);
+  expect_variable(_T("NSSM_TEST_PHASE"), _T("partial"));
+  reject_expansion = false;
+  service->env_extra = NULL;
+  service->initial_env = NULL;
+  unset_service_environment(service);
+  CHECK(service->environment_restore_failed && set_service_environment(service) != 0);
+  service->initial_env = snapshot;
+  CHECK(!set_service_environment(service) && !service->environment_restore_failed);
+  expect_variable(_T("NSSM_TEST_PHASE"), NULL);
+  expect_variable(_T("NSSM_TEST_LITERAL"), _T("%SystemRoot%"));
+  delete service;
   HeapFree(GetProcessHeap(), 0, snapshot);
   CHECK(! copy_environment_block(NULL));
   TCHAR empty[] = { 0, 0 };

@@ -23,7 +23,7 @@ int exit_action(const TCHAR *, DWORD *, TCHAR *, bool *);
 int output(nssm_service_t *, STARTUPINFO *);
 void close_output(STARTUPINFO *);
 void cleanup(nssm_service_t *);
-void environment(TCHAR *);
+int environment(TCHAR *);
 int time(HANDLE, FILETIME *);
 int exit_time(HANDLE, FILETIME *);
 int kill(kill_t *);

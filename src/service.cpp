@@ -44,8 +44,7 @@ static startup_result await_startup(nssm_service_t *service, HANDLE process, uns
       service_cleanup_lock state(service);
       if (! restart_allowed(service) || service->stopping) return startup_result::cancelled;
       if (interval) {
-        if (service->status.dwWaitHint > MAXDWORD - interval) service->status.dwWaitHint = MAXDWORD;
-        else service->status.dwWaitHint += interval;
+        service->status.dwWaitHint = interval + NSSM_WAITHINT_MARGIN;
         service->status.dwCheckPoint++;
         SetServiceStatus(service->status_handle, &service->status);
       }
@@ -376,25 +375,18 @@ static inline unsigned long throttle_milliseconds(unsigned long throttle) {
   return ret * 1000;
 }
 
-void set_service_environment(nssm_service_t *service) {
-  if (! service) return;
-
-  /*
-    We have to duplicate the block because this function will be called
-    multiple times between registry reads.
-  */
-  if (service->env && ! clear_environment()) set_environment_block(service->env);
-  if (! service->env_extra) return;
-  TCHAR *env_extra = copy_environment_block(service->env_extra);
-  if (! env_extra) return;
-
-  set_environment_block(env_extra);
-  HeapFree(GetProcessHeap(), 0, env_extra);
+int set_service_environment(nssm_service_t *service) {
+  if (!service) return 1;
+  if (service->environment_restore_failed) {
+    unset_service_environment(service);
+    if (service->environment_restore_failed) return 1;
+  }
+  if (service->env && (clear_environment() || set_environment_block(service->env))) return 1;
+  return service->env_extra ? set_environment_block(service->env_extra) : 0;
 }
 
 void unset_service_environment(nssm_service_t *service) {
-  if (! service) return;
-  duplicate_environment_strings(service->initial_env);
+  if (service) service->environment_restore_failed = duplicate_environment_strings(service->initial_env) != 0;
 }
 
 /* A single consumer preserves dispatch order. Posting to the completion port
@@ -1417,8 +1409,8 @@ int edit_service(nssm_service_t *service, bool editing) {
   /* Delayed startup isn't supported until Vista. */
   if (! ChangeServiceConfig2(service->handle, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, &delayed)) {
     unsigned long error = GetLastError();
-    /* Pre-Vista we expect to fail with ERROR_INVALID_LEVEL */
-    if (error != ERROR_INVALID_LEVEL) {
+    /* Older managers can still provide ordinary automatic startup. */
+    if (error != ERROR_INVALID_LEVEL || delayed.fDelayedAutostart) {
       log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SERVICE_CONFIG_DELAYED_AUTO_START_INFO_FAILED, service->name, error_string(error));
       return 5;
     }
@@ -1665,7 +1657,7 @@ void WINAPI service_main(unsigned long argc, TCHAR **argv) {
   log_service_control(service->name, 0, true);
 
   service->status.dwCurrentState = SERVICE_START_PENDING;
-  service->status.dwWaitHint = service->throttle_delay + NSSM_WAITHINT_MARGIN;
+  service->status.dwWaitHint = NSSM_SERVICE_STATUS_DEADLINE + NSSM_WAITHINT_MARGIN;
   SetServiceStatus(service->status_handle, &service->status);
 
   if (is_admin) create_exit_action(service->name, exit_action_strings[0], false);
@@ -1986,8 +1978,12 @@ int start_service(nssm_service_t *service) {
       return 0;
     }
 
-    /* The pre-start hook will have cleaned the environment. */
-    set_service_environment(service);
+    if (set_service_environment(service)) {
+      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_GET_PARAMETERS_FAILED, service->name);
+      close_output_handles(&si);
+      unset_service_environment(service);
+      return launch_failure(service, 2);
+    }
 
     bool inherit_handles = false;
     if (si.dwFlags & STARTF_USESTDHANDLES) inherit_handles = true;
@@ -2323,17 +2319,8 @@ void throttle_restart(nssm_service_t *service) {
   changed.  Therefore if we want to wait longer than that we must periodically
   increase dwCheckPoint.
 
-  Furthermore, it will consider the service to be hung after 60000 milliseconds
-  regardless of the value of dwCheckPoint unless dwWaitHint is increased every
-  time dwCheckPoint is also increased.
-
-  Our strategy then is to retrieve the initial dwWaitHint and wait for
-  NSSM_SERVICE_STATUS_DEADLINE milliseconds.  If the process is still running
-  and we haven't finished waiting we increment dwCheckPoint and add whichever is
-  smaller of NSSM_SERVICE_STATUS_DEADLINE or the remaining timeout to
-  dwWaitHint.
-
-  Only doing both these things will prevent the system from killing the service.
+  Report each bounded wait interval plus a scheduling margin and increment
+  the checkpoint when entering the next interval.
 
   If the status_handle and service_status arguments are omitted, this function
   will not try to update the service manager but it will still log to the
@@ -2375,7 +2362,7 @@ int await_single_handle(SERVICE_STATUS_HANDLE status_handle, SERVICE_STATUS *sta
     if (interval > NSSM_SERVICE_STATUS_DEADLINE) interval = NSSM_SERVICE_STATUS_DEADLINE;
 
     if (status) {
-      status->dwWaitHint += interval;
+      status->dwWaitHint = interval + NSSM_WAITHINT_MARGIN;
       status->dwCheckPoint++;
       SetServiceStatus(status_handle, status);
     }

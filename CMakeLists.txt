@@ -111,7 +111,7 @@ if(BUILD_TESTING)
     COMMAND "${NSSM_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass
       -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke.ps1"
       -Executable "$<TARGET_FILE:nssm>" -Architecture "${test_arch}"
-      -Configuration "$<CONFIG>" -VersionHeader "${generated_dir}/version.h")
+      -Configuration "$<CONFIG>" -VersionHeader "${generated_dir}/version.h" -CheckHeadlessUsage)
   set_tests_properties(nssm.smoke PROPERTIES TIMEOUT 20)
   add_subdirectory(tests)
 endif()

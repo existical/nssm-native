@@ -165,6 +165,23 @@ void test_exit_export() {
   test_exit_export_cases(service, parameters, key, setting);
   RegCloseKey(parameters);
   parameters = open_registry(service, KEY_READ | KEY_WRITE); REQUIRE(parameters);
+  const TCHAR entry[] = _T("MODE=production\0");
+  REQUIRE(!RegSetValueEx(parameters, NSSM_REG_ENV, 0, REG_MULTI_SZ, (const BYTE *)entry, sizeof(entry)));
+  TCHAR invalid_updates[][8] = {_T("+"), _T("+MOD"), _T("+=value")};
+  for (auto &invalid : invalid_updates) {
+    value_t update = {}; update.string = invalid;
+    CHECK(setting_set_environment(service, parameters, NSSM_REG_ENV, NULL, &update, NULL) < 0);
+  }
+  TCHAR checked[32]; DWORD bytes = sizeof(checked);
+  REQUIRE(!RegQueryValueEx(parameters, NSSM_REG_ENV, NULL, &type, (BYTE *)checked, &bytes));
+  CHECK(type == REG_MULTI_SZ && bytes == sizeof(entry) && !memcmp(checked, entry, bytes));
+  value_t remove = {}; remove.string = _T("-mode");
+  CHECK(setting_set_environment(service, parameters, NSSM_REG_ENV, NULL, &remove, NULL) == 1);
+  bytes = sizeof(checked);
+  REQUIRE(!RegQueryValueEx(parameters, NSSM_REG_ENV, NULL, &type, (BYTE *)checked, &bytes));
+  CHECK(type == REG_MULTI_SZ && bytes == 2 * sizeof(TCHAR) && !checked[0] && !checked[1]);
+  CHECK(!setting_set_environment(service, parameters, NSSM_REG_ENV, NULL, NULL, NULL));
+  CHECK(RegQueryValueEx(parameters, NSSM_REG_ENV, NULL, NULL, NULL, NULL) == ERROR_FILE_NOT_FOUND);
   TCHAR raw_path[] = _T("%SystemRoot%\\test");
   value_t path; path.string = raw_path;
   capture_dump = true;

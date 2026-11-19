@@ -21,7 +21,7 @@ static long open_registry_key(const TCHAR *registry, REGSAM sam, HKEY *key, bool
     error = RegCreateKeyEx(HKEY_LOCAL_MACHINE, registry, 0, 0, REG_OPTION_NON_VOLATILE, sam, 0, key, 0);
     if (error != ERROR_SUCCESS) {
       *key = 0;
-      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OPENKEY_FAILED, registry, error_string(GetLastError()));
+      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OPENKEY_FAILED, registry, error_string(error));
       return error;
     }
   }
@@ -29,7 +29,7 @@ static long open_registry_key(const TCHAR *registry, REGSAM sam, HKEY *key, bool
     error = RegOpenKeyEx(HKEY_LOCAL_MACHINE, registry, 0, sam, key);
     if (error != ERROR_SUCCESS) {
       *key = 0;
-      if (error != ERROR_FILE_NOT_FOUND || must_exist) log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OPENKEY_FAILED, registry, error_string(GetLastError()));
+      if (error != ERROR_FILE_NOT_FOUND || must_exist) log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OPENKEY_FAILED, registry, error_string(error));
     }
   }
 
@@ -51,20 +51,26 @@ int create_messages() {
     return 1;
   }
 
-  if (RegCreateKeyEx(HKEY_LOCAL_MACHINE, registry, 0, 0, REG_OPTION_NON_VOLATILE, KEY_WRITE, 0, &key, 0) != ERROR_SUCCESS) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OPENKEY_FAILED, registry, error_string(GetLastError()));
+  long error = RegCreateKeyEx(HKEY_LOCAL_MACHINE, registry, 0, 0, REG_OPTION_NON_VOLATILE, KEY_WRITE, 0, &key, 0);
+  if (error != ERROR_SUCCESS) {
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OPENKEY_FAILED, registry, error_string(error));
     return 2;
   }
 
   /* Get path of this program */
   const TCHAR *path = nssm_unquoted_imagepath();
 
-  /* Try to register the module but don't worry so much on failure */
-  RegSetValueEx(key, _T("EventMessageFile"), 0, REG_SZ, (const unsigned char *) path, (unsigned long) (_tcslen(path) +  1) * sizeof(TCHAR));
-  unsigned long types = EVENTLOG_INFORMATION_TYPE | EVENTLOG_WARNING_TYPE | EVENTLOG_ERROR_TYPE;
-  RegSetValueEx(key, _T("TypesSupported"), 0, REG_DWORD, (const unsigned char *) &types, sizeof(types));
-
-  return 0;
+  const TCHAR *value = _T("EventMessageFile");
+  error = RegSetValueEx(key, value, 0, REG_SZ, (const BYTE *) path, (DWORD) (_tcslen(path) + 1) * sizeof(TCHAR));
+  if (error == ERROR_SUCCESS) {
+    value = _T("TypesSupported");
+    DWORD types = EVENTLOG_INFORMATION_TYPE | EVENTLOG_WARNING_TYPE | EVENTLOG_ERROR_TYPE;
+    error = RegSetValueEx(key, value, 0, REG_DWORD, (const BYTE *) &types, sizeof(types));
+  }
+  RegCloseKey(key);
+  if (error == ERROR_SUCCESS) return 0;
+  log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, value, error_string(error));
+  return 3;
 }
 
 long enumerate_registry_values(HKEY key, unsigned long *index, TCHAR *name, unsigned long namelen) {
@@ -257,8 +263,9 @@ int create_exit_action(TCHAR *service_name, const TCHAR *action_string, bool edi
   /* Try to open the registry */
   HKEY key;
   unsigned long disposition;
-  if (RegCreateKeyEx(HKEY_LOCAL_MACHINE, registry, 0, 0, REG_OPTION_NON_VOLATILE, KEY_WRITE, 0, &key, &disposition) != ERROR_SUCCESS) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OPENKEY_FAILED, registry, error_string(GetLastError()));
+  long error = RegCreateKeyEx(HKEY_LOCAL_MACHINE, registry, 0, 0, REG_OPTION_NON_VOLATILE, KEY_WRITE, 0, &key, &disposition);
+  if (error != ERROR_SUCCESS) {
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OPENKEY_FAILED, registry, error_string(error));
     return 2;
   }
 
@@ -269,8 +276,9 @@ int create_exit_action(TCHAR *service_name, const TCHAR *action_string, bool edi
   }
 
   /* Create the default value */
-  if (RegSetValueEx(key, 0, 0, REG_SZ, (const unsigned char *) action_string, (unsigned long) (_tcslen(action_string) + 1) * sizeof(TCHAR)) != ERROR_SUCCESS) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, NSSM_REG_EXIT, error_string(GetLastError()));
+  error = RegSetValueEx(key, 0, 0, REG_SZ, (const unsigned char *) action_string, (unsigned long) (_tcslen(action_string) + 1) * sizeof(TCHAR));
+  if (error != ERROR_SUCCESS) {
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, NSSM_REG_EXIT, error_string(error));
     RegCloseKey(key);
     return 3;
   }
@@ -462,8 +470,9 @@ int expand_parameter(HKEY key, TCHAR *value, TCHAR *data, unsigned long datalen,
 */
 int set_string(HKEY key, TCHAR *value, TCHAR *string, bool expand) {
   unsigned long type = expand ? REG_EXPAND_SZ : REG_SZ;
-  if (RegSetValueEx(key, value, 0, type, (const unsigned char *) string, (unsigned long) (_tcslen(string) + 1) * sizeof(TCHAR)) == ERROR_SUCCESS) return 0;
-  log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, value, error_string(GetLastError()));
+  long error = RegSetValueEx(key, value, 0, type, (const unsigned char *) string, (unsigned long) (_tcslen(string) + 1) * sizeof(TCHAR));
+  if (error == ERROR_SUCCESS) return 0;
+  log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, value, error_string(error));
   return 1;
 }
 
@@ -481,8 +490,9 @@ int set_expand_string(HKEY key, TCHAR *value, TCHAR *string) {
            1 on error.
 */
 int set_number(HKEY key, TCHAR *value, unsigned long number) {
-  if (RegSetValueEx(key, value, 0, REG_DWORD, (const unsigned char *) &number, sizeof(number)) == ERROR_SUCCESS) return 0;
-  log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, value, error_string(GetLastError()));
+  long error = RegSetValueEx(key, value, 0, REG_DWORD, (const unsigned char *) &number, sizeof(number));
+  if (error == ERROR_SUCCESS) return 0;
+  log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, value, error_string(error));
   return 1;
 }
 
@@ -813,7 +823,10 @@ int get_parameters(nssm_service_t *service, STARTUPINFO *si) {
   }
 
   /* Set environment if we are starting the service. */
-  if (si) set_service_environment(service);
+  if (si && set_service_environment(service)) {
+    RegCloseKey(key);
+    return 2;
+  }
 
   /* Try to get executable file - MUST succeed */
   if (get_string(key, NSSM_REG_EXE, service->exe, sizeof(service->exe), expand, false, si != NULL)) {
