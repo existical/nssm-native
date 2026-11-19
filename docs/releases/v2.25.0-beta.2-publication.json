@@ -1,0 +1,95 @@
+{
+  "tag": "v2.25.0-beta.2",
+  "tag_object": "1a3ea783abb9450f404634614aff1386992c0d56",
+  "source_commit": "2a3168c8260cba5224aac0c7cf40689d3271948e",
+  "release_url": "https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.2",
+  "release_id": 451846916,
+  "published_at_utc": "2026-11-19T19:52:58Z",
+  "prerelease": true,
+  "pull_request": "https://github.com/existical/nssm-native/pull/25",
+  "merge_commit": "bc149ff480c8b96374f9be95dcd1be6a8afb7274",
+  "pr_ci": "https://github.com/existical/nssm-native/actions/runs/44600424364",
+  "post_merge_ci": "https://github.com/existical/nssm-native/actions/runs/44601672563",
+  "tagged_build": {
+    "x64_release_tests": 37,
+    "x64_debug_tests": 37,
+    "x86_release_tests": 37,
+    "x86_debug_tests": 37,
+    "live_scm_suites": 5,
+    "additional_lifecycle_passes": 10,
+    "os": "Microsoft Windows 11 Pro",
+    "os_build": 26300,
+    "fixture_services_left": 0,
+    "x64_release_executable_sha256": "d878f7b6df554b84217a28a05a2a8f35a49089a8226b6063f2f2ae2446672c00",
+    "legacy_executable_sha256": "ee78cef9d582a8655b33f826df359a810ba532278b67e40e7389124ee171b796"
+  },
+  "verification": "Downloaded all 11 published assets without authentication and compared SHA-256 with local release files. Inspected both automatically generated source archives.",
+  "assets": [
+    {
+      "name": "build-info.json",
+      "sha256": "11d48a9f095d6ecf2db8a4c03c00f7de68bbb281d7bed1eaed92469f8f21d24d",
+      "size": 16258,
+      "url": "https://github.com/existical/nssm-native/releases/download/v2.25.0-beta.2/build-info.json"
+    },
+    {
+      "name": "nssm-native-v2.25.0-beta.2-candidate.zip",
+      "sha256": "e60c0bbdf51cbd26090825ceb604d9e8d6b8908eecd23637b6307f369f91340c",
+      "size": 8574138,
+      "url": "https://github.com/existical/nssm-native/releases/download/v2.25.0-beta.2/nssm-native-v2.25.0-beta.2-candidate.zip"
+    },
+    {
+      "name": "nssm-native-v2.25.0-beta.2-candidate.zip.sha256",
+      "sha256": "9827207476f209c1b302768cd483e392ef329aedc44fe7f4181532286bef07e9",
+      "size": 107,
+      "url": "https://github.com/existical/nssm-native/releases/download/v2.25.0-beta.2/nssm-native-v2.25.0-beta.2-candidate.zip.sha256"
+    },
+    {
+      "name": "nssm-native-v2.25.0-beta.2-source.zip",
+      "sha256": "242d7ec85e5fbe9a50e3f7edfc8a7e491ab2f685ab986ffd83999c8df8b96af2",
+      "size": 493917,
+      "url": "https://github.com/existical/nssm-native/releases/download/v2.25.0-beta.2/nssm-native-v2.25.0-beta.2-source.zip"
+    },
+    {
+      "name": "nssm-native-v2.25.0-beta.2-x64-Debug.zip",
+      "sha256": "cff3e357bd82f87377640ac7735c604504584cc7b8da607b59bf9c98fbda1483",
+      "size": 2537809,
+      "url": "https://github.com/existical/nssm-native/releases/download/v2.25.0-beta.2/nssm-native-v2.25.0-beta.2-x64-Debug.zip"
+    },
+    {
+      "name": "nssm-native-v2.25.0-beta.2-x64-Release.zip",
+      "sha256": "045d236544df61c594fe74f1581af72950cdd127f048f1c0ee0e3db251320470",
+      "size": 1524260,
+      "url": "https://github.com/existical/nssm-native/releases/download/v2.25.0-beta.2/nssm-native-v2.25.0-beta.2-x64-Release.zip"
+    },
+    {
+      "name": "nssm-native-v2.25.0-beta.2-x86-Debug.zip",
+      "sha256": "41797687c9ff8a9dfd0efcebd621ece1aab8823342dcc0f4859c7ea4142fa8db",
+      "size": 2541845,
+      "url": "https://github.com/existical/nssm-native/releases/download/v2.25.0-beta.2/nssm-native-v2.25.0-beta.2-x86-Debug.zip"
+    },
+    {
+      "name": "nssm-native-v2.25.0-beta.2-x86-Release.zip",
+      "sha256": "c6967f552bcd95b4c8415cee514dcd947f92c7c467c548b7b194dad0a903cf56",
+      "size": 1529799,
+      "url": "https://github.com/existical/nssm-native/releases/download/v2.25.0-beta.2/nssm-native-v2.25.0-beta.2-x86-Release.zip"
+    },
+    {
+      "name": "RELEASE-ASSETS-SHA256SUMS.txt",
+      "sha256": "c4dab4f04241c9855e56767268ff28e9ca961fef5c729cda00835c13f6d6e1c0",
+      "size": 1003,
+      "url": "https://github.com/existical/nssm-native/releases/download/v2.25.0-beta.2/RELEASE-ASSETS-SHA256SUMS.txt"
+    },
+    {
+      "name": "release-notes.md",
+      "sha256": "d9b4db187e639edf3a4c8e9744bd82f18a78fb41a533137b387ac76131c67f13",
+      "size": 2896,
+      "url": "https://github.com/existical/nssm-native/releases/download/v2.25.0-beta.2/release-notes.md"
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "sha256": "d09897cf74036c473989fe3aed84ba747e44160cae61499a6e1edd27e958f021",
+      "size": 2468,
+      "url": "https://github.com/existical/nssm-native/releases/download/v2.25.0-beta.2/SHA256SUMS.txt"
+    }
+  ]
+}

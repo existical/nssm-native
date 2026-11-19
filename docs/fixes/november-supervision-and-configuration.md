@@ -1,6 +1,6 @@
 # November supervision and configuration fixes
 
-The reviewed baseline is `012cd5fa55197970ad8a75dae888a625cbefb791`. Findings 1–6 had high priority because they affected availability, control handling or persisted data. The following register assigns permanent IDs to the numbered findings, the two follow-ups and an additional bounds issue found during implementation. The release target for these entries is [v2.25.0-beta.2](../releases/v2.25.0-beta.2.md).
+The reviewed baseline is `012cd5fa55197970ad8a75dae888a625cbefb791`. Findings 1–6 had high priority because they affected availability, control handling or persisted data. The following register assigns permanent IDs to the numbered findings, the two follow-ups and an additional bounds issue found during implementation. All 34 entries first shipped in [v2.25.0-beta.2](../releases/v2.25.0-beta.2.md). The [publication record](../releases/v2.25.0-beta.2-publication.json) identifies the verified public downloads.
 
 | ID | Original finding | Trigger and corrected behavior | Verification path |
 | --- | --- | --- | --- |
