@@ -7,13 +7,13 @@
   A service name and service display name are limited to 256 characters.
   A registry key is limited to 255 characters.
   A registry value is limited to 16383 characters.
-  Therefore we limit the service name to accommodate the path under HKLM.
+  Service and display name buffers also need a terminating NUL.
 */
 #define EXE_LENGTH PATH_LENGTH
 #define CMD_LENGTH 32768
 #define KEY_LENGTH 255
 #define VALUE_LENGTH 16383
-#define SERVICE_NAME_LENGTH 256
+#define SERVICE_NAME_LENGTH 257
 
 #define ACTION_LEN 16
 

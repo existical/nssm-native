@@ -81,8 +81,23 @@ void test_install_gui() {
   HWND window = dialog(MAKEINTRESOURCE(IDD_INSTALL), NULL, nssm_dlg, reinterpret_cast<LPARAM>(defaults));
   delete defaults;
   REQUIRE(window && ! IsWindowVisible(window));
-  SetDlgItemText(window, IDC_NAME, _T("NSSM-Test-Install"));
+  const std::basic_string<TCHAR> maximum(256, _T('n'));
+  const auto oversized = maximum + _T('x');
+  SetDlgItemText(window, IDC_NAME, oversized.c_str());
+  CHECK(remove(window) == 2);
+  nssm_service_t *draft = alloc_nssm_service();
+  REQUIRE(draft);
+  CHECK(configure(window, draft, NULL) == 2);
+  SetDlgItemText(window, IDC_NAME, maximum.c_str());
   SetDlgItemText(tablist[NSSM_TAB_APPLICATION], IDC_PATH, _T("C:\\fixture.exe"));
+  SetDlgItemText(tablist[NSSM_TAB_DETAILS], IDC_DISPLAYNAME, oversized.c_str());
+  CHECK(configure(window, draft, NULL) == 5);
+  SetDlgItemText(tablist[NSSM_TAB_DETAILS], IDC_DISPLAYNAME, maximum.c_str());
+  CHECK(configure(window, draft, NULL) == 0);
+  CHECK(maximum == draft->name && maximum == draft->displayname);
+  cleanup_nssm_service(draft);
+  SetDlgItemText(window, IDC_NAME, _T("NSSM-Test-Install"));
+  SetDlgItemText(tablist[NSSM_TAB_DETAILS], IDC_DISPLAYNAME, _T(""));
   const int expected[] = {2, 5, 6, 6, 0};
   for (unsigned scenario = 0; scenario < _countof(expected); scenario++) {
     install_test::reset(scenario);

@@ -475,6 +475,19 @@ static bool check_io(HWND owner, TCHAR *name, TCHAR *buffer, unsigned long len, 
   return false;
 }
 
+static bool read_service_name(HWND window, TCHAR (&name)[SERVICE_NAME_LENGTH]) {
+  int length = GetWindowTextLength(GetDlgItem(window, IDC_NAME));
+  if (!length) {
+    popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_MISSING_SERVICE_NAME);
+    return false;
+  }
+  if (length >= SERVICE_NAME_LENGTH || GetDlgItemText(window, IDC_NAME, name, _countof(name)) != length) {
+    popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_MESSAGE_OPENSERVICE_FAILED, error_string(ERROR_INVALID_NAME));
+    return false;
+  }
+  return true;
+}
+
 /* Set service parameters. */
 int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service) {
   if (! service) return 1;
@@ -508,10 +521,7 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
   }
 
   /* Get service name. */
-  if (! GetDlgItemText(window, IDC_NAME, service->name, _countof(service->name))) {
-    popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_MISSING_SERVICE_NAME);
-    return 2;
-  }
+  if (!read_service_name(window, service->name)) return 2;
 
   /* Get executable name */
   if (! service->native) {
@@ -536,8 +546,10 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
   }
 
   /* Get details. */
-  if (SendMessage(GetDlgItem(tablist[NSSM_TAB_DETAILS], IDC_DISPLAYNAME), WM_GETTEXTLENGTH, 0, 0)) {
-    if (! GetDlgItemText(tablist[NSSM_TAB_DETAILS], IDC_DISPLAYNAME, service->displayname, _countof(service->displayname))) {
+  int display_length = GetWindowTextLength(GetDlgItem(tablist[NSSM_TAB_DETAILS], IDC_DISPLAYNAME));
+  if (display_length) {
+    if (display_length >= SERVICE_NAME_LENGTH ||
+        GetDlgItemText(tablist[NSSM_TAB_DETAILS], IDC_DISPLAYNAME, service->displayname, _countof(service->displayname)) != display_length) {
       popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_INVALID_DISPLAYNAME);
       return 5;
     }
@@ -944,8 +956,7 @@ int remove(HWND window) {
   }
   if (service) {
     /* Get service name */
-    if (! GetDlgItemText(window, IDC_NAME, service->name, _countof(service->name))) {
-      popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_MISSING_SERVICE_NAME);
+    if (!read_service_name(window, service->name)) {
       cleanup_nssm_service(service);
       return 2;
     }

@@ -149,9 +149,19 @@ void test_dependencies() {
   reset({}); TCHAR lower[] = _T("+alpha\0");
   CHECK(set_service_dependencies(_T("Target"), reinterpret_cast<SC_HANDLE>(3), lower) == 0);
   CHECK(! _tcscmp(lower, _T("+alpha"))); expect({_T("+Alpha")}); finish();
-  std::basic_string<TCHAR> long_name(255, _T('A'));
-  reset({}); CHECK(apply(DEPENDENCY_SERVICES, long_name.c_str()) == 1); CHECK(current.size() == 1 && current[0] == long_name); finish();
-  long_name += _T('A'); reset({}); CHECK(apply(DEPENDENCY_SERVICES, long_name.c_str()) == -1); CHECK(! writes); finish();
+  for (size_t length : {255U, 256U, 257U}) {
+    std::basic_string<TCHAR> name(length, _T('A'));
+    reset({});
+    if (length <= 256) {
+      CHECK(apply(DEPENDENCY_SERVICES, name.c_str()) == 1);
+      CHECK(current.size() == 1 && current[0] == name);
+    }
+    else {
+      CHECK(apply(DEPENDENCY_SERVICES, name.c_str()) == -1);
+      CHECK(!writes);
+    }
+    finish();
+  }
   DWORD before = test_handle_count();
   for (unsigned iteration = 0; iteration < 50; iteration++) {
     reset({_T("ServiceA"), _T("+Alpha")}); CHECK(apply(DEPENDENCY_GROUPS, _T(":MissingGroup")) == -1); CHECK(! writes); finish();
