@@ -157,6 +157,7 @@ static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
 #define DuplicateHandle launch_test::duplicate
 #define RegisterWaitForSingleObject launch_test::register_wait
 #define UnregisterWait launch_test::unregister_wait
+#define WaitForMultipleObjects launch_test::wait_multiple
 #define WaitForSingleObject wait_test::wait
 #define ResumeThread launch_test::resume
 #define GetExitCodeProcess launch_test::code
@@ -184,6 +185,7 @@ static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
 #undef RegisterWaitForSingleObject
 #undef UnregisterWait
 #undef WaitForSingleObject
+#undef WaitForMultipleObjects
 #undef ResumeThread
 #undef GetExitCodeProcess
 #undef GetProcessAffinityMask

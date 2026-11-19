@@ -6,6 +6,10 @@ bool active;
 struct allocation { void *p; size_t bytes; bool secret; };
 static std::vector<allocation> allocations;
 static unsigned closes, saves;
+static bool fail_hook_save;
+static int write_hook(const TCHAR *service, const TCHAR *event, const TCHAR *action, TCHAR *command, bool expand) {
+  return fail_hook_save ? 1 : set_hook(service, event, action, command, expand);
+}
 static int token, save_result, fail_after = -1, read_failure;
 static SC_HANDLE borrowed = reinterpret_cast<SC_HANDLE>(&token);
 static const TCHAR *known_account;
@@ -56,7 +60,9 @@ static void finish() {
 #define ShowWindow gui_test::show
 #undef GetDlgItemText
 #define GetDlgItemText gui_test::text
+#define set_hook gui_test::write_hook
 #include "../src/gui.cpp"
+#undef set_hook
 #undef popup_message
 #undef HeapAlloc
 #undef HeapFree
@@ -83,6 +89,11 @@ void test_install_gui() {
     CHECK(install(window) == expected[scenario]);
     install_test::finish();
   }
+  install_test::reset(5);
+  gui_test::fail_hook_save = true;
+  CHECK(install(window) == 6);
+  gui_test::fail_hook_save = false;
+  install_test::finish();
   DestroyWindow(window);
 }
 
@@ -100,6 +111,18 @@ void test_gui_retry() {
   registry_fixture registry;
   nssm_service_t original = {}; original.handle = gui_test::borrowed;
   HWND window = gui_window(&original);
+  original.stdout_copy_and_truncate = original.stderr_copy_and_truncate = true;
+  original.rotate_delay = 71; original.stderr_disposition = OPEN_EXISTING;
+  original.stdout_sharing = FILE_SHARE_DELETE;
+  original.stdout_type = REG_SZ;
+  _tcscpy_s(original.stdout_path, _T("%UserProfile%\\app.log"));
+  SetDlgItemText(tablist[NSSM_TAB_IO], IDC_STDOUT, original.stdout_path);
+  nssm_service_t *edited = alloc_nssm_service(); REQUIRE(edited);
+  REQUIRE(configure(window, edited, &original) == 0);
+  CHECK(edited->stdout_copy_and_truncate && edited->stderr_copy_and_truncate);
+  CHECK(edited->rotate_delay == 71 && edited->stderr_disposition == OPEN_EXISTING);
+  CHECK(edited->stdout_sharing == FILE_SHARE_DELETE && edited->stdout_type == REG_SZ && edited->preserve_stdout_path);
+  cleanup_nssm_service(edited);
   gui_test::reset();
   SetDlgItemText(window, IDC_NAME, _T(""));
   CHECK(edit(window, &original) == 2); CHECK(! gui_test::closes); CHECK(gui_test::allocations.empty());
@@ -117,6 +140,10 @@ void test_gui_retry() {
   gui_test::save_result = 0;
   CHECK(edit(window, &original) == 0); CHECK(gui_test::closes == 0); CHECK(gui_test::allocations.empty());
   CHECK(gui_test::saves == 2);
+  gui_test::fail_hook_save = true;
+  CHECK(edit(window, &original) == 6 && ! gui_test::closes && gui_test::allocations.empty());
+  gui_test::fail_hook_save = false;
+  CHECK(edit(window, &original) == 0);
   gui_test::fail_after = 0;
   CHECK(edit(window, &original) == 1); CHECK(! gui_test::closes);
   CHECK(install(window) == 1); CHECK(remove(window) == 1);

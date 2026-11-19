@@ -19,6 +19,7 @@ public:
 static void release_logger(logger_t *logger) {
   if (logger && ! InterlockedDecrement(&logger->references)) {
     close_handle(&logger->stop_event);
+    close_handle(&logger->rotation_done);
     HeapFree(GetProcessHeap(), 0, logger);
   }
 }
@@ -57,7 +58,8 @@ static HANDLE create_logging_thread(TCHAR *service_name, TCHAR *path, unsigned l
 
   logger->references = 1;
   logger->stop_event = CreateEvent(NULL, TRUE, FALSE, NULL);
-  if (! logger->stop_event) {
+  logger->rotation_done = CreateEvent(NULL, TRUE, FALSE, NULL);
+  if (! logger->stop_event || ! logger->rotation_done) {
     release_logger(logger);
     return NULL;
   }
@@ -117,8 +119,63 @@ void close_handle(HANDLE *handle) {
   *handle = 0;
 }
 
-/* Get path, share mode, creation disposition and flags for a stream. */
-int get_createfile_parameters(HKEY key, TCHAR *prefix, TCHAR *path, unsigned long *sharing, unsigned long default_sharing, unsigned long *disposition, unsigned long default_disposition, unsigned long *flags, unsigned long default_flags, bool *copy_and_truncate) {
+/* Build an absolute path only at launch, after expanding service variables. */
+bool resolve_io_path(const TCHAR *directory, TCHAR *path) {
+  if (! *path) return true;
+  bool drive = path[1] == _T(':');
+  bool rooted = path[0] == _T('\\') || path[0] == _T('/');
+  if ((rooted && (path[1] == _T('\\') || path[1] == _T('/'))) ||
+      (drive && (path[2] == _T('\\') || path[2] == _T('/')))) return true;
+  struct scratch_buffer {
+    TCHAR *data;
+    ~scratch_buffer() { if (data) HeapFree(GetProcessHeap(), 0, data); }
+  } scratch = {(TCHAR *) HeapAlloc(GetProcessHeap(), 0, PATH_LENGTH * sizeof(TCHAR))};
+  TCHAR *base = scratch.data;
+  if (! base) return false;
+  DWORD len = GetFullPathName(directory, PATH_LENGTH, base, NULL);
+  if (! len || len >= PATH_LENGTH) return false;
+  const TCHAR *part = path;
+  if (rooted) {
+    const TCHAR *root = PathSkipRoot(base);
+    if (! root) return false;
+    base[root - base] = 0;
+    part++;
+  }
+  else if (drive) {
+    if (_totupper(path[0]) == _totupper(base[0]) && base[1] == _T(':')) part += 2;
+    else base[0] = 0;
+  }
+  len = (DWORD) _tcslen(base);
+  if (len && base[len - 1] != _T('\\')) {
+    if (len + 1 >= PATH_LENGTH) return false;
+    base[len++] = _T('\\');
+  }
+  size_t count = _tcslen(part) + 1;
+  if (count > PATH_LENGTH - len) return false;
+  memcpy(base + len, part, count * sizeof(TCHAR));
+  len = GetFullPathName(base, PATH_LENGTH, path, NULL);
+  return len && len < PATH_LENGTH;
+}
+
+/* Metadata-only handles leave the startup creation dispositions untouched. */
+bool same_file(const TCHAR *left, const TCHAR *right) {
+  if (! *left || ! *right) return false;
+  if (! _tcscmp(left, right)) return true;
+  BY_HANDLE_FILE_INFORMATION info[2];
+  const TCHAR *paths[] = {left, right};
+  for (unsigned int i = 0; i < 2; i++) {
+    HANDLE file = CreateFile(paths[i], 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                             NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == INVALID_HANDLE_VALUE) return false;
+    BOOL ok = GetFileInformationByHandle(file, &info[i]);
+    CloseHandle(file);
+    if (! ok || (! info[i].nFileIndexLow && ! info[i].nFileIndexHigh)) return false;
+  }
+  return info[0].dwVolumeSerialNumber == info[1].dwVolumeSerialNumber &&
+         info[0].nFileIndexHigh == info[1].nFileIndexHigh && info[0].nFileIndexLow == info[1].nFileIndexLow;
+}
+
+int get_createfile_parameters(HKEY key, TCHAR *prefix, TCHAR *path, unsigned long *sharing, unsigned long default_sharing, unsigned long *disposition, unsigned long default_disposition, unsigned long *flags, unsigned long default_flags, bool *copy_and_truncate, bool expand, unsigned long *stored_type) {
   TCHAR value[NSSM_STDIO_LENGTH];
 
   /* Path. */
@@ -126,10 +183,13 @@ int get_createfile_parameters(HKEY key, TCHAR *prefix, TCHAR *path, unsigned lon
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, prefix, _T("get_createfile_parameters()"));
     return 1;
   }
-  switch (expand_parameter(key, value, path, PATH_LENGTH * sizeof(*path), true, false)) {
-    case 0: if (! path[0]) return 0; break; /* OK. */
+  if (stored_type) *stored_type = REG_EXPAND_SZ;
+  switch (get_string(key, value, path, PATH_LENGTH * sizeof(*path), expand, expand, false, stored_type)) {
+    case 0: break;
     default: return 2; /* Error. */
   }
+
+  if (expand && ! path[0]) return 0;
 
   /* ShareMode. */
   if (_sntprintf_s(value, _countof(value), _TRUNCATE, _T("%s%s"), prefix, NSSM_REG_STDIO_SHARING) < 0) {
@@ -203,16 +263,20 @@ int delete_createfile_parameter(HKEY key, TCHAR *prefix, TCHAR *suffix) {
     return 1;
   }
 
-  if (RegDeleteValue(key, value)) return 0;
-  return 1;
+  long error = RegDeleteValue(key, value);
+  return error != ERROR_SUCCESS && error != ERROR_FILE_NOT_FOUND;
 }
 
 HANDLE write_to_file(TCHAR *path, unsigned long sharing, SECURITY_ATTRIBUTES *attributes, unsigned long disposition, unsigned long flags) {
   static LARGE_INTEGER offset = { 0 };
-  HANDLE ret = CreateFile(path, FILE_WRITE_DATA, sharing, attributes, disposition, flags, 0);
+  DWORD access = disposition == TRUNCATE_EXISTING ? GENERIC_WRITE : FILE_WRITE_DATA;
+  HANDLE ret = CreateFile(path, access, sharing, attributes, disposition, flags, 0);
   if (ret != INVALID_HANDLE_VALUE) {
-    if (SetFilePointerEx(ret, offset, 0, FILE_END)) SetEndOfFile(ret);
-    return ret;
+    if (GetFileType(ret) != FILE_TYPE_DISK || SetFilePointerEx(ret, offset, NULL, FILE_END)) return ret;
+    DWORD error = GetLastError();
+    CloseHandle(ret);
+    SetLastError(error);
+    ret = INVALID_HANDLE_VALUE;
   }
 
   log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_CREATEFILE_FAILED, path, error_string(GetLastError()));
@@ -316,11 +380,18 @@ void rotate_file(TCHAR *service_name, TCHAR *path, const rotation_options_t &opt
   if (options.copy_and_truncate) {
     function = _T("CopyFile()");
     if (CopyFile(path, rotated, TRUE)) {
-      file = write_to_file(path, NSSM_STDOUT_SHARING, 0, NSSM_STDOUT_DISPOSITION, NSSM_STDOUT_FLAGS);
-      Sleep(options.delay_ms);
-      SetFilePointer(file, 0, 0, FILE_BEGIN);
-      SetEndOfFile(file);
-      CloseHandle(file);
+      function = _T("CreateFile()");
+      file = CreateFile(path, GENERIC_WRITE, NSSM_STDOUT_SHARING, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+      ok = file != INVALID_HANDLE_VALUE;
+      if (ok) {
+        Sleep(options.delay_ms);
+        /* A newly opened synchronous handle starts at offset zero. */
+        function = _T("SetEndOfFile()");
+        ok = SetEndOfFile(file) != FALSE;
+        error = ok ? ERROR_SUCCESS : GetLastError();
+        CloseHandle(file);
+        if (! ok) SetLastError(error);
+      }
     }
     else ok = false;
   }
@@ -334,9 +405,32 @@ void rotate_file(TCHAR *service_name, TCHAR *path, const rotation_options_t &opt
   }
   error = GetLastError();
 
-  if (error == ERROR_FILE_NOT_FOUND) return;
   log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, service_name, path, function, rotated, error_string(error));
   return;
+}
+
+static bool fill_standard_handle(HANDLE *handle, DWORD id, DWORD access) {
+  if (*handle && *handle != INVALID_HANDLE_VALUE) return true;
+  HANDLE inherited = GetStdHandle(id);
+  DWORD mode;
+  /* start_service detaches its temporary console before CreateProcess. */
+  if (inherited && inherited != INVALID_HANDLE_VALUE && ! GetConsoleMode(inherited, &mode) &&
+      DuplicateHandle(GetCurrentProcess(), inherited, GetCurrentProcess(), handle, 0, TRUE, DUPLICATE_SAME_ACCESS)) return true;
+  SECURITY_ATTRIBUTES security = {sizeof(security), NULL, TRUE};
+  *handle = CreateFile(_T("NUL"), access, FILE_SHARE_READ | FILE_SHARE_WRITE, &security, OPEN_EXISTING, 0, NULL);
+  return *handle != INVALID_HANDLE_VALUE;
+}
+
+static int complete_standard_handles(STARTUPINFO *si) {
+  if (fill_standard_handle(&si->hStdInput, STD_INPUT_HANDLE, GENERIC_READ) &&
+      fill_standard_handle(&si->hStdOutput, STD_OUTPUT_HANDLE, GENERIC_WRITE) &&
+      fill_standard_handle(&si->hStdError, STD_ERROR_HANDLE, GENERIC_WRITE)) {
+    si->dwFlags |= STARTF_USESTDHANDLES;
+    return 0;
+  }
+  si->dwFlags &= ~STARTF_USESTDHANDLES;
+  close_output_handles(si);
+  return 1;
 }
 
 int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
@@ -361,6 +455,7 @@ int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
 
   }
 
+  bool shared_output = same_file(service->stdout_path, service->stderr_path);
   /* stdout */
   if (service->stdout_path[0]) {
     if (service->rotate_files) rotate_file(service->name, service->stdout_path, offline_rotation_options(service, service->stdout_copy_and_truncate));
@@ -387,7 +482,7 @@ int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
   /* stderr */
   if (service->stderr_path[0]) {
     /* Same as stdout? */
-    if (str_equiv(service->stderr_path, service->stdout_path)) {
+    if (shared_output || same_file(service->stderr_path, service->stdout_path)) {
       service->stderr_sharing = service->stdout_sharing;
       service->stderr_disposition = service->stdout_disposition;
       service->stderr_flags = service->stdout_flags;
@@ -424,7 +519,7 @@ int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
     We need to set the startup_info flags to make the new handles
     inheritable by the new process.
   */
-  if (inherit_handles) si->dwFlags |= STARTF_USESTDHANDLES;
+  if (inherit_handles) return complete_standard_handles(si);
 
   return 0;
 }
@@ -450,6 +545,7 @@ int use_output_handles(nssm_service_t *service, STARTUPINFO *si) {
     si->dwFlags |= STARTF_USESTDHANDLES;
   }
 
+  if (si->dwFlags & STARTF_USESTDHANDLES) return complete_standard_handles(si);
   return 0;
 }
 
@@ -490,8 +586,41 @@ void set_logger_rotation(nssm_service_t *service, bool requested) {
   for (unsigned i = 0; i < _countof(loggers); i++) {
     if (! loggers[i]) continue;
     if (requested) InterlockedCompareExchange(&loggers[i]->rotate_online, NSSM_ROTATE_ONLINE_ASAP, NSSM_ROTATE_ONLINE);
-    else InterlockedExchange(&loggers[i]->draining, 1);
+    else {
+      InterlockedExchange(&loggers[i]->draining, 1);
+      SetEvent(loggers[i]->rotation_done);
+    }
   }
+}
+
+/* One manual request per service. Hold logger references while waiting for
+   each stream's next line boundary, or for teardown to cancel the request. */
+bool await_logger_rotation(nssm_service_t *service, unsigned long generation) {
+  logger_t *streams[2];
+  HANDLE done[2];
+  DWORD count = 0;
+  {
+    logger_lock lock(service);
+    if ((unsigned long) service->start_count != generation || service->stopping) return false;
+    logger_t *loggers[] = {service->stdout_logger, service->stderr_logger};
+    for (unsigned i = 0; i < _countof(loggers); i++) {
+      logger_t *logger = loggers[i];
+      if (! logger || InterlockedCompareExchange(&logger->rotate_online, 0, 0) != NSSM_ROTATE_ONLINE) continue;
+      ResetEvent(logger->rotation_done);
+      InterlockedExchange(&logger->rotation_succeeded, 0);
+      InterlockedExchange(&logger->rotate_online, NSSM_ROTATE_ONLINE_ASAP);
+      InterlockedIncrement(&logger->references);
+      streams[count] = logger;
+      done[count++] = logger->rotation_done;
+      if (InterlockedCompareExchange(&logger->draining, 0, 0)) SetEvent(logger->rotation_done);
+    }
+  }
+  bool ok = count && WaitForMultipleObjects(count, done, TRUE, INFINITE) == WAIT_OBJECT_0;
+  for (DWORD i = 0; i < count; i++) {
+    if (! InterlockedCompareExchange(&streams[i]->rotation_succeeded, 0, 0)) ok = false;
+    release_logger(streams[i]);
+  }
+  return ok;
 }
 
 void cleanup_loggers(nssm_service_t *service) {
@@ -623,6 +752,8 @@ static int write_with_timestamp(logger_t *logger, const void *address, unsigned 
 }
 
 static unsigned long finish_logger(logger_t *logger, unsigned long result) {
+  InterlockedExchange(&logger->draining, 1);
+  SetEvent(logger->rotation_done);
   close_handle(&logger->read_handle);
   close_handle(&logger->write_handle);
   release_logger(logger);
@@ -645,7 +776,7 @@ static bool logger_file_size(HANDLE file, ULONGLONG *size) {
 /* Return false only if logging cannot continue. A failed rename keeps the old log. */
 static bool rotate_logger(logger_t *logger, ULONGLONG *size, bool *size_known, int *complained) {
   if (logger_stopping(logger)) return false;
-  InterlockedCompareExchange(&logger->rotate_online, NSSM_ROTATE_ONLINE, NSSM_ROTATE_ONLINE_ASAP);
+  bool requested = InterlockedCompareExchange(&logger->rotate_online, NSSM_ROTATE_ONLINE, NSSM_ROTATE_ONLINE_ASAP) == NSSM_ROTATE_ONLINE_ASAP;
   TCHAR rotated[PATH_LENGTH];
   rotated_filename(logger->path, rotated, _countof(rotated), NULL);
   bool ok = false;
@@ -678,13 +809,17 @@ static bool rotate_logger(logger_t *logger, ULONGLONG *size, bool *size_known, i
     ok = MoveFile(logger->path, rotated) != FALSE;
     if (! ok) error = GetLastError();
     /* On failure always append; CREATE_ALWAYS would destroy the original file. */
-    logger->write_handle = write_to_file(logger->path, logger->sharing, NULL, ok ? logger->disposition : OPEN_ALWAYS, logger->flags);
+    logger->write_handle = write_to_file(logger->path, logger->sharing, NULL, OPEN_ALWAYS, logger->flags);
     if (logger->write_handle == INVALID_HANDLE_VALUE) return false;
   }
   if (ok) log_event(EVENTLOG_INFORMATION_TYPE, NSSM_EVENT_ROTATED, logger->service_name, logger->path, rotated);
   else {
     if (! (*complained & COMPLAINED_ROTATE)) log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, logger->service_name, logger->path, function, rotated, error_string(error));
     *complained |= COMPLAINED_ROTATE;
+  }
+  if (requested) {
+    InterlockedExchange(&logger->rotation_succeeded, ok);
+    SetEvent(logger->rotation_done);
   }
   ULONGLONG observed;
   *size_known = logger_file_size(logger->write_handle, &observed);

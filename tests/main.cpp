@@ -3,6 +3,7 @@
 int failures = 0;
 
 int wmain(int argc, TCHAR **argv) {
+  if (argc == 2 && ! _tcscmp(argv[1], _T("--elevation-child"))) return 43;
   if (argc >= 2 && ! _tcscmp(argv[1], _T("--tree-child"))) return process_tree_child(argc, argv);
   if (argc >= 2 && ! _tcscmp(argv[1], _T("--quote-child"))) return quoting_child(argc, argv);
   if (argc >= 2 && ! _tcscmp(argv[1], _T("--logger-child"))) return logger_child(argc, argv);

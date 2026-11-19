@@ -69,7 +69,7 @@ int copy_double_null(TCHAR *, unsigned long, TCHAR **);
 int append_to_double_null(TCHAR *, unsigned long, TCHAR **, unsigned long *, TCHAR *, size_t, bool);
 int remove_from_double_null(TCHAR *, unsigned long, TCHAR **, unsigned long *, TCHAR *, size_t, bool);
 void override_milliseconds(TCHAR *, HKEY, TCHAR *, unsigned long *, unsigned long, unsigned long);
-int get_io_parameters(nssm_service_t *, HKEY);
+int get_io_parameters(nssm_service_t *, HKEY, bool = true);
 int get_parameters(nssm_service_t *, STARTUPINFO *);
 int get_exit_action(const TCHAR *, unsigned long *, TCHAR *, bool *);
 /* Read one explicit REG_SZ action. Output is Restart on any error. */

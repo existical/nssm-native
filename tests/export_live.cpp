@@ -126,12 +126,43 @@ int wmain(int argc, wchar_t **argv) {
     require(manager != NULL, "Opt-in SCM test requires an elevated disposable Windows runner");
     {
       service_fixture source(manager, argv[1], L"source"), imported(manager, argv[1], L"import");
-      source.configure(argv[1]); imported.configure(argv[1]); source.query_only();
+      result missing = run(argv[1], L"dump " + quoted(imported.name));
+      require(missing.code && missing.output.find(L" install ") == std::wstring::npos, "Reject incomplete wrapper backup before emitting install");
+      require(run(argv[1], L"set " + quoted(imported.name) + L" Application " + quoted(argv[1])).code == 0, "Repair missing Parameters on an owned wrapper");
+      require(run(argv[1], L"reset " + quoted(imported.name) + L" Application").code != 0, "Reject removal of required Application");
+      require(run(argv[1], L"get " + quoted(imported.name) + L" Application").output.find(argv[1]) != std::wstring::npos, "Preserve repaired application");
+      source.configure(argv[1]); imported.configure(argv[1]);
+      require(run(argv[1], L"set " + quoted(source.name) + L" DisplayName " + quoted(source.name + L" custom")).code == 0, "Give source a custom display name");
+      source.query_only();
       // Remove destination rules so replay must reconstruct all of them.
       require(RegDeleteKeyW(imported.key, L"AppExit") == ERROR_SUCCESS, "Clear destination rules");
       result exported = run(argv[1], L"dump " + quoted(source.name) + L" " + quoted(imported.name));
       if (exported.code) fwprintf(stderr, L"%ls\n", exported.output.c_str());
       require(exported.code == 0, "Query-only service export succeeds");
+      require(exported.output.find(L" DisplayName ") == std::wstring::npos, "Cloned backup leaves the target display name available");
+      {
+        output_file base;
+        std::wstring spaced = std::wstring(base.path) + L" nssm.exe";
+        require(CopyFileW(argv[1], spaced.c_str(), TRUE) != FALSE, "Copy reviewed executable to a spaced path");
+        struct remove_copy {
+          const std::wstring &path;
+          ~remove_copy() { if (! DeleteFileW(path.c_str())) service_fixture::cleanup_failed = true; }
+        } cleanup = {spaced};
+        result copy_dump = run(spaced, L"dump " + quoted(source.name));
+        size_t end = copy_dump.output.find(L" install ");
+        require(copy_dump.code == 0 && end != std::wstring::npos, "Read executable prefix from spaced-path dump");
+        std::wstring prefix = copy_dump.output.substr(0, end);
+        require(prefix == quoted(spaced), "Quote command executable exactly once");
+        wchar_t shell[MAX_PATH];
+        require(GetSystemDirectoryW(shell, _countof(shell)) > 0, "Locate command processor");
+        require(run(std::wstring(shell) + L"\\cmd.exe", L"/d /s /c \"" + prefix + L" version\"").code == 0, "Run emitted command prefix");
+      }
+      result original_dump = run(argv[1], L"dump " + quoted(source.name));
+      require(original_dump.code == 0 && original_dump.output.find(L" DisplayName ") != std::wstring::npos, "Same-name backup preserves the custom display name");
+      require(run(argv[1], L"set " + quoted(imported.name) + L" Environment MODE=production").code == 0, "Set native environment");
+      require(run(argv[1], L"set " + quoted(imported.name) + L" Environment +ADDED=value").code == 0, "Append native environment");
+      require(run(argv[1], L"set " + quoted(imported.name) + L" Environment -MODE=prod").code == 0, "Remove conditional nonmatch");
+      require(run(argv[1], L"get " + quoted(imported.name) + L" Environment MODE").output.find(L"production") != std::wstring::npos, "Keep full environment value on prefix mismatch");
       const wchar_t *rules[] = {L"Default Ignore", L"0 Restart", L"42 Exit", L"4294967295 Suicide"};
       for (const wchar_t *rule : rules) require(exported.output.find(L" AppExit " + std::wstring(rule)) != std::wstring::npos, "Export contains every exit rule");
       require(run(argv[1], L"set " + quoted(source.name) + L" AppParameters denied").code != 0, "Setter still requires change access");

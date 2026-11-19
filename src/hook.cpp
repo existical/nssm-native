@@ -200,6 +200,13 @@ int nssm_hook(hook_thread_t *hook_threads, nssm_service_t *service, TCHAR *hook_
 
   EnterCriticalSection(&service->hook_section);
 
+  if (str_equiv(hook_event, NSSM_HOOK_EVENT_ROTATE) && service->rotate_active &&
+      (service->stopping || service->rotate_generation != (unsigned long) service->start_count)) {
+    LeaveCriticalSection(&service->hook_section);
+    HeapFree(GetProcessHeap(), 0, hook);
+    return NSSM_HOOK_STATUS_ERROR;
+  }
+
   /* Set the environment. */
   set_service_environment(service);
 
@@ -311,7 +318,13 @@ int nssm_hook(hook_thread_t *hook_threads, nssm_service_t *service, TCHAR *hook_
   si.cb = sizeof(si);
   PROCESS_INFORMATION pi;
   ZeroMemory(&pi, sizeof(pi));
-  if (service->hook_share_output_handles) (void) use_output_handles(service, &si);
+  if (service->hook_share_output_handles && use_output_handles(service, &si)) {
+    close_output_handles(&si);
+    unset_service_environment(service);
+    LeaveCriticalSection(&service->hook_section);
+    HeapFree(GetProcessHeap(), 0, hook);
+    return NSSM_HOOK_STATUS_ERROR;
+  }
   bool inherit_handles = false;
   if (si.dwFlags & STARTF_USESTDHANDLES) inherit_handles = true;
   unsigned long flags = 0;
@@ -348,6 +361,22 @@ int nssm_hook(hook_thread_t *hook_threads, nssm_service_t *service, TCHAR *hook_
           unsigned long timeout = deadline;
           if (timeout >= MAXDWORD - NSSM_SERVICE_STATUS_DEADLINE) timeout = MAXDWORD - 1;
           else timeout += NSSM_SERVICE_STATUS_DEADLINE;
+          /* Rotation runs outside the dispatcher. Keep the tracked handle for
+             shutdown and use a separate observer while Stop/Pre acquires the lock. */
+          if (str_equiv(hook_event, NSSM_HOOK_EVENT_ROTATE)) {
+            HANDLE observer = NULL;
+            BOOL duplicated = DuplicateHandle(GetCurrentProcess(), entry.thread_handle, GetCurrentProcess(),
+                                              &observer, SYNCHRONIZE | THREAD_QUERY_INFORMATION, FALSE, 0);
+            unset_service_environment(service);
+            LeaveCriticalSection(&service->hook_section);
+            if (! duplicated) return NSSM_HOOK_STATUS_ERROR;
+            DWORD waited = WaitForSingleObject(observer, timeout);
+            DWORD code;
+            ret = waited == WAIT_OBJECT_0 && GetExitCodeThread(observer, &code) ? (int) code :
+                  waited == WAIT_TIMEOUT ? NSSM_HOOK_STATUS_TIMEOUT : NSSM_HOOK_STATUS_ERROR;
+            CloseHandle(observer);
+            return ret;
+          }
           int waited = await_single_handle(service->status_handle, &service->status, entry.thread_handle, entry.name, _T(__FUNCTION__), timeout);
           if (! waited) {
             unsigned long exitcode;

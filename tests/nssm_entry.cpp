@@ -26,6 +26,24 @@ static BOOL WINAPI membership(HANDLE token, PSID sid, PBOOL out) {
   return query_ok;
 }
 }
+namespace elevation_test {
+static unsigned scenario;
+static TCHAR command[] = _T("\"C:\\Suite Path\\nssm.exe\" edit \"My service\"");
+static BOOL WINAPI launch(SHELLEXECUTEINFO *info) {
+  CHECK(! _tcscmp(info->lpFile, _T("C:\\Suite Path\\nssm.exe")));
+  CHECK(! _tcscmp(info->lpParameters, _T("edit \"My service\"")));
+  CHECK(info->fMask & SEE_MASK_NOCLOSEPROCESS);
+  if (scenario == 1) return FALSE;
+  if (scenario == 2) return TRUE;
+  TCHAR exe[MAX_PATH]; REQUIRE(GetModuleFileName(NULL, exe, _countof(exe)));
+  std::wstring args = L"\"" + std::wstring(exe) + L"\" --elevation-child";
+  STARTUPINFO si = {}; si.cb = sizeof(si);
+  PROCESS_INFORMATION pi = {};
+  REQUIRE(CreateProcess(exe, &args[0], NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi));
+  CloseHandle(pi.hThread); info->hProcess = pi.hProcess; return TRUE;
+}
+static LPTSTR WINAPI command_line() { return command; }
+}
 static bool fake_cpu_query = false;
 static bool cpu_query_success = true;
 static DWORD_PTR fake_system_mask = 0;
@@ -42,7 +60,13 @@ static BOOL WINAPI test_cpu_query(HANDLE process, PDWORD_PTR affinity, PDWORD_PT
 #define AllocateAndInitializeSid admin_test::sid
 #define FreeSid admin_test::free_sid
 #define CheckTokenMembership admin_test::membership
+#undef ShellExecuteEx
+#define ShellExecuteEx elevation_test::launch
+#undef GetCommandLine
+#define GetCommandLine elevation_test::command_line
 #include "../src/nssm.cpp"
+#undef GetCommandLine
+#undef ShellExecuteEx
 #undef GetProcessAffinityMask
 #undef AllocateAndInitializeSid
 #undef FreeSid
@@ -59,6 +83,9 @@ void test_admin_check() {
     CHECK(queries == (sid_ok ? 1U : 0U) && frees == queries);
   }
   active = false;
+  _tcscpy_s(unquoted_imagepath, _T("C:\\Suite Path\\nssm.exe"));
+  for (elevation_test::scenario = 0; elevation_test::scenario < 3; elevation_test::scenario++)
+    CHECK(elevate(NSSM_MESSAGE_NOT_ADMINISTRATOR_CANNOT_EDIT) == (elevation_test::scenario ? 100 : 43));
 }
 
 void test_cpu_detection() {

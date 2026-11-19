@@ -2,7 +2,10 @@
 
 ## Unreleased
 
-No additional implementation changes recorded since the first beta.
+- Fix child relaunch, stop confirmation, resume timing, exit monitoring and manual log rotation.
+- Preserve raw configuration during GUI edits, propagate save errors and repair missing wrapper parameters from the CLI.
+- Preserve literal hook commands in exports. Clone dumps use the target display name, and native-service dumps return an error.
+- Review the compatibility changes and regression coverage in the [NSSM-038 through NSSM-071 fix register](docs/fixes/november-supervision-and-configuration.md).
 
 ## [2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) - 2026-11-05
 

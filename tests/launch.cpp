@@ -14,6 +14,12 @@ static int duplicate_token, registration_token;
 static HANDLE startup_handle = &duplicate_token, registration_handle = &registration_token;
 static bool duplicate_ok, duplicate_open, startup_race, startup_waiting, waited_handle_closed;
 static HANDLE startup_entered, startup_release, waited_handle;
+static bool registration_ok, kill_ok;
+static DWORD app_exitcode;
+static HANDLE retry_event, retry_entered;
+static HANDLE throttle_entered, throttle_release;
+static DWORD observed_delay;
+static unsigned stopped_statuses, running_statuses;
 static unsigned registrations, invalid_registrations, unregistrations;
 static const TCHAR *cancel_hook_action;
 static std::basic_string<TCHAR> live_image;
@@ -26,6 +32,8 @@ static void reset() {
   wait_result = WAIT_OBJECT_0;
   create_error = ERROR_ACCESS_DENIED;
   launch_flags = 0;
+  app_exitcode = STILL_ACTIVE;
+  registration_ok = kill_ok = true; stopped_statuses = running_statuses = 0;
   duplicate_ok = true; duplicate_open = startup_race = startup_waiting = waited_handle_closed = false;
   registrations = invalid_registrations = unregistrations = 0; cancel_hook_action = NULL;
 }
@@ -58,6 +66,7 @@ BOOL WINAPI register_wait(PHANDLE out, HANDLE h, WAITORTIMERCALLBACK callback, P
   if (! active) return RegisterWaitForSingleObject(out, h, callback, context, timeout, flags);
   registrations++;
   if (h != process_handle || process_closed) invalid_registrations++;
+  if (! registration_ok) { SetLastError(ERROR_NOT_ENOUGH_MEMORY); return FALSE; }
   *out = registration_handle; return TRUE;
 }
 BOOL WINAPI unregister_wait(HANDLE h) {
@@ -74,6 +83,10 @@ BOOL WINAPI terminate(HANDLE h, UINT result) {
 }
 DWORD WINAPI wait(HANDLE h, DWORD timeout) {
   if (! active) return WaitForSingleObject(h, timeout);
+  if (retry_event && h == retry_event) {
+    SetEvent(retry_entered);
+    return WaitForSingleObject(h, timeout);
+  }
   CHECK((h == process_handle && ! process_closed) || (h == startup_handle && duplicate_open));
   CHECK(timeout <= 5000);
   waits++;
@@ -86,6 +99,14 @@ DWORD WINAPI wait(HANDLE h, DWORD timeout) {
   }
   return wait_result;
 }
+DWORD WINAPI wait_multiple(DWORD count, const HANDLE *handles, BOOL all, DWORD timeout) {
+  if (throttle_entered) {
+    observed_delay = timeout;
+    SetEvent(throttle_entered);
+    if (WaitForSingleObject(throttle_release, 5000) != WAIT_OBJECT_0) return WAIT_FAILED;
+  }
+  return WaitForMultipleObjects(count, handles, all, timeout);
+}
 DWORD WINAPI resume(HANDLE h) {
   if (! active) return ResumeThread(h);
   CHECK(h == thread_handle && ! thread_closed);
@@ -97,7 +118,7 @@ DWORD WINAPI resume(HANDLE h) {
 BOOL WINAPI code(HANDLE h, LPDWORD value) {
   if (! active) return GetExitCodeProcess(h, value);
   CHECK(h == process_handle && ! process_closed);
-  *value = stopped ? 0 : STILL_ACTIVE;
+  *value = stopped ? 0 : app_exitcode;
   return TRUE;
 }
 BOOL WINAPI affinity(HANDLE h, PDWORD_PTR process, PDWORD_PTR system) {
@@ -106,6 +127,8 @@ BOOL WINAPI affinity(HANDLE h, PDWORD_PTR process, PDWORD_PTR system) {
 }
 BOOL WINAPI set_affinity(HANDLE h, DWORD_PTR mask) { if (! active) return SetProcessAffinityMask(h, mask); if (! affinity_ok) SetLastError(ERROR_ACCESS_DENIED); return affinity_ok; }
 BOOL WINAPI status(SERVICE_STATUS_HANDLE h, LPSERVICE_STATUS value) {
+  if (active && value->dwCurrentState == SERVICE_STOPPED) stopped_statuses++;
+  if (active && value->dwCurrentState == SERVICE_RUNNING) running_statuses++;
   if (cleanup_race && value->dwCurrentState == SERVICE_STOPPED) SetEvent(cleanup_stopped);
   return active ? TRUE : SetServiceStatus(h, value);
 }
@@ -124,7 +147,7 @@ void cleanup(nssm_service_t *service) {
 void environment(TCHAR *env) { if (! active) duplicate_environment_strings(env); }
 int time(HANDLE h, FILETIME *value) { if (! active) return get_process_creation_time(h, value); ZeroMemory(value, sizeof(*value)); return 0; }
 int exit_time(HANDLE h, FILETIME *value) { if (! active) return get_process_exit_time(h, value); ZeroMemory(value, sizeof(*value)); return 0; }
-int kill(kill_t *k) { if (! active) return kill_process(k); CHECK(k->process_handle == process_handle); stopped = true; return 1; }
+int kill(kill_t *k) { if (! active) return kill_process(k); CHECK(k->process_handle == process_handle); stopped = kill_ok; return kill_ok; }
 unsigned long kill_tree(kill_t *k, unsigned long pid) {
   if (! active) return kill_process_tree(k, pid);
   CHECK(k->process_handle == process_handle && ! process_closed && k->pid == pid);
@@ -274,7 +297,8 @@ static void test_startup_cancellation() {
   for (const TCHAR *action : {NSSM_HOOK_ACTION_PRE, NSSM_HOOK_ACTION_POST}) {
     reset(); wait_result = WAIT_TIMEOUT; cancel_hook_action = action; service = startup_fixture();
     CHECK(monitor_service(service) == 0);
-    CHECK(! registrations && ! invalid_registrations && ! service->wait_handle);
+    CHECK(registrations == (_tcscmp(action, NSSM_HOOK_ACTION_POST) == 0 ? 1U : 0U));
+    CHECK(registrations == unregistrations && ! invalid_registrations && ! service->wait_handle);
     if (! _tcscmp(action, NSSM_HOOK_ACTION_PRE)) CHECK(! creates);
     CHECK(service->status.dwCurrentState == SERVICE_STOPPED && ! service->process_handle);
     if (service->process_handle) { service->stopping = false; stop_service(service, 0, true, true); }
@@ -293,7 +317,87 @@ static void test_startup_cancellation() {
   active = false;
 }
 
+static void test_relaunch_and_shutdown() {
+  using namespace launch_test;
+  reset();
+  nssm_service_t *service = startup_fixture();
+  registration_ok = false;
+  CHECK(monitor_service(service) == ERROR_NOT_ENOUGH_MEMORY);
+  CHECK(! running_statuses && stopped_statuses == 1 && process_closed);
+  CHECK(stop_service(service, 0, true, true) == ERROR_NOT_ENOUGH_MEMORY && stopped_statuses == 1);
+  DeleteCriticalSection(&service->hook_section); delete service;
+
+  reset(); service = startup_fixture();
+  service->start_count = service->exit_count = 1;
+  service->stopping = true; create_ok = false;
+  CHECK(monitor_service(service) != 0);
+  CHECK(service->allow_restart && ! stopped_statuses && ! service->process_handle);
+  create_ok = true; wait_result = WAIT_TIMEOUT;
+  CHECK(monitor_service(service) == 0 && registrations == 1 && running_statuses == 1);
+  service->stop_method = NSSM_STOP_METHOD_TERMINATE;
+  kill_ok = false;
+  CHECK(stop_service(service, 0, true, true) == ERROR_PROCESS_ABORTED && stopped_statuses == 1);
+  DeleteCriticalSection(&service->hook_section); delete service; active = false;
+}
+
+static DWORD WINAPI throttle_thread(void *context) {
+  throttle_restart(static_cast<nssm_service_t *>(context));
+  return 0;
+}
+static DWORD WINAPI natural_exit(void *context) { end_service(context, false); return 0; }
+
+static void test_resume_retry_exit() {
+  using namespace launch_test;
+  registry_fixture registry;
+  reset();
+  nssm_service_t *service = startup_fixture();
+  service->start_count = 1;
+  service->restart_delay = 37;
+  service->resume_event = CreateEvent(NULL, FALSE, FALSE, NULL);
+  service->stop_event = CreateEvent(NULL, TRUE, FALSE, NULL);
+  throttle_entered = CreateEvent(NULL, TRUE, FALSE, NULL);
+  throttle_release = CreateEvent(NULL, TRUE, FALSE, NULL);
+  REQUIRE(service->resume_event && service->stop_event && throttle_entered && throttle_release);
+  HANDLE worker = CreateThread(NULL, 0, throttle_thread, service, 0, NULL);
+  REQUIRE(worker && WaitForSingleObject(throttle_entered, 5000) == WAIT_OBJECT_0);
+  CHECK(observed_delay == 37 && service->status.dwCurrentState == SERVICE_PAUSED);
+  CHECK(service_control_handler(SERVICE_CONTROL_CONTINUE, 0, NULL, service) == NO_ERROR);
+  CHECK(service->status.dwCurrentState == SERVICE_CONTINUE_PENDING && service->throttle == 0);
+  SetEvent(throttle_release);
+  REQUIRE(WaitForSingleObject(worker, 5000) == WAIT_OBJECT_0);
+  CloseHandle(worker); CloseHandle(throttle_entered); CloseHandle(throttle_release);
+  throttle_entered = throttle_release = NULL;
+
+  HKEY key = open_registry(service->name, NSSM_REG_EXIT, KEY_WRITE);
+  REQUIRE(key);
+  REQUIRE(! set_string(key, _T("259"), _T("Exit")));
+  RegCloseKey(key);
+  service->process_handle = process_handle; service->pid = 321;
+  end_service(service, false);
+  CHECK(stopped_statuses == 1 && service->status.dwServiceSpecificExitCode == 259);
+  CloseHandle(service->resume_event); CloseHandle(service->stop_event);
+  DeleteCriticalSection(&service->hook_section); delete service;
+
+  reset(); service = startup_fixture();
+  service->start_count = 1;
+  app_exitcode = 3; service->process_handle = process_handle; service->pid = 321;
+  create_ok = false;
+  service->stop_event = retry_event = CreateEvent(NULL, TRUE, FALSE, NULL);
+  retry_entered = CreateEvent(NULL, TRUE, FALSE, NULL);
+  REQUIRE(retry_event && retry_entered);
+  worker = CreateThread(NULL, 0, natural_exit, service, 0, NULL);
+  REQUIRE(worker && WaitForSingleObject(retry_entered, 5000) == WAIT_OBJECT_0);
+  CHECK(service_control_handler(SERVICE_CONTROL_STOP, 0, NULL, service) == NO_ERROR);
+  REQUIRE(WaitForSingleObject(worker, 5000) == WAIT_OBJECT_0);
+  CHECK(creates == 1 && ! stopped_statuses && ! service->allow_restart);
+  CloseHandle(worker); CloseHandle(retry_entered); CloseHandle(retry_event);
+  retry_event = retry_entered = NULL;
+  DeleteCriticalSection(&service->hook_section); delete service; active = false;
+}
+
 void test_launch_handles() {
+  test_relaunch_and_shutdown();
+  test_resume_retry_exit();
   test_startup_cancellation();
   test_cleanup_overlap();
   launch_test::environment_case(true, true, WAIT_OBJECT_0, 0);

@@ -89,6 +89,8 @@ void test_control_waits() {
     CHECK(run_control(actions[i]) != 0 && ! scm::queries);
   }
 
+  scm::reset({{0, SERVICE_CONTINUE_PENDING, 1, 1000}, {100, SERVICE_START_PENDING, 1, 2000}, {300, SERVICE_RUNNING}});
+  CHECK(run_control(SERVICE_CONTROL_CONTINUE) == 0);
   scm::reset({{0, SERVICE_STOP_PENDING, 1, 100000}, {90000, SERVICE_STOPPED}});
   CHECK(run_control(SERVICE_CONTROL_STOP) == 0 && scm::elapsed == 90000);
   scm::reset({{0, SERVICE_PAUSED}, {500, SERVICE_STOP_PENDING, 0, 3000}, {1500, SERVICE_STOPPED}});

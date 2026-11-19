@@ -35,6 +35,7 @@ size_t environment_length(TCHAR *env) {
 
 /* Copy an environment block. */
 TCHAR *copy_environment_block(TCHAR *env) {
+  if (! env) return NULL;
   TCHAR *newenv;
   if (copy_double_null(env, (unsigned long) environment_length(env), &newenv)) return 0;
   return newenv;
@@ -73,7 +74,8 @@ TCHAR *expand_environment_string(TCHAR *string) {
     return 0;
   }
 
-  if (! ExpandEnvironmentStrings(string, ret, len)) {
+  unsigned long written = ExpandEnvironmentStrings(string, ret, len);
+  if (! written || written > len) {
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_EXPANDENVIRONMENTSTRINGS_FAILED, string, error_string(GetLastError()));
     HeapFree(GetProcessHeap(), 0, ret);
     return 0;
@@ -87,7 +89,8 @@ TCHAR *expand_environment_string(TCHAR *string) {
   environment or remove all the variables in the block from the current
   environment.
 */
-static int set_environment_block(TCHAR *env, bool set) {
+static int set_environment_block(TCHAR *env, bool set, bool expand = true) {
+  if (! env) return 1;
   int ret = 0;
 
   TCHAR *s, *t, *next;
@@ -98,7 +101,7 @@ static int set_environment_block(TCHAR *env, bool set) {
     if (*t == _T('=')) {
       *t++ = _T('\0');
       if (set) {
-        TCHAR *expanded = expand_environment_string(t);
+        TCHAR *expanded = expand ? expand_environment_string(t) : NULL;
         if (expanded) {
           if (! SetEnvironmentVariable(s, expanded)) ret++;
           HeapFree(GetProcessHeap(), 0, expanded);
@@ -110,6 +113,7 @@ static int set_environment_block(TCHAR *env, bool set) {
       else {
         if (! SetEnvironmentVariable(s, NULL)) ret++;
       }
+      t[-1] = _T('=');
     }
   }
 
@@ -126,22 +130,16 @@ static int unset_environment_block(TCHAR *env) {
 
 /* Remove all variables from the process environment. */
 int clear_environment() {
-  TCHAR *rawenv = GetEnvironmentStrings();
-  TCHAR *env = useful_environment(rawenv);
-
-  int ret = unset_environment_block(env);
-
-  if (rawenv) FreeEnvironmentStrings(rawenv);
-
-  return ret;
+  TCHAR *copy = copy_environment();
+  if (! copy) return 1;
+  int result = unset_environment_block(useful_environment(copy));
+  HeapFree(GetProcessHeap(), 0, copy);
+  return result;
 }
 
-/* Set the current environment to exactly duplicate an environment block. */
 int duplicate_environment(TCHAR *rawenv) {
-  int ret = clear_environment();
-  TCHAR *env = useful_environment(rawenv);
-  ret += set_environment_block(env);
-  return ret;
+  if (! rawenv || clear_environment()) return 1;
+  return set_environment_block(useful_environment(rawenv), true, false);
 }
 
 /*
@@ -236,29 +234,24 @@ int append_to_environment_block(TCHAR *env, unsigned long envlen, TCHAR *string,
   If removing the string results in an empty list the new block will still be
   allocated and have non-zero length.
 */
-int remove_from_environment_block(TCHAR *env, unsigned long envlen, TCHAR *string, TCHAR **newenv, unsigned long *newlen) {
+int remove_from_environment_block(TCHAR *env, unsigned long envlen, const TCHAR *string, TCHAR **newenv, unsigned long *newlen) {
   if (! string || ! string[0] || string[0] == _T('=')) return 1;
 
-  TCHAR *key = 0;
-  size_t len = _tcslen(string);
-  size_t i;
-  for (i = 0; i < len; i++) if (string[i] == _T('=')) break;
-
-  /* Rewrite KEY to KEY= but leave KEY=VALUE alone. */
-  size_t keylen = len;
-  if (i == len) keylen++;
-
-  key = (TCHAR *) HeapAlloc(GetProcessHeap(), 0, (keylen + 1) * sizeof(TCHAR));
-  if (! key) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, _T("key"), _T("remove_from_environment_block()"));
-    return 2;
+  unsigned long length;
+  if (! double_null_length(env, envlen, &length) || !env) return 1;
+  if (copy_double_null(env, length, newenv)) return 2;
+  const TCHAR *equals = _tcschr(string, _T('='));
+  size_t keylen = equals ? equals - string : _tcslen(string);
+  TCHAR *out = *newenv;
+  for (const TCHAR *entry = env; *entry; entry += _tcslen(entry) + 1) {
+    if (! _tcsnicmp(entry, string, keylen) && entry[keylen] == _T('=') &&
+        (! equals || ! _tcscmp(entry + keylen + 1, equals + 1))) continue;
+    size_t count = _tcslen(entry) + 1;
+    memcpy(out, entry, count * sizeof(*out));
+    out += count;
   }
-  memmove(key, string, len * sizeof(TCHAR));
-  if (keylen > len) key[keylen - 1] = _T('=');
-  key[keylen] = _T('\0');
-
-  int ret = remove_from_double_null(env, envlen, newenv, newlen, key, keylen, false);
-  HeapFree(GetProcessHeap(), 0, key);
-
-  return ret;
+  if (out == *newenv) *out++ = 0;
+  *out = 0;
+  *newlen = (unsigned long) (out - *newenv + 1);
+  return 0;
 }
