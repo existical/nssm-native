@@ -18,6 +18,8 @@ static bool registration_ok, kill_ok;
 static DWORD app_exitcode;
 static HANDLE retry_event, retry_entered;
 static HANDLE throttle_entered, throttle_release;
+static HANDLE rotate_pre_entered, rotate_pre_release;
+static HANDLE action_entered, action_release;
 static DWORD observed_delay;
 static unsigned stopped_statuses, running_statuses;
 static unsigned registrations, invalid_registrations, unregistrations;
@@ -155,6 +157,10 @@ unsigned long kill_tree(kill_t *k, unsigned long pid) {
 }
 int hook(hook_thread_t *list, nssm_service_t *service, TCHAR *event, TCHAR *action, unsigned long *control, unsigned long deadline, bool async) {
   if (! active) return nssm_hook(list, service, event, action, control, deadline, async);
+  if (rotate_pre_entered && ! _tcscmp(event, NSSM_HOOK_EVENT_ROTATE) && ! _tcscmp(action, NSSM_HOOK_ACTION_PRE)) {
+    SetEvent(rotate_pre_entered);
+    CHECK(WaitForSingleObject(rotate_pre_release, 5000) == WAIT_OBJECT_0);
+  }
   if (cancel_hook_action && ! _tcscmp(event, NSSM_HOOK_EVENT_START) && ! _tcscmp(action, cancel_hook_action)) {
     cancel_hook_action = NULL;
     stop_service(service, 0, true, true);
@@ -163,6 +169,14 @@ int hook(hook_thread_t *list, nssm_service_t *service, TCHAR *event, TCHAR *acti
 }
 int hook(hook_thread_t *l, nssm_service_t *s, TCHAR *e, TCHAR *a, unsigned long *c, unsigned long d) { return hook(l,s,e,a,c,d,true); }
 int hook(hook_thread_t *l, nssm_service_t *s, TCHAR *e, TCHAR *a, unsigned long *c) { return hook(l,s,e,a,c,NSSM_HOOK_DEADLINE,true); }
+
+int exit_action(const TCHAR *name, DWORD *code, TCHAR *action, bool *fallback) {
+  if (active && action_entered && code) {
+    SetEvent(action_entered);
+    CHECK(WaitForSingleObject(action_release, 5000) == WAIT_OBJECT_0);
+  }
+  return get_exit_action(name, code, action, fallback);
+}
 
 static void environment_case(bool created, bool terminated, DWORD waited, int expected) {
   reset(); create_ok = created; terminate_ok = terminated; wait_result = waited;
@@ -395,9 +409,52 @@ static void test_resume_retry_exit() {
   DeleteCriticalSection(&service->hook_section); delete service; active = false;
 }
 
+static void test_control_overlap() {
+  using namespace launch_test;
+  reset();
+  nssm_service_t *service = startup_fixture();
+  service->stop_event = CreateEvent(NULL, TRUE, FALSE, NULL);
+  rotate_pre_entered = CreateEvent(NULL, TRUE, FALSE, NULL); rotate_pre_release = CreateEvent(NULL, TRUE, FALSE, NULL);
+  REQUIRE(service->stop_event && rotate_pre_entered && rotate_pre_release);
+  CHECK(service_control_handler(NSSM_SERVICE_CONTROL_ROTATE, 0, NULL, service) == NO_ERROR);
+  REQUIRE(WaitForSingleObject(rotate_pre_entered, 5000) == WAIT_OBJECT_0);
+  CHECK(service_control_handler(SERVICE_CONTROL_STOP, 0, NULL, service) == NO_ERROR);
+  CHECK(! service->allow_restart && WaitForSingleObject(service->stop_event, 0) == WAIT_OBJECT_0);
+  SetEvent(rotate_pre_release);
+  DWORD started = GetTickCount();
+  while (InterlockedCompareExchange(&service->rotate_active, 0, 0) && GetTickCount() - started < 5000) Sleep(1);
+  REQUIRE(! service->rotate_active);
+  CloseHandle(service->stop_event); CloseHandle(rotate_pre_entered); CloseHandle(rotate_pre_release);
+  rotate_pre_entered = rotate_pre_release = NULL;
+  DeleteCriticalSection(&service->hook_section); delete service;
+
+  registry_fixture registry;
+  TCHAR *actions[] = {_T("Exit"), _T("Suicide")};
+  for (TCHAR *action : actions) {
+    reset(); service = startup_fixture();
+    service->stop_event = CreateEvent(NULL, TRUE, FALSE, NULL);
+    action_entered = CreateEvent(NULL, TRUE, FALSE, NULL); action_release = CreateEvent(NULL, TRUE, FALSE, NULL);
+    HKEY key = open_registry(service->name, NSSM_REG_EXIT, KEY_WRITE); REQUIRE(key);
+    REQUIRE(! set_string(key, _T("259"), action)); RegCloseKey(key);
+    service->process_handle = process_handle; service->pid = 321;
+    HANDLE callback = CreateThread(NULL, 0, natural_exit, service, 0, NULL);
+    REQUIRE(callback && WaitForSingleObject(action_entered, 5000) == WAIT_OBJECT_0);
+    CHECK(service_control_handler(SERVICE_CONTROL_STOP, 0, NULL, service) == NO_ERROR);
+    CHECK(stop_service(service, 0, true, true) == 0);
+    SetEvent(action_release);
+    REQUIRE(WaitForSingleObject(callback, 5000) == WAIT_OBJECT_0);
+    CHECK(stopped_statuses == 1 && ! service->status.dwServiceSpecificExitCode);
+    CloseHandle(callback); CloseHandle(action_entered); CloseHandle(action_release); CloseHandle(service->stop_event);
+    action_entered = action_release = NULL;
+    DeleteCriticalSection(&service->hook_section); delete service;
+  }
+  active = false;
+}
+
 void test_launch_handles() {
   test_relaunch_and_shutdown();
   test_resume_retry_exit();
+  test_control_overlap();
   test_startup_cancellation();
   test_cleanup_overlap();
   launch_test::environment_case(true, true, WAIT_OBJECT_0, 0);

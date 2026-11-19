@@ -19,6 +19,7 @@ BOOL WINAPI set_affinity(HANDLE, DWORD_PTR);
 BOOL WINAPI status(SERVICE_STATUS_HANDLE, LPSERVICE_STATUS);
 BOOL WINAPI free_console();
 int parameters(nssm_service_t *, STARTUPINFO *);
+int exit_action(const TCHAR *, DWORD *, TCHAR *, bool *);
 int output(nssm_service_t *, STARTUPINFO *);
 void close_output(STARTUPINFO *);
 void cleanup(nssm_service_t *);

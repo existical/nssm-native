@@ -830,7 +830,7 @@ int get_parameters(nssm_service_t *service, STARTUPINFO *si) {
   }
 
   /* Try to get startup directory - may fail and we fall back to a default */
-  if (get_string(key, NSSM_REG_DIR, service->dir, sizeof(service->dir), expand, true, true) || ! service->dir[0]) {
+  if (get_string(key, NSSM_REG_DIR, service->dir, sizeof(service->dir), expand, expand, true) || ! service->dir[0]) {
     _sntprintf_s(service->dir, _countof(service->dir), _TRUNCATE, _T("%s"), service->exe);
     strip_basename(service->dir);
     if (service->dir[0] == _T('\0')) {

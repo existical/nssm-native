@@ -241,7 +241,8 @@ int nssm_gui(int resource, nssm_service_t *service) {
     }
     if (service->rotate_stdout_online || service->rotate_stderr_online) SendDlgItemMessage(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_ONLINE, BM_SETCHECK, BST_CHECKED, 0);
     SetDlgItemInt(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_SECONDS, service->rotate_seconds, 0);
-    if (! service->rotate_bytes_high) SetDlgItemInt(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW, service->rotate_bytes_low, 0);
+    if (service->rotate_bytes_high) SetDlgItemText(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW, _T(""));
+    else SetDlgItemInt(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW, service->rotate_bytes_low, 0);
 
     /* Hooks tab. */
     if (service->hook_share_output_handles) SendDlgItemMessage(tablist[NSSM_TAB_HOOKS], IDC_REDIRECT_HOOK, BM_SETCHECK, BST_CHECKED, 0);
@@ -795,9 +796,14 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
     service->rotate_files = true;
     service->rotate_stdout_online = service->rotate_stderr_online = (SendDlgItemMessage(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_ONLINE, BM_GETCHECK, 0, 0) & BST_CHECKED) != 0;
     check_number(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_SECONDS, &service->rotate_seconds);
-    if (GetWindowTextLength(GetDlgItem(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW))) {
-      check_number(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW, &service->rotate_bytes_low);
-      service->rotate_bytes_high = 0;
+    HWND size_field = GetDlgItem(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW);
+    if (! service->rotate_bytes_high || SendMessage(size_field, EM_GETMODIFY, 0, 0)) {
+      BOOL valid = FALSE;
+      UINT size = GetDlgItemInt(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW, &valid, FALSE);
+      if (valid) {
+        service->rotate_bytes_low = size;
+        service->rotate_bytes_high = 0;
+      }
     }
   }
 

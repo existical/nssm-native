@@ -113,6 +113,8 @@ void test_gui_retry() {
   HWND window = gui_window(&original);
   original.stdout_copy_and_truncate = original.stderr_copy_and_truncate = true;
   original.rotate_delay = 71; original.stderr_disposition = OPEN_EXISTING;
+  original.rotate_files = true; original.rotate_bytes_high = 2; original.rotate_bytes_low = 1234;
+  SendDlgItemMessage(tablist[NSSM_TAB_ROTATION], IDC_ROTATE, BM_SETCHECK, BST_CHECKED, 0);
   original.stdout_sharing = FILE_SHARE_DELETE;
   original.stdout_type = REG_SZ;
   _tcscpy_s(original.stdout_path, _T("%UserProfile%\\app.log"));
@@ -121,6 +123,7 @@ void test_gui_retry() {
   REQUIRE(configure(window, edited, &original) == 0);
   CHECK(edited->stdout_copy_and_truncate && edited->stderr_copy_and_truncate);
   CHECK(edited->rotate_delay == 71 && edited->stderr_disposition == OPEN_EXISTING);
+  CHECK(edited->rotate_bytes_high == 2 && edited->rotate_bytes_low == 1234);
   CHECK(edited->stdout_sharing == FILE_SHARE_DELETE && edited->stdout_type == REG_SZ && edited->preserve_stdout_path);
   cleanup_nssm_service(edited);
   gui_test::reset();
