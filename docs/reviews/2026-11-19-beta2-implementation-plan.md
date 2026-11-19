@@ -12,9 +12,9 @@ Baseline `e1cc746`. The numbers in parentheses refer to the [beta.2 review](2026
 
 ## 2. Make configuration backups faithful
 
-- [ ] **Output errors (4).** Check each emitted command and the final stdout flush. Verify export signals failure when its output cannot be written.
+- [x] **Output errors (4).** Check each emitted command and the final stdout flush. Verify export signals failure when its output cannot be written.
 - [x] **Environment errors (14).** Propagate an entry-allocation failure after releasing the environment block. Exercise an incomplete multi-entry dump.
-- [ ] **Literal strings (7).** Preserve the stored type for Application, AppParameters, AppDirectory and all three I/O paths through dump and replay. Keep the existing default setter behavior. Test literal and expandable values and document how to replay the new syntax.
+- [x] **Literal strings (7).** Preserve the stored type for Application, AppParameters, AppDirectory and all three I/O paths through dump and replay. Keep the existing default setter behavior. Test literal and expandable values and document how to replay the new syntax.
 - [x] **Reset guide (16).** Correct the description of resetting Application and distinguish optional setting behavior. Cross-check against the CLI and live export fixture.
 
 ## 3. Preserve service and editor state
@@ -22,8 +22,8 @@ Baseline `e1cc746`. The numbers in parentheses refer to the [beta.2 review](2026
 - [x] **Startup outcomes (8).** Distinguish early exit, stop, wait failure and a surviving application. Dispatch the exit action once without announcing a known-dead application. Verify early exit, restart and a concurrent stop.
 - [x] **Power events (9).** Move power-hook work off the dispatcher, retain notification order and discard stale work during shutdown or restart. Exercise blocked hook processing and subsequent control delivery.
 - [x] **Affinity edits (10).** Preserve the complete stored mask on unrelated GUI saves and honor explicit affinity changes. Cover a mask with unrepresented CPU IDs.
-- [ ] **Wrapper identification (11).** Check the configured SCM executable before interpreting Parameters as NSSM settings. Share classification between management and listing, and support renamed and separately installed NSSM executables. Test a native service with its own Application value and a valid wrapper copy.
-- [ ] **Named operations (12).** Request manager-connect access for operations on known services. Preserve service-specific access checks and actual enumeration. Check key-name and display-name resolution.
+- [x] **Wrapper identification (11).** Check the configured SCM executable before interpreting Parameters as NSSM settings. Share classification between management and listing, and support renamed and separately installed NSSM executables. Test a native service with its own Application value and a valid wrapper copy.
+- [x] **Named operations (12).** Request manager-connect access for operations on known services. Preserve service-specific access checks and actual enumeration. Check key-name and display-name resolution.
 - [x] **Virtual accounts (15).** Remove the allocation from virtual-account matching. Check exact, case-insensitive matching, domain boundaries and mismatched names.
 
 ## 4. Verify release evidence and close the review

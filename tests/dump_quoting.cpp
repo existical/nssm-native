@@ -165,6 +165,14 @@ void test_exit_export() {
         CHECK(dump_output.find(text_t(literal ? _T(" REG_SZ:") : _T(" ")) + s->name + _T(" ")) != text_t::npos);
     }
   }
+  text_t long_application(VALUE_LENGTH + 32, _T('a'));
+  for (bool literal : {true, false}) {
+    REQUIRE(!set_string(parameters, NSSM_REG_EXE, &long_application[0], !literal));
+    dump_output.clear();
+    CHECK(!dump_launch_string(service, parameters, NSSM_REG_EXE, NULL, NULL, NULL));
+    if (literal) CHECK(dump_output.find(long_application) != text_t::npos);
+    else CHECK(dump_output.empty());
+  }
   fail_output = true;
   CHECK(setting_dump_string(service, REG_SZ, NSSM_REG_FLAGS, &path, NULL) != 0);
   fail_output = false;

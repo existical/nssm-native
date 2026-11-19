@@ -334,6 +334,8 @@ static void test_startup_cancellation() {
   reset(); wait_result = WAIT_TIMEOUT; service = startup_fixture(); service->wait_handle = registration_handle;
   CHECK(monitor_service(service) == 0 && registrations == 1 && unregistrations == 1);
   CHECK(! invalid_registrations && service->wait_handle == registration_handle);
+  CHECK(service->status.dwCurrentState == SERVICE_RUNNING && !(service->status.dwControlsAccepted & SERVICE_ACCEPT_POWEREVENT));
+  CHECK(service_control_handler(SERVICE_CONTROL_POWEREVENT, PBT_APMRESUMEAUTOMATIC, NULL, service) == ERROR_CALL_NOT_IMPLEMENTED);
   CHECK(stop_service(service, 0, true, true) == 0 && unregistrations == 2);
   DeleteCriticalSection(&service->hook_section); delete service;
   active = false;

@@ -1678,17 +1678,18 @@ void WINAPI service_main(unsigned long argc, TCHAR **argv) {
   /* Remember our creation time. */
   if (get_process_creation_time(GetCurrentProcess(), &service->nssm_creation_time)) ZeroMemory(&service->nssm_creation_time, sizeof(service->nssm_creation_time));
 
-  service->power_port = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1);
   InterlockedExchange(&service->allow_restart, 1);
+  service->power_port = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1);
   HANDLE power_worker = service->power_port ? CreateThread(NULL, 0, dispatch_power_hooks, service, 0, NULL) : NULL;
   if (!power_worker) {
-    stop_service(service, GetLastError(), true, true);
-    return;
+    log_event(EVENTLOG_WARNING_TYPE, NSSM_EVENT_POWER_NOTIFICATIONS_UNAVAILABLE, service->name, error_string(GetLastError()));
+    close_handle(&service->power_port);
   }
   /* The handler context and port live until the service process exits. */
   struct power_worker_owner {
     HANDLE port, worker;
     ~power_worker_owner() {
+      if (!worker) return;
       PostQueuedCompletionStatus(port, 0, 0, NULL);
       WaitForSingleObject(worker, INFINITE);
       CloseHandle(worker);
@@ -1860,6 +1861,7 @@ unsigned long WINAPI service_control_handler(unsigned long control, unsigned lon
     case SERVICE_CONTROL_POWEREVENT:
       if (event == PBT_APMRESUMEAUTOMATIC || event == PBT_APMPOWERSTATUSCHANGE) {
         if (!restart_allowed(service)) return NO_ERROR;
+        if (!service->power_port) return ERROR_CALL_NOT_IMPLEMENTED;
         DWORD generation = InterlockedCompareExchange(&service->start_count, 0, 0);
         if (!PostQueuedCompletionStatus(service->power_port, generation, event, NULL)) return GetLastError();
         return NO_ERROR;
@@ -1927,7 +1929,8 @@ int start_service(nssm_service_t *service) {
   service->stopping = false;
 
   service->status.dwCurrentState = SERVICE_START_PENDING;
-  service->status.dwControlsAccepted = SERVICE_ACCEPT_POWEREVENT | SERVICE_ACCEPT_SHUTDOWN | SERVICE_ACCEPT_STOP;
+  service->status.dwControlsAccepted = SERVICE_ACCEPT_SHUTDOWN | SERVICE_ACCEPT_STOP;
+  if (service->power_port) service->status.dwControlsAccepted |= SERVICE_ACCEPT_POWEREVENT;
   SetServiceStatus(service->status_handle, &service->status);
 
   unsigned long control = NSSM_SERVICE_CONTROL_START;

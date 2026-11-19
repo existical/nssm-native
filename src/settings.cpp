@@ -167,7 +167,7 @@ static int setting_dump_string(const TCHAR *service_name, unsigned long type, co
 
 /* Restore literal launch/I/O values with an explicit setter after install. */
 static int dump_launch_string(const TCHAR *service_name, void *param, const TCHAR *name, void *, value_t *, const TCHAR *) {
-  TCHAR buffer[VALUE_LENGTH];
+  TCHAR buffer[CMD_LENGTH];
   DWORD type = REG_NONE;
   if (get_string((HKEY) param, (TCHAR *) name, buffer, sizeof(buffer), false, false, false, &type)) return 1;
   /* Install derives a directory from the raw application path. Clear that

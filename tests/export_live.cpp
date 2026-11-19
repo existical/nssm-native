@@ -86,7 +86,11 @@ static result run(const std::wstring &exe, const std::wstring &arguments, bool r
   CloseHandle(output); CloseHandle(input); require(created != FALSE, "Launch isolated NSSM command");
   CloseHandle(process.hThread);
   DWORD waited = WaitForSingleObject(process.hProcess, 10000);
-  if (waited != WAIT_OBJECT_0) { TerminateProcess(process.hProcess, 9); WaitForSingleObject(process.hProcess, 5000); }
+  if (waited != WAIT_OBJECT_0) {
+    fwprintf(stderr, L"Fixture command '%ls' failed to finish (wait result %lu)\n", arguments.c_str(), waited);
+    TerminateProcess(process.hProcess, 9);
+    WaitForSingleObject(process.hProcess, 5000);
+  }
   result value = {};
   BOOL got_code = GetExitCodeProcess(process.hProcess, &value.code);
   CloseHandle(process.hProcess);
@@ -146,6 +150,7 @@ int wmain(int argc, wchar_t **argv) {
       service_fixture::set(source.key, L"AppStderr", raw_log, REG_EXPAND_SZ);
       service_fixture::set(source.key, L"Application", argv[1], REG_SZ);
       source.query_only();
+      require(run(argv[1], L"status " + quoted(source.name)).code != 0, "Named status requires service query-status access");
       // Remove destination rules so replay must reconstruct all of them.
       require(RegDeleteKeyW(imported.key, L"AppExit") == ERROR_SUCCESS, "Clear destination rules");
       result exported = run(argv[1], L"dump " + quoted(source.name) + L" " + quoted(imported.name));
@@ -163,6 +168,9 @@ int wmain(int argc, wchar_t **argv) {
         service_fixture relocated(manager, spaced, L"renamed");
         relocated.configure(argv[1]);
         require(run(argv[1], L"dump " + quoted(relocated.name)).code == 0, "Recognize a separately installed wrapper by version resource");
+        result listed = run(argv[1], L"list");
+        require(listed.code == 0 && listed.output.find(relocated.name) != std::wstring::npos &&
+                listed.output.find(native.name) == std::wstring::npos, "List identifies the relocated wrapper and excludes the native service");
         result copy_dump = run(spaced, L"dump " + quoted(source.name));
         size_t end = copy_dump.output.find(L" install ");
         require(copy_dump.code == 0 && end != std::wstring::npos, "Read executable prefix from spaced-path dump");
