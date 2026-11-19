@@ -1,25 +1,20 @@
 # Changelog
 
-## Unreleased
+## 2.25.0-beta.2
 
-No additional implementation changes recorded since the first beta.
+- Fix child relaunch, stop confirmation, resume timing, exit monitoring and manual log rotation.
+- Preserve raw configuration during GUI edits, propagate save errors and repair missing wrapper parameters from the CLI.
+- Preserve literal hook commands in exports. Clone dumps use the target display name, and native-service dumps return an error.
+- Review the compatibility changes and regression coverage in the [NSSM-038 through NSSM-071 fix register](docs/fixes/november-supervision-and-configuration.md).
 
 ## [2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) - 2026-11-05
 
 First public beta of the NSSM Native continuation, including CONT-001 through
 CONT-005 and NSSM-001 through NSSM-037. All implementations are merged.
-See the [beta notes](docs/releases/v2.25.0-beta.1.md),
-[publication record](docs/releases/v2.25.0-beta.1-publication.json) and
-[QRScanner acceptance checklist](docs/releases/qrscanner-beta-acceptance.md).
+See the [beta notes](docs/releases/v2.25.0-beta.1.md) and [publication record](docs/releases/v2.25.0-beta.1-publication.json).
 The tag and original packages retain tested source commit
 `739b5feabdc768a4524fe28bad2c000b05ee5e07`; later documentation records acceptance
 and publication without rebuilding the candidate.
-
-- Record the supplied [QRScanner beta acceptance](docs/releases/qrscanner-beta-results.md):
-  24 monitored hours, 289 samples, no observed wrapper/application restart,
-  preserved data/configuration, exact legacy rollback and verified cleanup.
-  Retain a sanitized result summary and the test-only helper/production adoption
-  distinction. Original receipts remain local; the tested beta packages are unchanged.
 
 - Protect startup and monitor publication against concurrent STOP. Startup owns
   its wait handle, rechecks cancellation before launching/registering, and

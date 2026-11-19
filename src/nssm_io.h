@@ -17,6 +17,8 @@ typedef struct logger_t {
   volatile LONG rotate_online;
   volatile LONG draining;
   HANDLE stop_event;
+  HANDLE rotation_done;
+  volatile LONG rotation_succeeded;
   TCHAR service_name[SERVICE_NAME_LENGTH];
   TCHAR path[PATH_LENGTH];
   unsigned long sharing;
@@ -39,7 +41,9 @@ typedef struct {
 } rotation_options_t;
 
 void close_handle(HANDLE *);
-int get_createfile_parameters(HKEY, TCHAR *, TCHAR *, unsigned long *, unsigned long, unsigned long *, unsigned long, unsigned long *, unsigned long, bool *);
+bool resolve_io_path(const TCHAR *, TCHAR *);
+bool same_file(const TCHAR *, const TCHAR *);
+int get_createfile_parameters(HKEY, TCHAR *, TCHAR *, unsigned long *, unsigned long, unsigned long *, unsigned long, unsigned long *, unsigned long, bool *, bool = true, unsigned long * = NULL);
 int set_createfile_parameter(HKEY, TCHAR *, TCHAR *, unsigned long);
 int delete_createfile_parameter(HKEY, TCHAR *, TCHAR *);
 HANDLE write_to_file(TCHAR *, unsigned long, SECURITY_ATTRIBUTES *, unsigned long, unsigned long);
@@ -48,6 +52,7 @@ int get_output_handles(nssm_service_t *, STARTUPINFO *);
 int use_output_handles(nssm_service_t *, STARTUPINFO *);
 void close_output_handles(STARTUPINFO *);
 void cleanup_loggers(nssm_service_t *);
+bool await_logger_rotation(nssm_service_t *, unsigned long);
 void set_logger_rotation(nssm_service_t *, bool);
 unsigned long WINAPI log_and_rotate(void *);
 

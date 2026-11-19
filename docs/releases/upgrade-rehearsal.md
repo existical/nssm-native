@@ -71,9 +71,7 @@ after the matrix suite; its logs/JUnit report are retained separately as
 nssm-lifecycle-repeat-evidence. matrix-tests.log preserves the full suite before
 the repeat overwrites CTest's LastTest.log.
 
-See [B15 validation](../reviews/b15-validation.md) for actual outcomes. Passing
-this controlled PowerShell scenario is not a QRScanner deployment, production
-soak, database migration, domain-account test or a guarantee of rollback for
-every third-party application's data format. Before deployment, retain the
+The [B15 validation](../reviews/b15-validation.md) records the PowerShell workload and its results.
+Application data formats and readiness criteria require a separate deployment test. Before deployment, retain the
 actual installed binary/hash, exported service settings and application data;
 rehearse the same replacement with that application's readiness and data checks.

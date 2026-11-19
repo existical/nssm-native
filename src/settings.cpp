@@ -87,6 +87,10 @@ static int setting_get_number(const TCHAR *service_name, void *param, const TCHA
 }
 
 static int setting_set_string(const TCHAR *service_name, void *param, const TCHAR *name, void *default_value, value_t *value, const TCHAR *additional) {
+  if (str_equiv(name, NSSM_REG_EXE) && (! value || ! value->string || ! *value->string)) {
+    print_message(stderr, NSSM_GUI_MISSING_PATH);
+    return -1;
+  }
   HKEY key = (HKEY) param;
   if (! key) return -1;
 
@@ -258,18 +262,13 @@ static int setting_dump_exit_action(const TCHAR *service_name, void *param, cons
 }
 
 static inline bool split_hook_name(const TCHAR *hook_name, TCHAR *hook_event, TCHAR *hook_action) {
-  TCHAR *s;
-
-  for (s = (TCHAR *) hook_name; *s; s++) {
-    if (*s == _T('/')) {
-      *s = _T('\0');
-      _sntprintf_s(hook_event, HOOK_NAME_LENGTH, _TRUNCATE, _T("%s"), hook_name);
-      *s++ = _T('/');
-      _sntprintf_s(hook_action, HOOK_NAME_LENGTH, _TRUNCATE, _T("%s"), s);
-      return valid_hook_name(hook_event, hook_action, false);
-    }
+  const TCHAR *slash = hook_name ? _tcschr(hook_name, _T('/')) : NULL;
+  if (slash && slash != hook_name && (size_t) (slash - hook_name) < HOOK_NAME_LENGTH &&
+      _tcslen(slash + 1) < HOOK_NAME_LENGTH) {
+    _tcsncpy_s(hook_event, HOOK_NAME_LENGTH, hook_name, slash - hook_name);
+    _tcscpy_s(hook_action, HOOK_NAME_LENGTH, slash + 1);
+    return valid_hook_name(hook_event, hook_action, false);
   }
-
   print_message(stderr, NSSM_MESSAGE_INVALID_HOOK_NAME, hook_name);
   return false;
 }
@@ -277,13 +276,14 @@ static inline bool split_hook_name(const TCHAR *hook_name, TCHAR *hook_event, TC
 static int setting_set_hook(const TCHAR *service_name, void *param, const TCHAR *name, void *default_value, value_t *value, const TCHAR *additional) {
   TCHAR hook_event[HOOK_NAME_LENGTH];
   TCHAR hook_action[HOOK_NAME_LENGTH];
-  if (! split_hook_name(additional, hook_event, hook_action)) return -1;
+  bool literal = additional && ! _tcsnicmp(additional, _T("REG_SZ:"), 7);
+  if (! split_hook_name(literal ? additional + 7 : additional, hook_event, hook_action)) return -1;
 
   TCHAR *cmd;
   if (value && value->string) cmd = value->string;
   else cmd = _T("");
 
-  if (set_hook(service_name, hook_event, hook_action, cmd)) return -1;
+  if (set_hook(service_name, hook_event, hook_action, cmd, ! literal)) return -1;
   if (! _tcslen(cmd)) return 0;
   return 1;
 }
@@ -294,12 +294,8 @@ static int setting_get_hook(const TCHAR *service_name, void *param, const TCHAR 
   if (! split_hook_name(additional, hook_event, hook_action)) return -1;
 
   TCHAR cmd[CMD_LENGTH];
-  if (get_hook(service_name, hook_event, hook_action, cmd, sizeof(cmd))) return -1;
-
-  value_from_string(name, value, cmd);
-
-  if (! _tcslen(cmd)) return 0;
-  return 1;
+  if (get_hook(service_name, hook_event, hook_action, cmd, sizeof(cmd), false)) return -1;
+  return value_from_string(name, value, cmd);
 }
 
 static int setting_dump_hooks(const TCHAR *service_name, void *param, const TCHAR *name, void *default_value, value_t *value, const TCHAR *additional) {
@@ -313,18 +309,19 @@ static int setting_dump_hooks(const TCHAR *service_name, void *param, const TCHA
       const TCHAR *hook_action = hook_action_strings[j];
       if (! valid_hook_name(hook_event, hook_action, true)) continue;
 
-      TCHAR hook_name[HOOK_NAME_LENGTH];
-      _sntprintf_s(hook_name, _countof(hook_name), _TRUNCATE, _T("%s/%s"), hook_event, hook_action);
-
-      int ret = setting_get_hook(context->source_name, param, name, context->setting->default_value, value, hook_name);
-      if (ret != 1) {
-        if (ret < 0) errors++;
+      TCHAR cmd[CMD_LENGTH];
+      DWORD type = REG_EXPAND_SZ;
+      if (get_hook(context->source_name, hook_event, hook_action, cmd, sizeof(cmd), false, &type)) {
+        errors++;
         continue;
       }
-
-      if (setting_dump_string(service_name, REG_SZ, name, value, hook_name)) errors++;
-      HeapFree(GetProcessHeap(), 0, value->string);
-      value->string = NULL;
+      if (! *cmd) continue;
+      TCHAR hook_name[HOOK_NAME_LENGTH];
+      _sntprintf_s(hook_name, _countof(hook_name), _TRUNCATE, _T("%s%s/%s"),
+                   type == REG_SZ ? _T("REG_SZ:") : _T(""), hook_event, hook_action);
+      value_t entry = {};
+      entry.string = cmd;
+      if (setting_dump_string(service_name, REG_SZ, name, &entry, hook_name)) errors++;
     }
   }
 
@@ -480,6 +477,7 @@ static int setting_set_environment(const TCHAR *service_name, void *param, const
   }
 
   if (! string || ! string[0]) {
+    if (unformatted) HeapFree(GetProcessHeap(), 0, unformatted);
     long error = RegDeleteValue(key, name);
     if (error == ERROR_SUCCESS || error == ERROR_FILE_NOT_FOUND) return 0;
     print_message(stderr, NSSM_MESSAGE_REGDELETEVALUE_FAILED, name, service_name, error_string(error));
@@ -517,7 +515,6 @@ static int setting_get_environment(const TCHAR *service_name, void *param, const
 
   TCHAR *formatted;
   unsigned long newlen;
-  if (format_double_null(env, envlen, &formatted, &newlen)) return -1;
 
   int ret;
   if (additional) {
@@ -541,7 +538,9 @@ static int setting_get_environment(const TCHAR *service_name, void *param, const
     return 0;
   }
 
+  int error = format_double_null(env, envlen, &formatted, &newlen);
   HeapFree(GetProcessHeap(), 0, env);
+  if (error) return -1;
 
   ret = value_from_string(name, value, formatted);
   if (newlen) HeapFree(GetProcessHeap(), 0, formatted);
@@ -627,7 +626,8 @@ static int setting_get_priority(const TCHAR *service_name, void *param, const TC
     case 0:
       if (value_from_string(name, value, (const TCHAR *) default_value) == -1) return -1;
       return 0;
-    case -1: return -1;
+    case 1: break;
+    default: return -1;
   }
 
   return value_from_string(name, value, priority_strings[priority_constant_to_index(constant)]);
@@ -897,7 +897,9 @@ int native_get_displayname(const TCHAR *service_name, void *param, const TCHAR *
 }
 
 int native_set_environment(const TCHAR *service_name, void *param, const TCHAR *name, void *default_value, value_t *value, const TCHAR *additional) {
-  HKEY key = open_service_registry(service_name, KEY_SET_VALUE, true);
+  REGSAM access = KEY_SET_VALUE;
+  if (value && value->string && (value->string[0] == _T('+') || value->string[0] == _T('-'))) access |= KEY_QUERY_VALUE;
+  HKEY key = open_service_registry(service_name, access, true);
   if (! key) return -1;
 
   int ret = setting_set_environment(service_name, (void *) key, name, default_value, value, additional);
@@ -1042,7 +1044,7 @@ int native_get_objectname(const TCHAR *service_name, void *param, const TCHAR *n
   QUERY_SERVICE_CONFIG *qsc = query_service_config(service_name, service_handle);
   if (! qsc) return -1;
 
-  int ret = value_from_string(name, value, qsc->lpServiceStartName);
+  int ret = value_from_string(name, value, qsc->lpServiceStartName ? qsc->lpServiceStartName : _T(""));
   HeapFree(GetProcessHeap(), 0, qsc);
 
   return ret;

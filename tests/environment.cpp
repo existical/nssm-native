@@ -55,6 +55,23 @@ void test_environment_entries() {
       expect_variable(_T("NSSM_TEST_SENTINEL"), _T("untouched"));
     }
   }
+  TCHAR entries[] = _T("MODE=production\0Model=extra\0");
+  for (const TCHAR *query : {_T("mode=prod"), _T("MODE="), _T("mode=Production"), _T("mode=production"), _T("MoDe")}) {
+    TCHAR *result = NULL;
+    DWORD count = 0;
+    REQUIRE(! remove_from_environment_block(entries, _countof(entries), query, &result, &count));
+    bool removed = ! _tcscmp(query, _T("mode=production")) || ! _tcscmp(query, _T("MoDe"));
+    CHECK(! _tcscmp(result, removed ? _T("Model=extra") : entries));
+    HeapFree(GetProcessHeap(), 0, result);
+  }
+  REQUIRE(SetEnvironmentVariable(_T("NSSM_TEST_LITERAL"), _T("%SystemRoot%")));
+  TCHAR *snapshot = copy_environment();
+  REQUIRE(snapshot);
+  SetEnvironmentVariable(_T("NSSM_TEST_LITERAL"), _T("changed"));
+  duplicate_environment_strings(snapshot);
+  expect_variable(_T("NSSM_TEST_LITERAL"), _T("%SystemRoot%"));
+  HeapFree(GetProcessHeap(), 0, snapshot);
+  CHECK(! copy_environment_block(NULL));
   TCHAR empty[] = { 0, 0 };
   CHECK(set_environment_block(empty) == 0);
   CHECK(unset_environment_block(empty) == 0);

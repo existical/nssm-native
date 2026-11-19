@@ -33,11 +33,11 @@ void test_hook_commands() {
   CHECK(get_hook(service, NSSM_HOOK_EVENT_START, NSSM_HOOK_ACTION_PRE, output, sizeof(output)) == 0);
   CHECK(! output[0]);
   const TCHAR *commands[] = {
-    _T("\"C:\\Program Files\\QR Scanner\\hook.exe\""),
-    _T("\"C:\\Program Files\\QR Scanner\\hook.exe\" --config \"C:\\Data Files\\settings.json\""),
-    _T("\"C:\\Program Files\\QR Scanner\\hook.exe\" \"\""),
+    _T("\"C:\\Program Files\\Hook Tools\\hook.exe\""),
+    _T("\"C:\\Program Files\\Hook Tools\\hook.exe\" --config \"C:\\Data Files\\settings.json\""),
+    _T("\"C:\\Program Files\\Hook Tools\\hook.exe\" \"\""),
     _T("C:\\Tools\\hook.exe --config \"final argument\""),
-    _T("\"C:\\Program Files\\QR Scanner\\hook.exe\" unquoted")
+    _T("\"C:\\Program Files\\Hook Tools\\hook.exe\" unquoted")
   };
   for (unsigned i = 0; i < _countof(commands); i++) {
     std::basic_string<TCHAR> command(commands[i]);
@@ -54,11 +54,11 @@ void test_hook_commands() {
     LocalFree(argv);
     LocalFree(expected);
   }
-  REQUIRE(SetEnvironmentVariable(_T("NSSM_TEST_HOOK_DIR"), _T("C:\\Program Files\\QR Scanner")));
+  REQUIRE(SetEnvironmentVariable(_T("NSSM_TEST_HOOK_DIR"), _T("C:\\Program Files\\Hook Tools")));
   TCHAR expanded[] = _T("\"%NSSM_TEST_HOOK_DIR%\\hook.exe\" \"final argument\"");
   REQUIRE(set_hook(service, NSSM_HOOK_EVENT_START, NSSM_HOOK_ACTION_PRE, expanded) == 0);
   CHECK(get_hook(service, NSSM_HOOK_EVENT_START, NSSM_HOOK_ACTION_PRE, output, sizeof(output)) == 0);
-  CHECK(! _tcscmp(output, _T("\"C:\\Program Files\\QR Scanner\\hook.exe\" \"final argument\"")));
+  CHECK(! _tcscmp(output, _T("\"C:\\Program Files\\Hook Tools\\hook.exe\" \"final argument\"")));
   // REG_SZ must remain literal, while REG_EXPAND_SZ above still expands.
   HKEY key = open_registry(service, _T("AppEvents\\Start"), KEY_WRITE);
   REQUIRE(key);

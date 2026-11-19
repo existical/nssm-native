@@ -256,7 +256,8 @@ int kill_process(nssm_service_t *service, kill_t *k) {
 
   /* We tried being nice.  Time for extreme prejudice. */
   if (k->stop_method & NSSM_STOP_METHOD_TERMINATE) {
-    return TerminateProcess(k->process_handle, k->exitcode);
+    if (! TerminateProcess(k->process_handle, k->exitcode)) return WaitForSingleObject(k->process_handle, 0) == WAIT_OBJECT_0;
+    return ! await_single_handle(k->status_handle, k->status, k->process_handle, k->name, _T("TerminateProcess"), NSSM_SERVICE_STATUS_DEADLINE);
   }
 
   return 0;

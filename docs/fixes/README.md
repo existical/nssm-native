@@ -5,6 +5,8 @@ released build. Read [comparing builds](../comparing-builds.md) to select the
 correct legacy baseline. The [changelog](../../CHANGELOG.md) summarizes changes;
 the records here explain them.
 
+The [November supervision and configuration register](november-supervision-and-configuration.md) covers NSSM-038 through NSSM-071 in the [second beta](../releases/v2.25.0-beta.2.md).
+
 All 37 review/acceptance fixes and the five continuation changes below first
 shipped in [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) on 5 November 2026.
 The public tag, original packages and all 13 uploaded assets were verified; see

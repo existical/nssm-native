@@ -1,0 +1,392 @@
+NSSM Native code review, 19 November 2026
+=========================================
+
+Reviewed master at 012cd5fa55197970ad8a75dae888a625cbefb791.
+File and line references refer to this commit. The earlier November review
+covered 5d7454b. The fix records through NSSM-037 were used as the baseline.
+The numbering below is local to this report.
+
+The first six findings deserve priority because they can take a supervised
+application out of service, lose logs or configuration, or give callers an
+incorrect shutdown result. Each finding gives the relevant path, a correction and a
+regression case. Findings are based on source tracing except where a local
+observation is explicitly recorded. Validation details are at the end.
+
+High priority
+-------------
+
+1. A transient relaunch failure permanently disables automatic recovery.
+   src/service.cpp:1949, 1955, 2045, 2093, 2182, 1867
+   With AppExit=Restart, consider an executable briefly unavailable during
+   deployment. CreateProcess fails on the relaunch and start_service calls
+   stop_service. That clears allow_restart and publishes SERVICE_STOPPED.
+   Even if the wrapper reaches the promised retry after its 30-second sleep,
+   the next start short-circuits and monitor_service returns success without
+   launching anything. Separate failed-attempt cleanup from final service
+   shutdown. Test an initially successful service whose first relaunch fails
+   and whose next relaunch succeeds, plus a STOP during the retry delay.
+
+2. A natural Exit action racing an operator STOP can report STOPPED twice.
+   src/service.cpp:2163, 2198, 1791, 2044, 2093
+   The callback checks allow_restart before looking up the exit action.
+   A STOP arriving after that check can schedule its own shutdown. If the
+   callback selects Exit, both threads call stop_service. The critical
+   section serializes them, but both still publish the terminal status.
+   The stopping flag suppresses only the inner end_service cleanup. Windows
+   closes the service status RPC context on the first STOPPED notification.
+   Give one owner the terminal transition and exit code. Gate a regression
+   test between the allow_restart check and the Exit action and count final
+   notifications. The existing cleanup-overlap test calls end_service with
+   why=true, which bypasses exit-action dispatch. See tests/launch.cpp.
+   https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-setservicestatus
+
+3. A successful STOP can precede termination of the main application.
+   src/process.cpp:258, src/service.cpp:2074, 2119, 2142, 2093
+   With forced termination enabled, kill_process returns the result of
+   TerminateProcess immediately. stop_service ignores even a failure. With
+   AppKillProcessTree=0 there is no further wait for the root before NSSM
+   closes its handle and reports success. A subsequent restart can overlap
+   pending I/O or resource release by the previous instance. Wait on the
+   retained root handle after requesting termination, publish progress while
+   waiting, and report failure if exit cannot be confirmed. Test a successful
+   termination request followed by an initially unsignalled handle, and a
+   failed termination request. Preserve deliberate stop-method opt-outs.
+   https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-terminateprocess
+
+4. A slow pre-rotation hook blocks the Windows service-control dispatcher.
+   src/service.cpp:1834, 1784, src/hook.cpp:346, src/nssm.h
+   Rotate/Pre runs synchronously in the handler with a 60-second hook
+   deadline and up to 80 seconds of caller wait. A normal 35-second hook
+   can therefore make ControlService time out while the rotation still goes
+   ahead. STOP also runs Stop/Pre before creating its shutdown thread, and
+   can first wait behind the same shared cleanup lock. Queue this work, retain
+   hook ordering in the worker and return promptly from the dispatcher.
+   Exercise a long Rotate/Pre and an overlapping STOP using a controlled
+   hook wait. Windows specifies a 30-second handler return limit.
+   https://learn.microsoft.com/en-us/windows/win32/services/service-control-handler-function
+
+5. Saving an unrelated GUI edit deletes active logging settings.
+   src/gui.cpp:480, 482, 752, 765, 931, src/registry.cpp:148, 154, 166, 183
+   The edit dialog builds a fresh service from defaults and copies only the
+   native flag from the original. AppStdoutCopyAndTruncate,
+   AppStderrCopyAndTruncate and AppRotateDelay have no corresponding input.
+   create_parameters interprets their zero values as requests to delete them.
+   An operator can change only the description and silently switch a log held
+   by another program from copy/truncate to rename. Custom sharing and file
+   flags follow the same pattern. Preserve unedited fields or write only
+   changed settings. Exercise a description-only save with these values set
+   and compare the registry values and types before and after.
+
+6. Two spellings of one output file can overwrite log entries.
+   src/io.cpp:390, 402, 210
+   The shared-stream test compares path strings. An absolute log path and
+   the same path with an extra ".\" component pass as two files. Default
+   sharing permits both opens with independent file pointers. In the local
+   check, writing AAAA to stdout followed by BBBB to stderr left exactly
+   four bytes, BBBB. Normalize paths and check file identity where aliases
+   are possible before opening a second destructive writer. Test alternating
+   distinct records through two names for the same file.
+
+Other actionable findings
+-------------------------
+
+7. NSSM can report RUNNING without an exit monitor.
+   src/service.cpp:2028, 1696
+   RUNNING is published before RegisterWaitForSingleObject. Registration
+   failure logs a warning and returns success. After the child exits there
+   is no callback to process AppExit or change status. Establish monitoring
+   before declaring startup complete, or provide a fallback wait with
+   equivalent ownership. Inject a registration failure followed by child
+   exit and check the SCM state and restart count.
+
+8. Relative stdin, stdout and stderr paths use the wrapper's working directory.
+   src/registry.cpp:907, 921, src/io.cpp:129, 354, 367
+   get_parameters temporarily enters AppDirectory while it reads the path
+   strings. The reader expands variables but leaves relative paths relative.
+   NSSM restores its old directory before actually opening or rotating files.
+   An input can consequently be missing, or an output can be written or
+   truncated in an unintended directory. Resolve paths against the effective
+   AppDirectory once and use the resolved paths for opening and rotation.
+   Test with distinct wrapper and application directories and the same
+   relative filename in both.
+
+9. Redirecting a single stream leaves the child with invalid standard handles.
+   src/service.cpp:1873, src/io.cpp:351, 365, 388, 427, 435
+   STARTUPINFO begins zeroed. Setting only AppStdout fills hStdOutput, then
+   enables STARTF_USESTDHANDLES for all three streams. The child receives
+   null stdin and stderr, including when it requests a new console. The local
+   stdout-only check observed the flag set and both other handles null. Hook
+   redirection has the same issue. Provide valid inheritable defaults for
+   the remaining streams and check each duplicate. Test child operations on
+   all three streams for each single-stream configuration.
+   https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw
+
+10. CONTINUE can lose its wakeup and can report failure on a successful resume.
+    src/service.cpp:1809, 1817, 2238, 2244, 1906, 111
+    The worker publishes PAUSED before entering SleepConditionVariableCS.
+    The handler clears throttle and signals without taking throttle_section.
+    A CONTINUE in that interval is lost and the worker can sleep for the
+    entire restart delay. Even after a successful wake, start_service reports
+    START_PENDING while the CLI accepts only CONTINUE_PENDING and RUNNING
+    after leaving PAUSED. The CLI can return failure during an ordinary
+    relaunch. Protect a resume predicate and its wait with the same lock,
+    and agree on the pending state through startup. Test both the pre-wait
+    interval and a relaunch long enough for the CLI to observe it.
+    https://learn.microsoft.com/en-us/windows/win32/sync/condition-variables
+
+11. A stable application's short restart delay becomes at least two seconds.
+    src/service.cpp:2025, 2038, 2214, 2217, 368
+    Successful startup resets throttle to zero. A nonzero AppRestartDelay
+    immediately increments it, then the next throttle_restart increments it
+    again before computing exponential backoff. A configured 100 ms becomes
+    max(100, 2000) even after the application ran beyond AppThrottle. Track
+    the mandatory delay independently of consecutive short runs. Test a
+    stable exit and a rapid exit with the same subsecond restart setting.
+
+12. An application that actually exits with 259 gets the action for exit 0.
+    src/service.cpp:2119, 2135, 2169
+    The natural-exit callback runs on a signalled process handle. Its exit
+    code can be 259, the numeric value of STILL_ACTIVE. Replacing that value
+    with zero causes a configured AppExit 259 rule to be skipped, even though
+    the exit hook and event can report 259. Determine liveness from the
+    handle and preserve the observed final DWORD. Test distinct rules for
+    0 and 259 on the natural-exit path.
+    https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getexitcodeprocess
+
+13. A GUI save can bind I/O paths to the editing user's profile.
+    src/registry.cpp:798, 913, src/io.cpp:129, src/gui.cpp:229, src/registry.cpp:146
+    Reading config for the GUI disables expansion for Application and
+    AppDirectory, but the I/O reader always expands its paths. Opening and
+    saving an existing AppStdout containing %USERPROFILE% can permanently
+    replace the token with the administrator's profile. The service account
+    subsequently opens that literal path. Carry raw strings and stored types
+    through editing and expand only at launch. Test a no-change save with
+    distinct editor and service environments.
+
+14. Resetting Application locks the service out of normal CLI repair.
+    src/settings.cpp:97, 113, 1305, src/service.cpp:1081, 1131
+    Reset writes the empty default for Application. On the next invocation
+    NSSM classifies the service as native solely because exe[0] is empty.
+    It then rejects "set <service> Application <path>", the command needed
+    to repair it. The GUI similarly disables the native application field.
+    Reject clearing the mandatory value and allow a positively identified
+    NSSM wrapper with missing configuration to be repaired. Cover reset,
+    empty input, and recovery of an existing broken installation.
+
+15. Failure to save a mandatory setting can delete existing configuration.
+    src/registry.cpp:78, 85, 89, 94, 99
+    ret is the formatted path length. It is positive for an existing key
+    as well as a new one. A failed mandatory write therefore attempts to
+    delete the entire Parameters key, including during an edit. If it has
+    values but no subkeys and deletion is permitted, the old values go too.
+    Record key creation disposition, limit rollback to data created by this
+    operation, and preserve existing values on edit failure. Inject a failed
+    write against a populated Parameters key without subkeys.
+
+16. Several GUI write failures still produce a success dialog.
+    src/gui.cpp:869, 968, src/registry.cpp:189, 195, 205, src/service.cpp:1353
+    update_hooks returns an aggregate error, which both callers discard.
+    A writable Parameters key with a read-only hook subkey is enough for the
+    dialog to announce success after losing an intended hook change. Writes
+    of environment blocks and service descriptions also drop failure status.
+    Propagate per-setting failures, retain unsaved input and distinguish a
+    partial save. Test a rejected hook write after the main service settings
+    have already succeeded, including the post-install case.
+
+17. GUI virtual-account installation reads one TCHAR past the account name.
+    src/account.cpp:198, src/gui.cpp:550, 555, src/service.cpp:1313, 1318
+    virtual_account allocates exactly the name and its NUL. The GUI records
+    usernamelen including that NUL. edit_service then copies usernamelen + 1
+    characters from the allocation. The larger destination does not protect
+    the source read. The virtual-account branch can borrow the existing
+    username for ChangeServiceConfig. Standardize whether length includes
+    the terminator and cover the real GUI-to-edit handoff under ASan.
+
+18. Native Environment append/remove operations lack query access.
+    src/settings.cpp:900, 458, 461, src/registry.cpp:287
+    The setter opens the service key with KEY_SET_VALUE alone. Both + and -
+    need to query the old block first. That query requires KEY_QUERY_VALUE
+    and fails even when the account has permission to open a read/write
+    handle. Replaying a multi-entry native Environment dump also fails on
+    the second entry. Request query access for read-modify-write operations
+    and test a two-entry export/replay through the native settings entry point.
+    https://learn.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regqueryvalueexw
+
+19. Conditional environment removal matches a prefix of the value.
+    src/env.cpp:243, 248, 260, src/registry.cpp:674, 694
+    Removing "-MODE=prod" also removes an existing MODE=production because
+    the comparison stops at the end of the shorter input. "-MODE=" removes
+    populated values as well. The local check confirmed MODE=production
+    was removed by the shorter value. This violates the documented conditional
+    removal at docs/upstream/README.txt:700. Distinguish key-only deletion
+    from exact key/value deletion and test empty, equal and prefix values.
+
+20. Native-service dumps can succeed without an executable to reinstall.
+    src/service.cpp:1057, 1100, 1114, 1116, src/settings.cpp:1349
+    NSSM retains the native ImagePath in service->image but emits install
+    with service->exe, which is empty for a native service. ImagePath is
+    also excluded from the settings dump. In the local check, dumping the
+    native Print Spooler to a new target returned 0, emitted an install
+    line with no application argument, and emitted no ImagePath command.
+    Replaying that first line selects the interactive installer. Either
+    emit a valid native-service creation command for supported types or
+    reject that export before emitting a script. Check a complete native
+    dump independently of AppExit replay.
+
+21. An NSSM executable path containing a space breaks exported commands.
+    src/nssm.cpp:254, 255, src/service.cpp:1115, src/settings.cpp:156
+    _tmain quotes argv[0] once. Both emitters pass the already quoted string
+    to quote(), which escapes the delimiters as literal quotes. A local
+    read-only dump using a valid spaced path to the Release
+    executable returned 0. Running just "version" with the emitted prefix
+    under cmd.exe returned 1. Using the ordinary quoted path returned 0.
+    Store the raw executable name and apply command-position quoting once.
+    Exercise the actual executable entry point and run the emitted prefix.
+    tests/dump_quoting.cpp substitutes its own executable-name getter.
+
+22. Copying a service on the same machine requests a duplicate display name.
+    src/settings.cpp:886, 893, 1296, 1298
+    A dump targeting a new name still emits the source display name, even
+    when it was simply the source service name. The original occupies that
+    name in the SCM database. The imported DisplayName command therefore
+    fails while the source exists. A local dump of Spooler to ReviewTarget
+    emitted DisplayName "Print Spooler". Omit a default display name when
+    retargeting and define how custom-name collisions are surfaced. Exercise
+    the full script while the source fixture still exists. The live export
+    test currently replays only the AppExit lines (tests/export_live.cpp:145).
+    https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-changeserviceconfigw
+
+23. The CLI can return success before an elevated operation even finishes.
+    src/nssm.cpp:189, 213, 217, 290
+    elevate returns zero when ShellExecuteEx launches a process. It neither
+    requests its process handle nor waits for its exit code. A script can
+    continue before installation finishes, or receive success when the
+    elevated installation fails. The argc-only edit-family fallback can
+    also relaunch a two-argument dump after an open-service error, losing
+    the original caller's redirected output. Propagate the elevated command
+    result and restrict automatic relaunch to the intended operations. Test
+    an accepted elevation followed by a nonzero child exit, and dump failure
+    with redirected stdout.
+
+24. Runtime DWORD readers accept the wrong registry type and size.
+    src/registry.cpp:455, 459, 710, 721, 931, 943
+    RegQueryValueEx success alone does not establish a four-byte REG_DWORD.
+    A short binary stop-method value can leave part of the uninitialized
+    local stop_method_skip in use. A short value for a timer can retain
+    previous bytes, producing a surprising restart or shutdown delay.
+    Query into a temporary and validate both type and length before assigning
+    it. The CLI timeout helper already does this in src/service.cpp:203.
+    Exercise wrong-type, zero-length and short values against runtime loading.
+
+25. Resetting settings can leave their previous values active on restart.
+    src/registry.cpp:863, 864, 871, 875, 897, src/hook.cpp:314
+    The service object is reused across application restarts. A missing
+    AppPriority leaves service->priority alone, so a reset high priority
+    survives. A missing AppRedirectHook sets only the local variable to
+    false, so hook_share_output_handles remains true and later hooks still
+    inherit output. Load a complete fresh set of defaults for each new
+    application generation. Test set, start, reset and relaunch using the
+    same wrapper instance.
+
+26. Restoring the wrapper environment changes inherited literal values.
+    src/service.cpp:393, src/env.cpp:193, 140, 99
+    Restoration uses the same expansion path as user-supplied configuration.
+    If the inherited block contains A=one followed by B=%A%, restoring it
+    sets B to one. A locally restored snapshot lost the literal reference.
+    This happens even with no custom service environment
+    because startup and hook processing restore the snapshot unconditionally.
+    Restore snapshot values verbatim. Also avoid changing the read-only block
+    returned by GetEnvironmentStrings in clear_environment (src/env.cpp:129)
+    and handle snapshot failure before environment_length dereferences it.
+    Test literal references, empty values and failure to obtain a snapshot.
+    https://learn.microsoft.com/en-us/windows/win32/api/processenv/nf-processenv-getenvironmentstringsw
+
+27. Querying a driver can dereference an absent service account.
+    src/service.cpp:1026, 1043, 803, src/settings.cpp:1045
+    get/dump allow driver services. Their QUERY_SERVICE_CONFIG may have a
+    null lpServiceStartName when Windows supplies a default driver object
+    name. The shared preflight indexes [0] without checking the pointer,
+    even for a query about an unrelated setting. The ObjectName getter
+    separately passes the pointer to a string-length operation. Handle the
+    absent value in both places and exercise a driver configuration fixture.
+    https://learn.microsoft.com/en-us/windows/win32/api/winsvc/ns-winsvc-query_service_configw
+
+28. The processes command cannot resolve a service display name.
+    src/service.cpp:2416, 2438, 451
+    The manager handle has only SC_MANAGER_CONNECT. When OpenService cannot
+    find the key name, the display-name fallback calls EnumServicesStatusEx
+    on that handle, which requires SC_MANAGER_ENUMERATE_SERVICE. In a local
+    check, requesting processes for the installed display name
+    "Print Spooler" returned 1 with an enumeration access-denied diagnostic.
+    Use GetServiceKeyName for direct display-name translation, or obtain
+    the required enumeration right only for fallback. Test both spellings.
+    https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-enumservicesstatusexw
+
+29. A configuration read failure can silently turn a wrapper backup into a native dump.
+    src/service.cpp:1077, 1081, 1100, 1121, src/registry.cpp:794, 809
+    pre_edit_service discards get_parameters' result. A caller who can query
+    SCM configuration but cannot read Parameters ends up with an empty exe.
+    NSSM then classifies the service as native and skips all App* settings.
+    If the native getters succeed, dump returns 0 for an incomplete backup.
+    Distinguish a genuinely absent Application from a denied, malformed or
+    otherwise unreadable value, and fail the export before emitting commands.
+    Test readable SCM data paired with an unreadable Parameters key.
+
+30. Rotate/Post runs before there is an archive for the hook to process.
+    src/service.cpp:1835, 1836, src/io.cpp:492, 752
+    The dispatcher sets an atomic request flag, then immediately launches
+    the post hook. The logger performs the actual rotation on a later
+    newline. A quiet application can therefore run Rotate/Post without
+    creating any archive at all. The documented hook runs after rotation
+    (docs/upstream/README.txt:511). Trigger it from completion of the
+    requested rotation and define completion for two streams. Test a request
+    followed by a delayed newline and check file existence from the hook.
+
+31. A successful online rename can permanently stop logging.
+    src/io.cpp:678, 681, 754
+    After moving the active file, the logger reopens its former path with the
+    configured startup disposition. OPEN_EXISTING and TRUNCATE_EXISTING both
+    require a file at that now-vacant path. A local check started with an
+    existing empty file, selected OPEN_EXISTING and crossed the rotation
+    threshold. The worker exited with code 4 while the pipe writer remained
+    open, and the active log path was absent. Choose a disposition that can
+    create a fresh active log after a successful rename. Cover both settings
+    and verify that the next record reaches the new file.
+
+Previously documented follow-up
+------------------------------
+
+Offline copy/truncate still reports a successful rotation after a successful
+CopyFile even if reopening, seeking or truncating fails (src/io.cpp:319).
+The online path checks these outcomes. docs/fixes/NSSM-008.md already records
+the offline limitation. It is excluded from the numbered findings above.
+
+The hook GUI preserves raw values, but CLI dump reads hooks with expansion
+enabled in the exporting user's environment and replays them via a setter
+that defaults to REG_EXPAND_SZ. This can freeze a user-specific value or
+make a literal REG_SZ hook expandable. See src/settings.cpp:297, 319, 286
+and src/registry.h:77. docs/fixes/NSSM-034.md explicitly scopes its fix
+to the GUI. Add a raw, type-preserving export case for hooks.
+
+Validation and coverage
+-----------------------
+
+* Reviewed the Windows runtime, service control and process lifecycle,
+  registry/settings, hook and logger ownership, CLI, GUI and account paths.
+  Cross-checked the build/version and package scripts, CI configuration,
+  relevant regression fixtures, prior review and released-fix records.
+* Built x64 Release, x64 Debug, x86 Release and x86 Debug with the repository
+  presets. All 37 default CTest groups passed in each, 148 group executions.
+  The first sandboxed x64 run could not create its HKCU test keys. The
+  complete rerun with normal fixture access passed. The opt-in SCM lifecycle,
+  upgrade/rollback and privileged configuration suites were disabled.
+* Built the current x64 Release target separately with MSVC /analyze.
+  Ordinary compiler and analyzer diagnostics remain. A warning alone was
+  insufficient evidence for inclusion above.
+* Additional CLI checks read existing SCM configuration or ran "version".
+  Five focused checks linked against the production x64 Release objects
+  exercised stream setup, aliased log paths, online rotation, environment
+  removal and restoration. They used local scratch files and process-local
+  environment values. The local harness is under the ignored build directory
+  build/review-20261119/checks. Races and failure paths inferred from source
+  have proposed regression cases above. Production sources were unchanged.

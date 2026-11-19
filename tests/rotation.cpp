@@ -169,6 +169,18 @@ static void failures_and_collision(bool stderr_stream, bool copy_mode, bool coll
   if (collision) CHECK(f.contents(archive.c_str()) == "keep");
 }
 
+static void failed_offline_truncation() {
+  fixture f;
+  std::basic_string<TCHAR> archive = f.prepare(false, "original");
+  HANDLE reader = CreateFile(f.service->stdout_path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+  REQUIRE(reader != INVALID_HANDLE_VALUE);
+  rotation_options_t options = {}; options.copy_and_truncate = true;
+  rotate_file(f.service->name, f.service->stdout_path, options);
+  CloseHandle(reader);
+  CHECK(copies == 1 && failed_events == 1 && ! rotated_events);
+  CHECK(f.contents(archive.c_str()) == "original" && f.contents(f.service->stdout_path) == "original");
+}
+
 static void both_streams(bool shared, bool stdout_copy) {
   fixture f;
   std::basic_string<TCHAR> stdout_archive = f.prepare(false, "stdout");
@@ -205,6 +217,7 @@ static void disabled_or_missing(bool stderr_stream, bool missing, bool copy_mode
 }
 
 void test_offline_rotation() {
+  rotation_test::failed_offline_truncation();
   rotation_test::small_file_regression(false);
   rotation_test::small_file_regression(true);
   // Warm up file-copy infrastructure and error-message resources before

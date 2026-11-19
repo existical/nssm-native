@@ -103,9 +103,7 @@ at `d995289fd939461839bbd89d464e21eeb922d204`. Source-archive packaging checks a
 part of the same linked workflows; package manifests identify their exact
 branch revisions separately from the temporary integration builds above.
 
-This acceptance uses a controlled persistent PowerShell worker, not QRScanner
-or a user's installed service. It exercises a currently rebuilt legacy binary;
-it makes no claim that an original distributed executable was executed. Manual
+The acceptance fixture used a persistent PowerShell worker and a rebuilt legacy executable. Manual
 GUI, domain accounts, older Windows, long-running application soak, signing and
 application-specific data migrations remain outside this scenario. No tag or
 public release has been created by B15.
@@ -132,8 +130,4 @@ lifecycle records. The legacy source files remained unchanged.
 | Legacy rebuild | Commit `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`; `NSSM 2.24-103-gdee49fc 64-bit 2017-05-16`; SHA-256 `ff0c7ce4426b834b11a3ed9ebf59c006ef5b58cba64a1cc47ad5c52bbffd9ae0` |
 
 These hashes identify the post-merge comparison, not the later named beta.
-Beta manifests carry their own commit, local tag, versions and hashes. The
-[beta notes](../releases/v2.25.0-beta.1.md) and
-[application checklist](../releases/qrscanner-beta-acceptance.md) retain the
-remaining acceptance boundaries. No QRScanner deployment or soak was performed
-by this CI run.
+The [beta notes](../releases/v2.25.0-beta.1.md) identify the tagged packages and their validation scope.

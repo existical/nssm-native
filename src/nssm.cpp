@@ -186,34 +186,31 @@ void check_admin() {
   FreeSid(AdministratorsGroup);
 }
 
-static int elevate(int argc, TCHAR **argv, unsigned long message) {
+static int elevate(unsigned long message) {
   print_message(stderr, message);
 
   SHELLEXECUTEINFO sei;
   ZeroMemory(&sei, sizeof(sei));
   sei.cbSize = sizeof(sei);
   sei.lpVerb = _T("runas");
-  sei.lpFile = (TCHAR *) nssm_imagepath();
-
-  TCHAR *args = (TCHAR *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, EXE_LENGTH * sizeof(TCHAR));
-  if (! args) {
-    print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("GetCommandLine()"), _T("elevate()"));
-    return 111;
+  sei.lpFile = nssm_unquoted_imagepath();
+  sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+  const TCHAR *args = GetCommandLine();
+  bool quoted = false;
+  while (*args) {
+    if (*args == _T('"')) quoted = ! quoted;
+    else if (! quoted && _istspace(*args)) break;
+    args++;
   }
-
-  /* Get command line, which includes the path to NSSM, and skip that part. */
-  _sntprintf_s(args, EXE_LENGTH, _TRUNCATE, _T("%s"), GetCommandLine());
-  size_t s = _tcslen(argv[0]) + 1;
-  if (args[0] == _T('"')) s += 2;
-  while (isspace(args[s])) s++;
-
-  sei.lpParameters = args + s;
+  while (_istspace(*args)) args++;
+  sei.lpParameters = args;
   sei.nShow = SW_SHOW;
 
-  unsigned long exitcode = 0;
-  if (! ShellExecuteEx(&sei)) exitcode = 100;
-
-  HeapFree(GetProcessHeap(), 0, (void *) args);
+  DWORD exitcode = 100;
+  if (ShellExecuteEx(&sei) && sei.hProcess) {
+    if (WaitForSingleObject(sei.hProcess, INFINITE) != WAIT_OBJECT_0 || ! GetExitCodeProcess(sei.hProcess, &exitcode)) exitcode = 100;
+    CloseHandle(sei.hProcess);
+  }
   return exitcode;
 }
 
@@ -252,7 +249,6 @@ int _tmain(int argc, TCHAR **argv) {
 
   /* Remember our path for later. */
   _sntprintf_s(imageargv0, _countof(imageargv0), _TRUNCATE, _T("%s"), argv[0]);
-  PathQuoteSpaces(imageargv0);
   GetModuleFileName(0, unquoted_imagepath, _countof(unquoted_imagepath));
   GetModuleFileName(0, imagepath, _countof(imagepath));
   PathQuoteSpaces(imagepath);
@@ -281,13 +277,13 @@ int _tmain(int argc, TCHAR **argv) {
     if (str_equiv(argv[1], _T("statuscode"))) nssm_exit(control_service(SERVICE_CONTROL_INTERROGATE, argc - 2, argv + 2, true));
     if (str_equiv(argv[1], _T("rotate"))) nssm_exit(control_service(NSSM_SERVICE_CONTROL_ROTATE, argc - 2, argv + 2));
     if (str_equiv(argv[1], _T("install"))) {
-      if (! is_admin) nssm_exit(elevate(argc, argv, NSSM_MESSAGE_NOT_ADMINISTRATOR_CANNOT_INSTALL));
+      if (! is_admin) nssm_exit(elevate(NSSM_MESSAGE_NOT_ADMINISTRATOR_CANNOT_INSTALL));
       create_messages();
       nssm_exit(pre_install_service(argc - 2, argv + 2));
     }
     if (str_equiv(argv[1], _T("edit")) || str_equiv(argv[1], _T("get")) || str_equiv(argv[1], _T("set")) || str_equiv(argv[1], _T("reset")) || str_equiv(argv[1], _T("unset")) || str_equiv(argv[1], _T("dump"))) {
       int ret = pre_edit_service(argc - 1, argv + 1);
-      if (ret == 3 && ! is_admin && argc == 3) nssm_exit(elevate(argc, argv, NSSM_MESSAGE_NOT_ADMINISTRATOR_CANNOT_EDIT));
+      if (ret == 3 && ! is_admin && argc == 3 && str_equiv(argv[1], _T("edit"))) nssm_exit(elevate(NSSM_MESSAGE_NOT_ADMINISTRATOR_CANNOT_EDIT));
       /* There might be a password here. */
       for (int i = 0; i < argc; i++) SecureZeroMemory(argv[i], _tcslen(argv[i]) * sizeof(TCHAR));
       nssm_exit(ret);
@@ -295,7 +291,7 @@ int _tmain(int argc, TCHAR **argv) {
     if (str_equiv(argv[1], _T("list"))) nssm_exit(list_nssm_services(argc - 2, argv + 2));
     if (str_equiv(argv[1], _T("processes"))) nssm_exit(service_process_tree(argc - 2, argv + 2));
     if (str_equiv(argv[1], _T("remove"))) {
-      if (! is_admin) nssm_exit(elevate(argc, argv, NSSM_MESSAGE_NOT_ADMINISTRATOR_CANNOT_REMOVE));
+      if (! is_admin) nssm_exit(elevate(NSSM_MESSAGE_NOT_ADMINISTRATOR_CANNOT_REMOVE));
       nssm_exit(pre_remove_service(argc - 2, argv + 2));
     }
   }

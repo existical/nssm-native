@@ -46,7 +46,7 @@ void finish() {
   if (! objects.empty()) {
     CHECK(manager_closes == (failure == 0 ? 0U : 1U));
     CHECK(service_closes == (failure < 2 ? 0U : 1U));
-    CHECK(deletes == (failure == 2 || failure == 3 ? 1U : 0U));
+    CHECK(deletes == (failure == 2 || failure == 3 || failure == 5 ? 1U : 0U));
   }
   for (size_t i = 0; i < objects.size(); i++) HeapFree(GetProcessHeap(), 0, objects[i]);
   objects.clear(); active = false;

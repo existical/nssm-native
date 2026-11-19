@@ -40,6 +40,11 @@ static BOOL WINAPI release(HANDLE heap, DWORD flags, LPVOID memory) {
   }
   return HeapFree(heap, flags, memory);
 }
+static const TCHAR *reject_write;
+static LSTATUS WINAPI write_value(HKEY key, LPCTSTR name, DWORD reserved, DWORD type, const BYTE *data, DWORD bytes) {
+  if (reject_write && name && ! _tcscmp(name, reject_write)) return ERROR_ACCESS_DENIED;
+  return RegSetValueEx(key, name, reserved, type, data, bytes);
+}
 enum query_behavior { normal, grow_once, grow_always, change_type, odd_size, query_error };
 static query_behavior behavior;
 static unsigned data_queries;
@@ -103,7 +108,11 @@ static void reset() {
 #define RegOpenKeyEx registry_test::open
 #undef ExpandEnvironmentStrings
 #define ExpandEnvironmentStrings registry_test::expand
+#undef RegSetValueEx
+#define RegSetValueEx registry_test::write_value
 #include "../src/registry.cpp"
+#undef RegSetValueEx
+#define RegSetValueEx RegSetValueExW
 #undef HeapAlloc
 #undef HeapFree
 #undef RegQueryValueEx
@@ -225,12 +234,56 @@ private:
   guarded_block &operator=(const guarded_block &);
 };
 
+static void test_parameter_saves() {
+  nssm_service_t *service = alloc_nssm_service(); REQUIRE(service);
+  set_nssm_service_defaults(service);
+  _tcscpy_s(service->name, _T("NSSM-ParameterSave"));
+  _tcscpy_s(service->exe, _T("old.exe"));
+  _tcscpy_s(service->dir, _T("C:\\"));
+  HKEY key = open_registry(service->name, KEY_READ | KEY_WRITE); REQUIRE(key);
+  REQUIRE(! create_parameters(service, false));
+  REQUIRE(! set_number(key, _T("VendorSetting"), 13));
+  _tcscpy_s(service->exe, _T("new.exe")); _tcscpy_s(service->flags, _T("-v"));
+  registry_test::reject_write = NSSM_REG_FLAGS;
+  CHECK(create_parameters(service, true) != 0);
+  registry_test::reject_write = NULL;
+  TCHAR exe[32]; DWORD number;
+  CHECK(! get_string(key, NSSM_REG_EXE, exe, sizeof(exe), false) && ! _tcscmp(exe, _T("old.exe")));
+  CHECK(get_number(key, _T("VendorSetting"), &number) == 1 && number == 13);
+  service->priority = HIGH_PRIORITY_CLASS; service->hook_share_output_handles = true;
+  registry_test::reject_write = NSSM_REG_PRIORITY;
+  CHECK(create_parameters(service, true) != 0);
+  registry_test::reject_write = NULL;
+  REQUIRE(! create_parameters(service, true));
+  REQUIRE(! get_parameters(service, NULL));
+  CHECK(service->priority == HIGH_PRIORITY_CLASS && service->hook_share_output_handles);
+  REQUIRE(RegDeleteValue(key, NSSM_REG_PRIORITY) == ERROR_SUCCESS);
+  REQUIRE(RegDeleteValue(key, NSSM_REG_HOOK_SHARE_OUTPUT_HANDLES) == ERROR_SUCCESS);
+  REQUIRE(! get_parameters(service, NULL));
+  CHECK(service->priority == NORMAL_PRIORITY_CLASS && ! service->hook_share_output_handles);
+  RegCloseKey(key); cleanup_nssm_service(service);
+}
+
 void test_registry_bounds() {
   using namespace registry_test;
   registry_fixture fixture;
+  test_parameter_saves();
   HKEY key = open_registry(_T("registry-bounds"), KEY_READ | KEY_WRITE);
   REQUIRE(key);
   reset();
+
+  TCHAR lines[] = {_T('\r'), _T('\n'), _T('A'), _T('\n'), _T('\n'), _T('B'), _T('\r')};
+  TCHAR *block = NULL; DWORD used = 0;
+  REQUIRE(! unformat_double_null(lines, _countof(lines), &block, &used));
+  CHECK(used == 5 && ! memcmp(block, _T("A\0B\0"), 5 * sizeof(TCHAR)));
+  release(GetProcessHeap(), 0, block);
+  DWORD sentinel = 12345, number = 77;
+  for (DWORD bytes : {0UL, 1UL, 3UL, 4UL}) {
+    store_raw(key, _T("number"), bytes == 4 ? REG_BINARY : REG_DWORD, &number, bytes);
+    CHECK(get_number(key, _T("number"), &sentinel, false) < 0 && sentinel == 12345);
+  }
+  store_raw(key, _T("number"), REG_DWORD, &number, sizeof(number));
+  CHECK(get_number(key, _T("number"), &sentinel, false) == 1 && sentinel == number);
 
   printf("NSSM-001: expansion bounds and failures\n");
   const TCHAR reference[] = _T("%NSSM_TEST_REG%");

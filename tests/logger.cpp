@@ -14,6 +14,7 @@ static DWORD forced_wait;
 static HANDLE deferred_thread, blocked_output, write_entered;
 static LPTHREAD_START_ROUTINE deferred_routine;
 static void *deferred_argument;
+static bool fixed_rotation_clock;
 static bool stream_test, fail_info, fail_size, fail_move, fail_truncate, fail_read;
 static std::string stream_input;
 static size_t read_position;
@@ -38,7 +39,7 @@ static BOOL WINAPI file_size(HANDLE h, PLARGE_INTEGER size) {
   if (stream_test && fail_size) { SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
   return GetFileSizeEx(h, size);
 }
-static void WINAPI now(LPSYSTEMTIME value) { if (stream_test) *value = fixed_time; else rotation_test::now(value); }
+static void WINAPI now(LPSYSTEMTIME value) { if (stream_test || fixed_rotation_clock) *value = fixed_time; else rotation_test::now(value); }
 static BOOL WINAPI move(LPCTSTR from, LPCTSTR to) {
   if (stream_test && fail_move) { SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
   BOOL result = rotation_test::move(from, to);
@@ -95,7 +96,7 @@ static BOOL WINAPI duplicate(HANDLE sp, HANDLE source, HANDLE dp, LPHANDLE dest,
   return DuplicateHandle(sp, source, dp, dest, access, inherit, options);
 }
 static HANDLE WINAPI file(LPCTSTR path, DWORD access, DWORD sharing, LPSECURITY_ATTRIBUTES a, DWORD disposition, DWORD flags, HANDLE template_file) {
-  if (active && ++file_calls == file_fail) { SetLastError(ERROR_ACCESS_DENIED); return INVALID_HANDLE_VALUE; }
+  if (active && access && ++file_calls == file_fail) { SetLastError(ERROR_ACCESS_DENIED); return INVALID_HANDLE_VALUE; }
   return CreateFile(path, access, sharing, a, disposition, flags, template_file);
 }
 static BOOL WINAPI write(HANDLE h, LPCVOID data, DWORD size, LPDWORD written, LPOVERLAPPED overlap) {
@@ -282,6 +283,56 @@ static void normal_streams(bool shared) {
   CHECK(f.contents() == (shared ? "stdout tail\nstderr tail\n" : "stdout tail\n"));
   if (! shared) CHECK(f.contents(true) == "stderr tail\n");
 }
+static DWORD WINAPI manual_rotation(void *arg) {
+  return await_logger_rotation(static_cast<nssm_service_t *>(arg), 0) ? 0 : 1;
+}
+static void rotation_completion(bool cancel) {
+  fixture f(false);
+  fixed_rotation_clock = true;
+  f.service->rotate_stdout_online = f.service->rotate_stderr_online = NSSM_ROTATE_ONLINE;
+  REQUIRE(get_output_handles(f.service, &f.si) == 0);
+  HANDLE waiter = CreateThread(NULL, 0, manual_rotation, f.service, 0, NULL);
+  REQUIRE(waiter);
+  DWORD start = GetTickCount();
+  while (InterlockedCompareExchange(&f.service->stderr_logger->rotate_online, 0, 0) != NSSM_ROTATE_ONLINE_ASAP &&
+         GetTickCount() - start < 5000) Sleep(1);
+  REQUIRE(WaitForSingleObject(waiter, 0) == WAIT_TIMEOUT);
+  TCHAR archive[MAX_PATH];
+  rotated_filename(f.path, archive, _countof(archive), &fixed_time);
+  output(f.si.hStdOutput, "first\n");
+  REQUIRE(WaitForSingleObject(f.service->stdout_logger->rotation_done, 5000) == WAIT_OBJECT_0);
+  CHECK(GetFileAttributes(archive) != INVALID_FILE_ATTRIBUTES);
+  CHECK(WaitForSingleObject(waiter, 0) == WAIT_TIMEOUT);
+  REQUIRE(DeleteFile(archive));
+  if (cancel) f.stop();
+  else output(f.si.hStdError, "second\n");
+  REQUIRE(WaitForSingleObject(waiter, 5000) == WAIT_OBJECT_0);
+  DWORD result; REQUIRE(GetExitCodeThread(waiter, &result));
+  CHECK(result == (cancel ? 1U : 0U));
+  CloseHandle(waiter);
+  if (! cancel) {
+    rotated_filename(f.other, archive, _countof(archive), &fixed_time);
+    REQUIRE(DeleteFile(archive));
+  }
+  fixed_rotation_clock = false;
+}
+
+static void aliased_redirection() {
+  fixture f;
+  TCHAR directory[MAX_PATH];
+  _tcscpy_s(directory, f.path);
+  PathRemoveFileSpec(directory);
+  _stprintf_s(f.service->stderr_path, _T(".\\%s"), PathFindFileName(f.path));
+  REQUIRE(resolve_io_path(directory, f.service->stderr_path));
+  _stprintf_s(f.service->stdout_path, _T("%s\\.\\%s"), directory, PathFindFileName(f.path));
+  f.service->use_stdout_pipe = f.service->use_stderr_pipe = false;
+  REQUIRE(get_output_handles(f.service, &f.si) == 0);
+  output(f.si.hStdOutput, "aaaa"); output(f.si.hStdError, "bbbb");
+  DWORD flags = 0;
+  CHECK(GetHandleInformation(f.si.hStdInput, &flags) && (flags & HANDLE_FLAG_INHERIT));
+  f.stop(); CHECK(f.contents() == "aaaabbbb");
+}
+
 static void failure_cases() {
   for (int failure = 0; failure < 4; failure++) {
     fixture f;
@@ -364,7 +415,6 @@ static void child_writer(int mode) {
   _sntprintf_s(command, _countof(command), _TRUNCATE, _T("\"%s\" --logger-child %I64u"), exe, (unsigned __int64) (ULONG_PTR) gate);
   STARTUPINFO child_si = f.si;
   child_si.cb = sizeof(child_si);
-  child_si.hStdInput = child_si.hStdOutput; // Unused but valid inherited handle.
   PROCESS_INFORMATION child = {};
   REQUIRE(CreateProcess(NULL, command, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &child_si, &child));
   CloseHandle(child.hThread);
@@ -570,6 +620,9 @@ void test_log_bytes() {
 }
 
 void test_logger_ownership() {
+  logger_test::rotation_completion(false);
+  logger_test::rotation_completion(true);
+  logger_test::aliased_redirection();
   nssm_service_t *service = new nssm_service_t();
   InitializeCriticalSection(&service->hook_section);
   service->stdout_thread = CreateEvent(NULL, TRUE, TRUE, NULL);

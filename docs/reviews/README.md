@@ -1,5 +1,11 @@
 # Archived NSSM code review
 
+The [19 November 2026 review](2026-11-19-code-review.txt) covers commit
+`012cd5f` after the first beta. It includes findings, source locations,
+regression cases, and results from the four standard Windows configurations.
+The [implementation checklist](2026-11-19-implementation-plan.md) and
+[follow-up review](2026-11-19-post-implementation-review.md) cover the resulting changes.
+
 The [2026 November 2 review](2026-11-02-code-review.txt) describes commit
 `5d7454b2cd878b66bcd4b036c33a5b53b184cf3a`. It records 24 numbered findings
 and additional follow-ups. The [implementation plan](../remediation-plan.md)

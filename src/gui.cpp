@@ -241,7 +241,8 @@ int nssm_gui(int resource, nssm_service_t *service) {
     }
     if (service->rotate_stdout_online || service->rotate_stderr_online) SendDlgItemMessage(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_ONLINE, BM_SETCHECK, BST_CHECKED, 0);
     SetDlgItemInt(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_SECONDS, service->rotate_seconds, 0);
-    if (! service->rotate_bytes_high) SetDlgItemInt(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW, service->rotate_bytes_low, 0);
+    if (service->rotate_bytes_high) SetDlgItemText(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW, _T(""));
+    else SetDlgItemInt(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW, service->rotate_bytes_low, 0);
 
     /* Hooks tab. */
     if (service->hook_share_output_handles) SendDlgItemMessage(tablist[NSSM_TAB_HOOKS], IDC_REDIRECT_HOOK, BM_SETCHECK, BST_CHECKED, 0);
@@ -466,11 +467,12 @@ static inline int update_hooks(TCHAR *service_name) {
   return ret;
 }
 
-static inline void check_io(HWND owner, TCHAR *name, TCHAR *buffer, unsigned long len, unsigned long control) {
-  if (! SendMessage(GetDlgItem(tablist[NSSM_TAB_IO], control), WM_GETTEXTLENGTH, 0, 0)) return;
-  if (GetDlgItemText(tablist[NSSM_TAB_IO], control, buffer, (int) len)) return;
+static bool check_io(HWND owner, TCHAR *name, TCHAR *buffer, unsigned long len, unsigned long control) {
+  LRESULT count = SendMessage(GetDlgItem(tablist[NSSM_TAB_IO], control), WM_GETTEXTLENGTH, 0, 0);
+  if (! count) return true;
+  if (count > 0 && (unsigned long) count < len && GetDlgItemText(tablist[NSSM_TAB_IO], control, buffer, (int) len) == count) return true;
   popup_message(owner, MB_OK | MB_ICONEXCLAMATION, NSSM_MESSAGE_PATH_TOO_LONG, name);
-  ZeroMemory(buffer, len * sizeof(TCHAR));
+  return false;
 }
 
 /* Set service parameters. */
@@ -480,6 +482,28 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
   set_nssm_service_defaults(service);
 
   if (orig_service) {
+    /* Preserve options that the editor cannot fully represent. */
+    service->preserve_advanced_io = true;
+    service->stdin_disposition = orig_service->stdin_disposition;
+    service->stdout_disposition = orig_service->stdout_disposition;
+    service->stderr_disposition = orig_service->stderr_disposition;
+    service->rotate_delay = orig_service->rotate_delay;
+    service->rotate_bytes_high = orig_service->rotate_bytes_high;
+    service->rotate_bytes_low = orig_service->rotate_bytes_low;
+    service->rotate_seconds = orig_service->rotate_seconds;
+    service->rotate_stdout_online = orig_service->rotate_stdout_online;
+    service->rotate_stderr_online = orig_service->rotate_stderr_online;
+    service->stdout_copy_and_truncate = orig_service->stdout_copy_and_truncate;
+    service->stderr_copy_and_truncate = orig_service->stderr_copy_and_truncate;
+    service->stdin_sharing = orig_service->stdin_sharing;
+    service->stdin_flags = orig_service->stdin_flags;
+    service->stdin_type = orig_service->stdin_type;
+    service->stdout_sharing = orig_service->stdout_sharing;
+    service->stdout_flags = orig_service->stdout_flags;
+    service->stdout_type = orig_service->stdout_type;
+    service->stderr_sharing = orig_service->stderr_sharing;
+    service->stderr_flags = orig_service->stderr_flags;
+    service->stderr_type = orig_service->stderr_type;
     service->native = orig_service->native;
   }
 
@@ -749,25 +773,41 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
   check_number(tablist[NSSM_TAB_EXIT], IDC_RESTART_DELAY, &service->restart_delay);
 
   /* Get I/O stuff. */
-  check_io(window, _T("stdin"), service->stdin_path, _countof(service->stdin_path), IDC_STDIN);
-  check_io(window, _T("stdout"), service->stdout_path, _countof(service->stdout_path), IDC_STDOUT);
-  check_io(window, _T("stderr"), service->stderr_path, _countof(service->stderr_path), IDC_STDERR);
+  if (! check_io(window, _T("stdin"), service->stdin_path, _countof(service->stdin_path), IDC_STDIN) ||
+      ! check_io(window, _T("stdout"), service->stdout_path, _countof(service->stdout_path), IDC_STDOUT) ||
+      ! check_io(window, _T("stderr"), service->stderr_path, _countof(service->stderr_path), IDC_STDERR)) return 5;
+  if (orig_service) {
+    service->preserve_stdin_path = ! _tcscmp(service->stdin_path, orig_service->stdin_path);
+    service->preserve_stdout_path = ! _tcscmp(service->stdout_path, orig_service->stdout_path);
+    service->preserve_stderr_path = ! _tcscmp(service->stderr_path, orig_service->stderr_path);
+  }
   if (SendDlgItemMessage(tablist[NSSM_TAB_IO], IDC_TIMESTAMP, BM_GETCHECK, 0, 0) & BST_CHECKED) service->timestamp_log = true;
   else service->timestamp_log = false;
 
-  /* Override stdout and/or stderr. */
-  if (SendDlgItemMessage(tablist[NSSM_TAB_ROTATION], IDC_TRUNCATE, BM_GETCHECK, 0, 0) & BST_CHECKED) {
-    if (service->stdout_path[0]) service->stdout_disposition = CREATE_ALWAYS;
-    if (service->stderr_path[0]) service->stderr_disposition = CREATE_ALWAYS;
+  bool truncate = (SendDlgItemMessage(tablist[NSSM_TAB_ROTATION], IDC_TRUNCATE, BM_GETCHECK, 0, 0) & BST_CHECKED) != 0;
+  service->preserve_output_dispositions = orig_service && truncate == (orig_service->stdout_disposition == CREATE_ALWAYS);
+  if (! service->preserve_output_dispositions) {
+    service->stdout_disposition = truncate ? CREATE_ALWAYS : NSSM_STDOUT_DISPOSITION;
+    service->stderr_disposition = truncate ? CREATE_ALWAYS : NSSM_STDERR_DISPOSITION;
   }
 
   /* Get rotation stuff. */
   if (SendDlgItemMessage(tablist[NSSM_TAB_ROTATION], IDC_ROTATE, BM_GETCHECK, 0, 0) & BST_CHECKED) {
     service->rotate_files = true;
-    if (SendDlgItemMessage(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_ONLINE, BM_GETCHECK, 0, 0) & BST_CHECKED) service->rotate_stdout_online = service->rotate_stderr_online = NSSM_ROTATE_ONLINE;
+    service->rotate_stdout_online = service->rotate_stderr_online = (SendDlgItemMessage(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_ONLINE, BM_GETCHECK, 0, 0) & BST_CHECKED) != 0;
     check_number(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_SECONDS, &service->rotate_seconds);
-    check_number(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW, &service->rotate_bytes_low);
+    HWND size_field = GetDlgItem(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW);
+    if (! service->rotate_bytes_high || SendMessage(size_field, EM_GETMODIFY, 0, 0)) {
+      BOOL valid = FALSE;
+      UINT size = GetDlgItemInt(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW, &valid, FALSE);
+      if (valid) {
+        service->rotate_bytes_low = size;
+        service->rotate_bytes_high = 0;
+      }
+    }
   }
+
+  if (orig_service && orig_service->rotate_files && ! service->rotate_files) service->rotate_stdout_online = service->rotate_stderr_online = 0;
 
   /* Get hook stuff. */
   if (SendDlgItemMessage(tablist[NSSM_TAB_HOOKS], IDC_REDIRECT_HOOK, BM_GETCHECK, 0, 0) & BST_CHECKED) service->hook_share_output_handles = true;
@@ -816,6 +856,14 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
     }
   }
 
+  /* When both blocks exist, the editor shows AppEnvironmentExtra. */
+  if (orig_service && orig_service->env && orig_service->env_extra && ! service->env &&
+      ! (SendDlgItemMessage(tablist[NSSM_TAB_ENVIRONMENT], IDC_ENVIRONMENT_REPLACE, BM_GETCHECK, 0, 0) & BST_CHECKED)) {
+    service->env = copy_environment_block(orig_service->env);
+    if (! service->env) return 5;
+    service->envlen = orig_service->envlen;
+  }
+
   return 0;
 }
 
@@ -834,7 +882,7 @@ int install(HWND window) {
   }
 
   /* See if it works. */
-  switch (install_service(service)) {
+  switch (install_service(service, update_hooks)) {
     case 1:
       popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_EVENT_OUT_OF_MEMORY, _T("service"), _T("install()"));
       cleanup_nssm_service(service);
@@ -860,13 +908,17 @@ int install(HWND window) {
       cleanup_nssm_service(service);
       return 5;
 
+    case 7:
+      popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_INSTALL_ROLLBACK_FAILED);
+      cleanup_nssm_service(service);
+      PostQuitMessage(7);
+      return 7;
+
     case 6:
       popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_CREATE_PARAMETERS_FAILED);
       cleanup_nssm_service(service);
       return 6;
   }
-
-  update_hooks(service->name);
 
   popup_message(window, MB_OK, NSSM_MESSAGE_SERVICE_INSTALLED, service->name);
   cleanup_nssm_service(service);
@@ -965,7 +1017,11 @@ int edit(HWND window, nssm_service_t *orig_service) {
       return 6;
   }
 
-  update_hooks(service->name);
+  if (update_hooks(service->name)) {
+    popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_HOOK_SAVE_FAILED);
+    cleanup_nssm_service(service);
+    return 6;
+  }
 
   popup_message(window, MB_OK, NSSM_MESSAGE_SERVICE_EDITED, service->name);
   cleanup_nssm_service(service);
@@ -1188,7 +1244,7 @@ INT_PTR CALLBACK nssm_dlg(HWND window, UINT message, WPARAM w, LPARAM l) {
       HWND tabs;
       HWND combo;
       HWND list;
-      int i, n;
+      int n;
       tabs = GetDlgItem(window, IDC_TAB1);
       if (! tabs) return 0;
 

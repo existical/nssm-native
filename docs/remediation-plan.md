@@ -25,10 +25,7 @@ passed all five jobs before publication.
 
 The [beta release notes](releases/v2.25.0-beta.1.md) and
 [verified publication record](releases/v2.25.0-beta.1-publication.json) preserve
-the original tested source/tag and unchanged assets. The supplied
-[QRScanner acceptance](releases/qrscanner-beta-results.md) passed its 24-hour
-Windows 11 x64/LocalSystem scope. QRScanner's production helper/provenance update
-and broader stable-release acceptance remain separate work.
+the tested source and tag. Broader stable-release acceptance remains separate work.
 
 The recovered legacy development baseline is
 `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`, described by Git as

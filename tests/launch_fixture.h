@@ -11,6 +11,7 @@ BOOL WINAPI register_wait(PHANDLE, HANDLE, WAITORTIMERCALLBACK, PVOID, ULONG, UL
 BOOL WINAPI unregister_wait(HANDLE);
 BOOL WINAPI terminate(HANDLE, UINT);
 DWORD WINAPI wait(HANDLE, DWORD);
+DWORD WINAPI wait_multiple(DWORD, const HANDLE *, BOOL, DWORD);
 DWORD WINAPI resume(HANDLE);
 BOOL WINAPI code(HANDLE, LPDWORD);
 BOOL WINAPI affinity(HANDLE, PDWORD_PTR, PDWORD_PTR);
@@ -18,6 +19,7 @@ BOOL WINAPI set_affinity(HANDLE, DWORD_PTR);
 BOOL WINAPI status(SERVICE_STATUS_HANDLE, LPSERVICE_STATUS);
 BOOL WINAPI free_console();
 int parameters(nssm_service_t *, STARTUPINFO *);
+int exit_action(const TCHAR *, DWORD *, TCHAR *, bool *);
 int output(nssm_service_t *, STARTUPINFO *);
 void close_output(STARTUPINFO *);
 void cleanup(nssm_service_t *);

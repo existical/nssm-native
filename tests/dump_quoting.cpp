@@ -107,6 +107,24 @@ int dependency_test::dump(int type) {
 
 void test_exit_export() {
   registry_fixture registry;
+  TCHAR raw[] = _T("%SystemRoot% hook");
+  value_t command = {}; command.string = raw;
+  const TCHAR *source = _T("NSSM-Test-HookExport");
+  CHECK(setting_set_hook(source, NULL, NSSM_REG_HOOK, NULL, &command, _T("REG_SZ:Start/Pre")) == 1);
+  DWORD type = 0; TCHAR stored[128];
+  CHECK(! get_hook(source, _T("Start"), _T("Pre"), stored, sizeof(stored), false, &type));
+  CHECK(type == REG_SZ && ! _tcscmp(stored, raw));
+  value_t retrieved = {};
+  CHECK(setting_get_hook(source, NULL, NSSM_REG_HOOK, NULL, &retrieved, _T("Start/Pre")) == 1);
+  REQUIRE(retrieved.string); CHECK(! _tcscmp(retrieved.string, raw));
+  HeapFree(GetProcessHeap(), 0, retrieved.string);
+  capture_dump = true; dump_output.clear();
+  for (settings_t *item = settings; item->name; item++) {
+    if (str_equiv(item->name, NSSM_REG_HOOK))
+      CHECK(! dump_setting(_T("Target"), NULL, NULL, item, source));
+  }
+  CHECK(dump_output.find(_T("REG_SZ:Start/Pre")) != text_t::npos);
+  capture_dump = false;
   const TCHAR *service = _T("NSSM-Test-ExitExport");
   HKEY key = open_registry(service, NSSM_REG_EXIT, KEY_READ | KEY_WRITE); REQUIRE(key);
   REQUIRE(set_string(key, _T(""), _T("Ignore")) == 0);
@@ -134,11 +152,12 @@ void test_setting_ownership() {
   for (unsigned i = 0; i < _countof(names); i++) {
     value_t value = {};
     REQUIRE(set_expand_string(key, const_cast<TCHAR *>(names[i]), _T("previous")) == 0);
-    CHECK(setting_set_string(_T("Reset"), key, names[i], i < 3 ? _T("") : NULL, &value, NULL) == (i < 3 ? 1 : 0));
+    CHECK(setting_set_string(_T("Reset"), key, names[i], i < 3 ? _T("") : NULL, &value, NULL) == (i == 0 ? -1 : i < 3 ? 1 : 0));
     CHECK(value.string == NULL);
     TCHAR stored[32]; DWORD type, size = sizeof(stored);
     LONG result = RegQueryValueEx(key, names[i], NULL, &type, reinterpret_cast<BYTE *>(stored), &size);
-    if (i < 3) CHECK(result == ERROR_SUCCESS && type == REG_EXPAND_SZ && size == sizeof(TCHAR) && ! stored[0]);
+    if (i == 0) CHECK(result == ERROR_SUCCESS && ! _tcscmp(stored, _T("previous")));
+    else if (i < 3) CHECK(result == ERROR_SUCCESS && type == REG_EXPAND_SZ && size == sizeof(TCHAR) && ! stored[0]);
     else CHECK(result == ERROR_FILE_NOT_FOUND);
   }
   reset_test::active = true;

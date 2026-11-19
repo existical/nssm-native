@@ -82,6 +82,12 @@ static void test_stream_bytes() {
       }
     }
   }
+  for (DWORD disposition : {OPEN_EXISTING, TRUNCATE_EXISTING}) {
+    stream_fixture f("abc\nnext", 8, false, 4);
+    f.service->stdout_disposition = disposition;
+    CHECK(f.run() == 0);
+    CHECK(rotations == 1 && f.contents() == "next");
+  }
   { stream_fixture f("abc\nx", 2, false, 1ULL << 63); CHECK(f.run() == 0); CHECK(! rotations); CHECK(f.contents() == "abc\nx"); }
   { stream_fixture f("abc\nx", 1, false); f.service->rotate_stdout_online = NSSM_ROTATE_ONLINE_ASAP; CHECK(f.run() == 0); CHECK(rotations == 1); CHECK(f.contents() == "x"); }
   { stream_fixture f("abc\nx", 1, false, 4); f.service->rotate_stdout_online = NSSM_ROTATE_OFFLINE; CHECK(f.run() == 0); CHECK(! rotations); CHECK(f.contents() == "abc\nx"); }
