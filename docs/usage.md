@@ -97,6 +97,10 @@ followed by truncating the original. In that mode, `AppRotateDelay` is a delay
 in milliseconds between copying and truncating. Rename mode retains its
 existing no-delay behavior. Shared stdout/stderr files rotate once using
 stdout's settings.
+A stop request during the offline copy delay preserves the copied archive and the active log.
+The maximum DWORD delay is treated as 4294967294 milliseconds and remains interruptible.
+If archiving fails, append mode can continue writing to the active log. An open that
+would truncate the active log fails. An existing archive with the same name is preserved.
 
 Legacy 2.24-103 source passed these arguments in the wrong order. A byte
 threshold could become a long sleep, and a delay could become a very large
@@ -169,11 +173,9 @@ diagnostics and test coverage.
 
 ## Numeric settings and processor affinity
 
-String resets retain their previous registry semantics: Application,
-AppParameters and AppDirectory become empty REG_EXPAND_SZ values; AppStdin,
-AppStdout and AppStderr are deleted. The reset no longer changes ownership of
-the CLI's input pointer. Resetting Application still leaves no executable path
-to launch. See [NSSM-015](fixes/NSSM-015.md).
+NSSM requires a nonempty Application. Resetting it fails and retains the executable path.
+Resetting AppParameters or AppDirectory stores an empty expandable string.
+Resetting AppStdin, AppStdout or AppStderr removes the value.
 
 A zero AppThrottle or stop-method delay now queries the process handle once
 without sleeping or publishing wait progress. Signalled, still-running and
@@ -207,6 +209,15 @@ available. Choosing a specific affinity with no selected CPU fails validation.
 Selecting every displayed CPU retains the existing unrestricted behavior.
 
 ## Configuration dumps
+
+Management and listing identify the SCM executable before treating a service's
+Parameters as NSSM configuration. A renamed or separate NSSM installation can
+be recognized by its embedded original filename and file description. A native
+service can have its own Application setting.
+
+A dump preserves literal registry strings for Application, AppParameters, AppDirectory,
+and the three standard I/O paths with setters such as `nssm set MyService REG_SZ:AppStdout log.txt`.
+Replay these commands with a version supporting this selector. An ordinary setter stores an expandable string.
 
 `nssm dump MyService` prints commands for cmd.exe. Check its exit status before
 using the output: an error can leave earlier complete lines in the stream, so

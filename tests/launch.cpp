@@ -19,6 +19,8 @@ static DWORD app_exitcode;
 static HANDLE retry_event, retry_entered;
 static HANDLE throttle_entered, throttle_release;
 static HANDLE rotate_pre_entered, rotate_pre_release;
+static HANDLE power_entered, power_release;
+static std::vector<std::basic_string<TCHAR>> power_calls;
 static HANDLE action_entered, action_release;
 static DWORD observed_delay;
 static unsigned stopped_statuses, running_statuses;
@@ -45,6 +47,7 @@ BOOL WINAPI create(LPCTSTR app, LPTSTR cmd, LPSECURITY_ATTRIBUTES ps, LPSECURITY
   creates++;
   if (! create_ok) { SetLastError(create_error); return FALSE; }
   launch_flags = flags;
+  process_closed = thread_closed = false;
   pi->hProcess = process_handle; pi->hThread = thread_handle; pi->dwProcessId = 321;
   return TRUE;
 }
@@ -157,6 +160,11 @@ unsigned long kill_tree(kill_t *k, unsigned long pid) {
 }
 int hook(hook_thread_t *list, nssm_service_t *service, TCHAR *event, TCHAR *action, unsigned long *control, unsigned long deadline, bool async) {
   if (! active) return nssm_hook(list, service, event, action, control, deadline, async);
+  if (power_entered && str_equiv(event, NSSM_HOOK_EVENT_POWER)) {
+    power_calls.push_back(action);
+    SetEvent(power_entered);
+    CHECK(WaitForSingleObject(power_release, 5000) == WAIT_OBJECT_0);
+  }
   if (rotate_pre_entered && ! _tcscmp(event, NSSM_HOOK_EVENT_ROTATE) && ! _tcscmp(action, NSSM_HOOK_ACTION_PRE)) {
     SetEvent(rotate_pre_entered);
     CHECK(WaitForSingleObject(rotate_pre_release, 5000) == WAIT_OBJECT_0);
@@ -331,6 +339,62 @@ static void test_startup_cancellation() {
   active = false;
 }
 
+static void test_early_exit() {
+  using namespace launch_test;
+  registry_fixture registry;
+  reset(); wait_result = WAIT_OBJECT_0; app_exitcode = 42;
+  nssm_service_t *service = startup_fixture();
+  HKEY rules = open_registry(service->name, NSSM_REG_EXIT, KEY_WRITE);
+  REQUIRE(rules && !set_string(rules, _T("42"), _T("Exit"))); RegCloseKey(rules);
+  CHECK(!monitor_service(service) && registrations == 1 && !running_statuses);
+  end_service(service, false);
+  CHECK(!running_statuses && stopped_statuses == 1 && service->status.dwServiceSpecificExitCode == 42);
+  DeleteCriticalSection(&service->hook_section); delete service;
+  reset(); wait_result = WAIT_FAILED; service = startup_fixture();
+  CHECK(monitor_service(service) != 0 && !registrations && !running_statuses && stopped_statuses == 1);
+  DeleteCriticalSection(&service->hook_section); delete service;
+  reset(); wait_result = WAIT_OBJECT_0; app_exitcode = 7; service = startup_fixture();
+  CHECK(!monitor_service(service) && registrations == 1 && !running_statuses);
+  wait_result = WAIT_TIMEOUT;
+  end_service(service, false);
+  CHECK(creates == 2 && registrations == 2 && running_statuses == 1);
+  CHECK(!stop_service(service, 0, true, true));
+  DeleteCriticalSection(&service->hook_section); delete service; active = false;
+}
+
+DWORD WINAPI test_power_worker(void *);
+static void test_power_dispatch() {
+  using namespace launch_test;
+  for (unsigned scenario = 0; scenario < 3; scenario++) {
+    reset(); power_calls.clear();
+    nssm_service_t *service = startup_fixture();
+    service->stop_event = CreateEvent(NULL, TRUE, FALSE, NULL);
+    service->power_port = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1);
+    power_entered = CreateEvent(NULL, TRUE, FALSE, NULL);
+    power_release = CreateEvent(NULL, TRUE, FALSE, NULL);
+    REQUIRE(service->power_port && service->stop_event && power_entered && power_release);
+    HANDLE worker = CreateThread(NULL, 0, test_power_worker, service, 0, NULL);
+    REQUIRE(worker);
+    CHECK(service_control_handler(SERVICE_CONTROL_POWEREVENT, PBT_APMRESUMEAUTOMATIC, NULL, service) == NO_ERROR);
+    REQUIRE(WaitForSingleObject(power_entered, 5000) == WAIT_OBJECT_0);
+    CHECK(service_control_handler(SERVICE_CONTROL_POWEREVENT, PBT_APMPOWERSTATUSCHANGE, NULL, service) == NO_ERROR);
+    if (scenario == 2) InterlockedIncrement(&service->start_count);
+    if (scenario == 1) {
+      CHECK(service_control_handler(SERVICE_CONTROL_STOP, 0, NULL, service) == NO_ERROR);
+      CHECK(WaitForSingleObject(service->stop_event, 0) == WAIT_OBJECT_0);
+    }
+    SetEvent(power_release);
+    REQUIRE(PostQueuedCompletionStatus(service->power_port, 0, 0, NULL));
+    REQUIRE(WaitForSingleObject(worker, 5000) == WAIT_OBJECT_0);
+    CHECK(power_calls.size() == (scenario ? 1U : 2U));
+    CHECK(power_calls.front() == NSSM_HOOK_ACTION_RESUME);
+    if (!scenario) CHECK(power_calls.back() == NSSM_HOOK_ACTION_CHANGE);
+    CloseHandle(worker); CloseHandle(service->power_port); CloseHandle(service->stop_event);
+    CloseHandle(power_entered); CloseHandle(power_release); power_entered = power_release = NULL;
+    DeleteCriticalSection(&service->hook_section); delete service; active = false;
+  }
+}
+
 static void test_relaunch_and_shutdown() {
   using namespace launch_test;
   reset();
@@ -453,6 +517,8 @@ static void test_control_overlap() {
 
 void test_launch_handles() {
   test_relaunch_and_shutdown();
+  test_early_exit();
+  test_power_dispatch();
   test_resume_retry_exit();
   test_control_overlap();
   test_startup_cancellation();

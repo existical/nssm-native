@@ -44,6 +44,13 @@ static void test_stream_bytes() {
   const std::string bom("\xff\xfe", 2);
   const std::string wide_stamp = wide_bytes(L"2026-11-02 03:04:05.006: ");
   CHECK(stamp.size() == TIMESTAMP_LEN);
+  {
+    stream_fixture f("OK\n", 3, false);
+    f.service->rotate_stdout_online = NSSM_ROTATE_OFFLINE;
+    check_short_output = true;
+    CHECK(f.run() == 0 && f.contents() == "OK\n");
+    check_short_output = false;
+  }
   const std::string ascii = "first\r\n\nlast\nend";
   const std::string expected = stamp + "first\r\n" + stamp + "\n" + stamp + "last\n" + stamp + "end";
   for (DWORD chunk = 1; chunk <= 20; chunk++) {

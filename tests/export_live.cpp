@@ -68,10 +68,10 @@ struct output_file {
   ~output_file() { if (! DeleteFileW(path)) service_fixture::cleanup_failed = true; }
 };
 struct result { DWORD code; std::wstring output; };
-static result run(const std::wstring &exe, const std::wstring &arguments) {
+static result run(const std::wstring &exe, const std::wstring &arguments, bool read_only_output = false) {
   output_file file;
   SECURITY_ATTRIBUTES security = {sizeof(security), NULL, TRUE};
-  HANDLE output = CreateFileW(file.path, GENERIC_WRITE, FILE_SHARE_READ, &security, CREATE_ALWAYS, 0, NULL);
+  HANDLE output = CreateFileW(file.path, read_only_output ? GENERIC_READ : GENERIC_WRITE, FILE_SHARE_READ, &security, OPEN_EXISTING, 0, NULL);
   HANDLE input = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &security, OPEN_EXISTING, 0, NULL);
   if (output == INVALID_HANDLE_VALUE || input == INVALID_HANDLE_VALUE) {
     if (output != INVALID_HANDLE_VALUE) CloseHandle(output);
@@ -133,6 +133,18 @@ int wmain(int argc, wchar_t **argv) {
       require(run(argv[1], L"get " + quoted(imported.name) + L" Application").output.find(argv[1]) != std::wstring::npos, "Preserve repaired application");
       source.configure(argv[1]); imported.configure(argv[1]);
       require(run(argv[1], L"set " + quoted(source.name) + L" DisplayName " + quoted(source.name + L" custom")).code == 0, "Give source a custom display name");
+      wchar_t native_image[MAX_PATH];
+      require(GetModuleFileNameW(NULL, native_image, _countof(native_image)) > 0, "Locate native fixture image");
+      service_fixture native(manager, native_image, L"native");
+      native.configure(argv[1]);
+      require(run(argv[1], L"dump " + quoted(native.name)).code != 0, "Native Application value does not identify a wrapper");
+      require(run(argv[1], L"get " + quoted(native.name) + L" ImagePath").code == 0, "Native SCM settings remain readable");
+      require(run(argv[1], L"status " + quoted(source.name + L" custom")).code == 0, "Named status resolves the display name");
+      require(run(argv[1], L"dump " + quoted(source.name), true).code != 0, "Unwritable output fails the whole dump");
+      const std::wstring raw_log = L"%SystemRoot%\\literal.log";
+      service_fixture::set(source.key, L"AppStdout", raw_log, REG_SZ);
+      service_fixture::set(source.key, L"AppStderr", raw_log, REG_EXPAND_SZ);
+      service_fixture::set(source.key, L"Application", argv[1], REG_SZ);
       source.query_only();
       // Remove destination rules so replay must reconstruct all of them.
       require(RegDeleteKeyW(imported.key, L"AppExit") == ERROR_SUCCESS, "Clear destination rules");
@@ -148,6 +160,9 @@ int wmain(int argc, wchar_t **argv) {
           const std::wstring &path;
           ~remove_copy() { if (! DeleteFileW(path.c_str())) service_fixture::cleanup_failed = true; }
         } cleanup = {spaced};
+        service_fixture relocated(manager, spaced, L"renamed");
+        relocated.configure(argv[1]);
+        require(run(argv[1], L"dump " + quoted(relocated.name)).code == 0, "Recognize a separately installed wrapper by version resource");
         result copy_dump = run(spaced, L"dump " + quoted(source.name));
         size_t end = copy_dump.output.find(L" install ");
         require(copy_dump.code == 0 && end != std::wstring::npos, "Read executable prefix from spaced-path dump");
@@ -180,16 +195,32 @@ int wmain(int argc, wchar_t **argv) {
           require(line.find(imported.name) != std::wstring::npos, "Replay targets only the destination fixture");
           require(run(argv[1], line.substr(command + 1)).code == 0, "Replay exported AppExit setting"); replayed++;
         }
+        if (line.find(L" REG_SZ:") != std::wstring::npos || line.find(L" AppStderr ") != std::wstring::npos) {
+          size_t command = line.find(L" set ");
+          require(command != std::wstring::npos && line.find(imported.name) != std::wstring::npos, "Typed setter targets the destination");
+          wchar_t system[MAX_PATH];
+          require(GetSystemDirectoryW(system, _countof(system)) > 0, "Locate cmd for typed replay");
+          require(!run(std::wstring(system) + L"\\cmd.exe", L"/d /v:off /s /c \"" + line + L"\"").code, "Replay exported registry string through cmd");
+        }
         offset = end + 1;
       }
       require(replayed == 4, "Replay all four rules");
+      for (auto value : {L"Application", L"AppStdout"}) {
+        DWORD type = 0;
+        require(RegQueryValueExW(imported.key, value, NULL, &type, NULL, NULL) == ERROR_SUCCESS && type == REG_SZ, "Restored literal registry type");
+      }
+      for (auto value : {L"AppStdout", L"AppStderr"}) {
+        wchar_t data[MAX_PATH]; DWORD length = sizeof(data), type = 0;
+        require(RegQueryValueExW(imported.key, value, NULL, &type, (BYTE *)data, &length) == ERROR_SUCCESS &&
+          raw_log == data && type == (wcscmp(value, L"AppStdout") ? REG_EXPAND_SZ : REG_SZ), "Preserve raw data and registry type through the command interpreter");
+      }
       result again = run(argv[1], L"dump " + quoted(imported.name));
       require(again.code == 0, "Re-export imported settings");
       for (const wchar_t *rule : rules) require(again.output.find(L" AppExit " + std::wstring(rule)) != std::wstring::npos, "Re-export preserves the rule");
     }
     CloseServiceHandle(manager); manager = NULL;
     require(! service_fixture::cleanup_failed, "Fixture cleanup succeeded");
-    puts("Query-only SCM export/import passed; both disabled fixtures were deleted without starting.");
+    puts("Query-only SCM export/import, typed replay and wrapper classification passed.");
     return 0;
   }
   catch (const std::exception &error) {

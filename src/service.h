@@ -110,6 +110,7 @@ typedef struct {
   HANDLE resume_event;
   HANDLE stop_event;
   HANDLE finished_event;
+  HANDLE power_port;
   volatile LONG rotate_active;
   unsigned long rotate_generation;
   DWORD stop_control;

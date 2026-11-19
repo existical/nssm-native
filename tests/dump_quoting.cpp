@@ -5,6 +5,7 @@ typedef std::basic_string<TCHAR> text_t;
 static text_t dump_output;
 static text_t dump_executable = _T("C:\\Tools\\nssm.exe");
 static bool capture_dump = false;
+static bool fail_output;
 static bool fail_exit_enumeration;
 static unsigned exit_enum_calls;
 static long test_enumerate_exit(HKEY key, unsigned long *index, TCHAR *name, unsigned long count) {
@@ -20,9 +21,11 @@ static bool active, fail_write, fail_delete;
 static bool tracking;
 static std::vector<void *> owned;
 static unsigned allocations;
+static int fail_entry = -1;
 static LPVOID WINAPI allocate(HANDLE heap, DWORD flags, SIZE_T size) {
   if (dependency_test::active) return dependency_test::allocate(heap, flags, size);
   if (active) { allocations++; return NULL; }
+  if (fail_entry >= 0 && fail_entry-- == 0) return NULL;
   void *p = HeapAlloc(heap, flags, size);
   if (tracking && p) owned.push_back(p);
   return p;
@@ -32,8 +35,8 @@ static BOOL WINAPI release(HANDLE heap, DWORD flags, LPVOID p) {
   for (size_t i = 0; i < owned.size(); i++) if (owned[i] == p) { owned.erase(owned.begin() + i); break; }
   return HeapFree(heap, flags, p);
 }
-static int set(HKEY key, TCHAR *name, TCHAR *value) {
-  return active && fail_write ? 1 : set_expand_string(key, name, value);
+static int set(HKEY key, TCHAR *name, TCHAR *value, bool expand = false) {
+  return active && fail_write ? 1 : set_string(key, name, value, expand);
 }
 static LSTATUS WINAPI remove(HKEY key, LPCTSTR name) {
   return active && fail_delete ? ERROR_ACCESS_DENIED : RegDeleteValue(key, name);
@@ -43,6 +46,7 @@ static LSTATUS WINAPI remove(HKEY key, LPCTSTR name) {
 static const TCHAR *test_nssm_exe() { return dump_executable.c_str(); }
 
 static int test_dump_printf(const TCHAR *format, ...) {
+  if (fail_output) return -1;
   va_list args;
   va_start(args, format);
   if (! capture_dump) {
@@ -69,7 +73,7 @@ static int test_dump_printf(const TCHAR *format, ...) {
 #define nssm_exe test_nssm_exe
 #define HeapAlloc reset_test::allocate
 #define HeapFree reset_test::release
-#define set_expand_string reset_test::set
+#define set_string reset_test::set
 #undef RegDeleteValue
 #define RegDeleteValue reset_test::remove
 #define enumerate_registry_values test_enumerate_exit
@@ -81,7 +85,7 @@ static int test_dump_printf(const TCHAR *format, ...) {
 #undef enumerate_registry_values
 #undef HeapAlloc
 #undef HeapFree
-#undef set_expand_string
+#undef set_string
 #undef RegDeleteValue
 #define RegDeleteValue RegDeleteValueW
 #undef nssm_exe
@@ -142,6 +146,35 @@ void test_exit_export() {
   CHECK(exit_enum_calls == 1);
   fail_exit_enumeration = false; capture_dump = false;
   test_exit_export_cases(service, parameters, key, setting);
+  RegCloseKey(parameters);
+  parameters = open_registry(service, KEY_READ | KEY_WRITE); REQUIRE(parameters);
+  TCHAR raw_path[] = _T("%SystemRoot%\\test");
+  value_t path; path.string = raw_path;
+  capture_dump = true;
+  for (settings_t *s = settings; s->name; ++s) {
+    if (s->native || s->type != REG_EXPAND_SZ) continue;
+    for (bool literal : {true, false}) {
+      REQUIRE(set_setting(service, parameters, s, &path, literal ? _T("REG_SZ") : NULL) == 1);
+      TCHAR actual[VALUE_LENGTH]; DWORD type = 0;
+      REQUIRE(!get_string(parameters, (TCHAR *)s->name, actual, sizeof(actual), true, false, true, &type));
+      CHECK(type == (literal ? REG_SZ : REG_EXPAND_SZ));
+      CHECK((_tcscmp(actual, raw_path) == 0) == literal);
+      dump_output.clear();
+      CHECK(!dump_setting(service, parameters, NULL, s));
+      if (literal || !str_equiv(s->name, NSSM_REG_EXE))
+        CHECK(dump_output.find(text_t(literal ? _T(" REG_SZ:") : _T(" ")) + s->name + _T(" ")) != text_t::npos);
+    }
+  }
+  fail_output = true;
+  CHECK(setting_dump_string(service, REG_SZ, NSSM_REG_FLAGS, &path, NULL) != 0);
+  fail_output = false;
+  TCHAR entries[] = _T("A=one\0B=two\0");
+  REQUIRE(RegSetValueEx(parameters, NSSM_REG_ENV_EXTRA, 0, REG_MULTI_SZ, (BYTE *)entries, sizeof(entries)) == ERROR_SUCCESS);
+  value_t env = {};
+  dump_output.clear(); reset_test::fail_entry = 1;
+  CHECK(setting_dump_environment(service, parameters, NSSM_REG_ENV_EXTRA, NULL, &env, NULL) != 0);
+  CHECK(dump_output.find(_T("A=one")) != text_t::npos && dump_output.find(_T("B=two")) == text_t::npos);
+  reset_test::fail_entry = -1; capture_dump = false;
   RegCloseKey(parameters); RegCloseKey(key);
 }
 

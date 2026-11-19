@@ -1,10 +1,13 @@
 param([Parameter(Mandatory=$true)][string]$PackageDirectory, [Parameter(Mandatory=$true)][string]$WorkDirectory)
 $ErrorActionPreference = 'Stop'
 $package = (Resolve-Path -LiteralPath $PackageDirectory).Path
+$checkedFiles = @{}
 foreach ($line in [IO.File]::ReadAllLines((Join-Path $package 'SHA256SUMS.txt'))) {
     if ($line -notmatch '^([0-9a-f]{64})  (.+)$') { throw 'Malformed checksum line.' }
     $expected = $Matches[1]; $relative = $Matches[2]
     $path = [IO.Path]::GetFullPath((Join-Path $package $relative))
+    if ($checkedFiles.ContainsKey($path)) { throw "Duplicate checksum entry: $relative" }
+    $checkedFiles[$path] = $true
     if (-not $path.StartsWith($package + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Checksum path escapes the package.' }
     if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw "Checksum mismatch: $relative" }
 }
@@ -15,6 +18,27 @@ $work = Join-Path $WorkDirectory ('package-check-' + [guid]::NewGuid().ToString(
 New-Item -ItemType Directory -Path $work | Out-Null
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 foreach ($record in $manifest.builds) {
+    $build = $record.build
+    if ($build.architecture -notin @('x64','x86') -or $build.configuration -notin @('Release','Debug')) { throw 'Invalid build configuration.' }
+    $report = "$($build.architecture)-$($build.configuration)-tests.xml"
+    $reportPath = [IO.Path]::GetFullPath((Join-Path $package "evidence/$report"))
+    if ($build.validation.report -cne $report -or !$checkedFiles.ContainsKey($reportPath)) { throw "Missing checksum-covered test report: $report" }
+    [xml]$junit = Get-Content -LiteralPath $reportPath -Raw
+    $suite = $junit.testsuite
+    $cases = @($suite.testcase)
+    if (!$suite -or !$suite.HasAttribute('tests') -or !$suite.HasAttribute('failures') -or
+        [int]$suite.tests -ne $build.validation.tests -or $cases.Count -ne $build.validation.tests -or
+        [int]$suite.failures -ne 0 -or $build.validation.failures -ne 0 -or
+        [int]$suite.errors -ne 0 -or [int]$suite.skipped -ne 0 -or [int]$suite.disabled -ne 0 -or
+        @($cases | Where-Object { $_.status -cne 'run' -or $_.SelectSingleNode('failure|error|skipped') }).Count -or
+        @($cases.name | Sort-Object -Unique).Count -ne $cases.Count) { throw "Test results disagree with manifest: $report" }
+    $smoke = @($cases | Where-Object name -CEQ 'nssm.smoke')
+    if ($smoke.Count -ne 1 -or !$build.version_output -or !([string]$smoke[0].'system-out').Contains($build.version_output)) { throw "Smoke test identity mismatch: $report" }
+    if ($build.validation.scm_enabled) {
+        foreach ($required in 'nssm.export_live','nssm.dependencies_live','nssm.controls_live','nssm.lifecycle_live') {
+            if ($required -cnotin $cases.name) { throw "Missing live test $required in $report" }
+        }
+    }
     $archive = Join-Path $package $record.archive
     if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $record.sha256) { throw 'Archive hash mismatch.' }
     $name = $record.build.architecture + '-' + $record.build.configuration
@@ -24,6 +48,9 @@ foreach ($record in $manifest.builds) {
     Expand-Archive -LiteralPath $archive -DestinationPath $destination
     $inner = Get-Content -LiteralPath (Join-Path $destination 'build-info.json') -Raw | ConvertFrom-Json
     if ($inner.source.commit -ne $manifest.source.commit -or $inner.validation.failures -ne 0 -or $inner.validation.tests -lt 37) { throw 'Binary identity or validation mismatch.' }
+    if ($inner.architecture -ne $build.architecture -or $inner.configuration -ne $build.configuration -or
+        $inner.version_output -cne $build.version_output -or $inner.validation.report -cne $report -or
+        $inner.validation.tests -ne $cases.Count -or $inner.validation.scm_enabled -ne $build.validation.scm_enabled) { throw "Inner package details disagree with $report" }
     foreach ($artifact in $inner.artifacts) {
         if ((Get-FileHash -LiteralPath (Join-Path $destination $artifact.name) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $artifact.sha256) { throw 'Executable/symbol hash mismatch.' }
     }

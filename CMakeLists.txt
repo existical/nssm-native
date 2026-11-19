@@ -91,7 +91,7 @@ target_link_options(nssm PRIVATE /DEBUG /DYNAMICBASE /NXCOMPAT
   "$<$<NOT:$<CONFIG:Debug>>:/OPT:REF;/OPT:ICF>")
 target_link_libraries(nssm PRIVATE
   kernel32 user32 gdi32 comdlg32 advapi32 shell32 ole32 oleaut32 uuid
-  psapi shlwapi comctl32)
+  psapi shlwapi comctl32 version)
 set_target_properties(nssm PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin/$<CONFIG>"
   PDB_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin/$<CONFIG>"

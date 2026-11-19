@@ -18,6 +18,7 @@ static bool fixed_rotation_clock;
 static bool stream_test, fail_info, fail_size, fail_move, fail_truncate, fail_read;
 static std::string stream_input;
 static size_t read_position;
+static bool check_short_output;
 static DWORD read_chunk, short_write;
 static LONGLONG fail_after;
 static ULONGLONG bytes_written;
@@ -26,6 +27,7 @@ static std::vector<std::basic_string<TCHAR> > rotated_paths;
 static SYSTEMTIME fixed_time = {2026, 11, 1, 2, 3, 4, 5, 6};
 static BOOL WINAPI read(HANDLE h, LPVOID data, DWORD size, LPDWORD count, LPOVERLAPPED overlap) {
   if (! stream_test) return ReadFile(h, data, size, count, overlap);
+  if (check_short_output && read_position == stream_input.size()) CHECK(bytes_written == stream_input.size());
   if (fail_read) { *count = 0; SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
   *count = static_cast<DWORD>((std::min)(size_t((std::min)(size, read_chunk)), stream_input.size() - read_position));
   if (! *count) { SetLastError(ERROR_BROKEN_PIPE); return FALSE; }
@@ -96,7 +98,7 @@ static BOOL WINAPI duplicate(HANDLE sp, HANDLE source, HANDLE dp, LPHANDLE dest,
   return DuplicateHandle(sp, source, dp, dest, access, inherit, options);
 }
 static HANDLE WINAPI file(LPCTSTR path, DWORD access, DWORD sharing, LPSECURITY_ATTRIBUTES a, DWORD disposition, DWORD flags, HANDLE template_file) {
-  if (active && access && ++file_calls == file_fail) { SetLastError(ERROR_ACCESS_DENIED); return INVALID_HANDLE_VALUE; }
+  if (active && access && ++file_calls >= file_fail && file_fail) { SetLastError(ERROR_ACCESS_DENIED); return INVALID_HANDLE_VALUE; }
   return CreateFile(path, access, sharing, a, disposition, flags, template_file);
 }
 static BOOL WINAPI write(HANDLE h, LPCVOID data, DWORD size, LPDWORD written, LPOVERLAPPED overlap) {

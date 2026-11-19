@@ -38,7 +38,10 @@ typedef struct {
   unsigned long delay_ms;
   ULONGLONG bytes;
   bool copy_and_truncate;
+  HANDLE stop_event;
 } rotation_options_t;
+
+enum class rotation_result { skipped, completed, cancelled, failed };
 
 void close_handle(HANDLE *);
 bool resolve_io_path(const TCHAR *, TCHAR *);
@@ -46,8 +49,8 @@ bool same_file(const TCHAR *, const TCHAR *);
 int get_createfile_parameters(HKEY, TCHAR *, TCHAR *, unsigned long *, unsigned long, unsigned long *, unsigned long, unsigned long *, unsigned long, bool *, bool = true, unsigned long * = NULL);
 int set_createfile_parameter(HKEY, TCHAR *, TCHAR *, unsigned long);
 int delete_createfile_parameter(HKEY, TCHAR *, TCHAR *);
-HANDLE write_to_file(TCHAR *, unsigned long, SECURITY_ATTRIBUTES *, unsigned long, unsigned long);
-void rotate_file(TCHAR *, TCHAR *, const rotation_options_t &);
+HANDLE write_to_file(TCHAR *, unsigned long, SECURITY_ATTRIBUTES *, unsigned long, unsigned long, bool = false);
+rotation_result rotate_file(TCHAR *, TCHAR *, const rotation_options_t &);
 int get_output_handles(nssm_service_t *, STARTUPINFO *);
 int use_output_handles(nssm_service_t *, STARTUPINFO *);
 void close_output_handles(STARTUPINFO *);

@@ -108,6 +108,40 @@ struct fixture {
   }
 };
 
+static void shared_outputs() {
+  fixture f;
+  f.service->rotate_files = false;
+  f.prepare(false, "");
+  HANDLE first = write_to_file(f.service->stdout_path, NSSM_STDOUT_SHARING, NULL, OPEN_ALWAYS, 0);
+  HANDLE second = write_to_file(f.service->stdout_path, NSSM_STDOUT_SHARING, NULL, OPEN_ALWAYS, 0);
+  REQUIRE(first != INVALID_HANDLE_VALUE && second != INVALID_HANDLE_VALUE);
+  DWORD n;
+  CHECK(WriteFile(first, "A", 1, &n, NULL) && n == 1);
+  CHECK(WriteFile(second, "B", 1, &n, NULL) && n == 1);
+  CHECK(WriteFile(first, "C", 1, &n, NULL) && n == 1);
+  CloseHandle(first); CloseHandle(second);
+  CHECK(f.contents(f.service->stdout_path) == "ABC");
+  std::basic_string<TCHAR> base = f.service->stdout_path;
+  auto a = base + _T(":out"), b = base + _T(":err"), alias = base + _T(":OUT:$DATA");
+  for (auto path : {a, b}) {
+    HANDLE h = CreateFile(path.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
+    REQUIRE(h != INVALID_HANDLE_VALUE); CloseHandle(h);
+  }
+  CHECK(same_file(base.c_str(), (base + _T("::$DATA")).c_str()));
+  CHECK(same_file(a.c_str(), alias.c_str()));
+  auto hardlink = base + _T(".link");
+  REQUIRE(CreateHardLink(hardlink.c_str(), base.c_str(), NULL));
+  f.paths.push_back(hardlink);
+  CHECK(same_file(a.c_str(), (hardlink + _T(":out")).c_str()));
+  CHECK(!same_file(a.c_str(), (hardlink + _T(":err")).c_str()));
+  _tcscpy_s(f.service->stdout_path, a.c_str()); _tcscpy_s(f.service->stderr_path, b.c_str());
+  REQUIRE(!get_output_handles(f.service, &f.si));
+  CHECK(WriteFile(f.si.hStdOutput, "O", 1, &n, NULL));
+  CHECK(WriteFile(f.si.hStdError, "E", 1, &n, NULL));
+  f.stop();
+  CHECK(f.contents(a.c_str()) == "O" && f.contents(b.c_str()) == "E");
+}
+
 static void small_file_regression(bool stderr_stream) {
   fixture f;
   std::basic_string<TCHAR> archive = f.prepare(stderr_stream, "data");
@@ -161,12 +195,16 @@ static void failures_and_collision(bool stderr_stream, bool copy_mode, bool coll
     DWORD written; REQUIRE(WriteFile(file, "keep", 4, &written, NULL) && written == 4); CloseHandle(file);
   }
   else { fail_copy = copy_mode; fail_move = ! copy_mode; }
-  REQUIRE(get_output_handles(f.service, &f.si) == 0); f.stop();
+  f.service->stdout_disposition = f.service->stderr_disposition = CREATE_ALWAYS;
+  REQUIRE(get_output_handles(f.service, &f.si) != 0); f.stop();
   CHECK(copies == (copy_mode ? 1U : 0U) && moves == (copy_mode ? 0U : 1U));
   CHECK(rotated_events == 0 && failed_events == 1 && sleeps.empty());
   CHECK(f.contents(stderr_stream ? f.service->stderr_path : f.service->stdout_path) == "data");
   CHECK(exists(archive) == collision);
   if (collision) CHECK(f.contents(archive.c_str()) == "keep");
+  f.service->stdout_disposition = f.service->stderr_disposition = OPEN_ALWAYS;
+  CHECK(!get_output_handles(f.service, &f.si)); f.stop();
+  CHECK(f.contents(stderr_stream ? f.service->stderr_path : f.service->stdout_path) == "data");
 }
 
 static void failed_offline_truncation() {
@@ -217,6 +255,29 @@ static void disabled_or_missing(bool stderr_stream, bool missing, bool copy_mode
 }
 
 void test_offline_rotation() {
+  for (bool err : {false, true}) {
+    rotation_test::fixture f;
+    auto archive = f.prepare(err, "original");
+    TCHAR *path = err ? f.service->stderr_path : f.service->stdout_path;
+    HANDLE reader = CreateFile(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+    REQUIRE(reader != INVALID_HANDLE_VALUE);
+    f.service->stdout_disposition = f.service->stderr_disposition = CREATE_ALWAYS;
+    CHECK(get_output_handles(f.service, &f.si) != 0);
+    CloseHandle(reader);
+    CHECK(f.contents(path) == "original" && !rotation_test::exists(archive));
+  }
+  const DWORD delays[] = {1000, MAXDWORD};
+  for (DWORD delay : delays) {
+    rotation_test::fixture f;
+    auto archive = f.prepare(false, "original");
+    f.service->stop_event = CreateEvent(NULL, TRUE, TRUE, NULL);
+    REQUIRE(f.service->stop_event);
+    f.service->rotate_delay = delay;
+    f.service->stdout_copy_and_truncate = true;
+    CHECK(get_output_handles(f.service, &f.si) != 0);
+    CHECK(f.contents(archive.c_str()) == "original" && f.contents(f.service->stdout_path) == "original");
+  }
+  rotation_test::shared_outputs();
   rotation_test::failed_offline_truncation();
   rotation_test::small_file_regression(false);
   rotation_test::small_file_regression(true);

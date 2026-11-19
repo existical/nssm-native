@@ -114,7 +114,8 @@ static int setting_set_string(const TCHAR *service_name, void *param, const TCHA
     return -1;
   }
 
-  if (set_expand_string(key, (TCHAR *) name, string)) return -1;
+  bool expand = !additional || !str_equiv(additional, _T("REG_SZ"));
+  if (set_string(key, (TCHAR *) name, string, expand)) return -1;
 
   return 1;
 }
@@ -158,9 +159,29 @@ static int setting_dump_string(const TCHAR *service_name, unsigned long type, co
   else return 2;
 
   if (quote(nssm_exe(), quoted_nssm, _countof(quoted_nssm))) return 3;
-  if (_tcslen(quoted_additional)) _tprintf(_T("%s set %s %s %s %s\n"), quoted_nssm, quoted_service_name, name, quoted_additional, quoted_value);
-  else _tprintf(_T("%s set %s %s %s\n"), quoted_nssm, quoted_service_name, name, quoted_value);
-  return 0;
+  int written;
+  if (*quoted_additional) written = _tprintf(_T("%s set %s %s %s %s\n"), quoted_nssm, quoted_service_name, name, quoted_additional, quoted_value);
+  else written = _tprintf(_T("%s set %s %s %s\n"), quoted_nssm, quoted_service_name, name, quoted_value);
+  return written < 0;
+}
+
+/* Restore literal launch/I/O values with an explicit setter after install. */
+static int dump_launch_string(const TCHAR *service_name, void *param, const TCHAR *name, void *, value_t *, const TCHAR *) {
+  TCHAR buffer[VALUE_LENGTH];
+  DWORD type = REG_NONE;
+  if (get_string((HKEY) param, (TCHAR *) name, buffer, sizeof(buffer), false, false, false, &type)) return 1;
+  /* Install derives a directory from the raw application path. Clear that
+     derived value when the source used the runtime directory fallback. */
+  if (type == REG_NONE) {
+    if (!str_equiv(name, NSSM_REG_DIR)) return 0;
+    type = REG_EXPAND_SZ;
+  }
+  if (type == REG_EXPAND_SZ && str_equiv(name, NSSM_REG_EXE)) return 0;
+  TCHAR selector[64];
+  if (_sntprintf_s(selector, _countof(selector), _TRUNCATE, _T("%s%s"), type == REG_SZ ? _T("REG_SZ:") : _T(""), name) < 0) return 1;
+  value_t value;
+  value.string = buffer;
+  return setting_dump_string(service_name, type, selector, &value, NULL);
 }
 
 static int setting_set_exit_action(const TCHAR *service_name, void *param, const TCHAR *name, void *default_value, value_t *value, const TCHAR *additional) {
@@ -563,6 +584,7 @@ static int setting_dump_environment(const TCHAR *service_name, void *param, cons
     value->string = (TCHAR *) HeapAlloc(GetProcessHeap(), 0, len * sizeof(TCHAR));
     if (! value->string) {
       print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("dump"), _T("setting_dump_environment"));
+      errors++;
       break;
     }
 
@@ -1304,9 +1326,9 @@ int dump_setting(const TCHAR *service_name, HKEY key, SC_HANDLE service_handle, 
 }
 
 settings_t settings[] = {
-  { NSSM_REG_EXE, REG_EXPAND_SZ, (void *) _T(""), false, 0, setting_set_string, setting_get_string, setting_not_dumpable },
-  { NSSM_REG_FLAGS, REG_EXPAND_SZ, (void *) _T(""), false, 0, setting_set_string, setting_get_string, 0 },
-  { NSSM_REG_DIR, REG_EXPAND_SZ, (void *) _T(""), false, 0, setting_set_string, setting_get_string, 0 },
+  { NSSM_REG_EXE, REG_EXPAND_SZ, (void *) _T(""), false, 0, setting_set_string, setting_get_string, dump_launch_string },
+  { NSSM_REG_FLAGS, REG_EXPAND_SZ, (void *) _T(""), false, 0, setting_set_string, setting_get_string, dump_launch_string },
+  { NSSM_REG_DIR, REG_EXPAND_SZ, (void *) _T(""), false, 0, setting_set_string, setting_get_string, dump_launch_string },
   { NSSM_REG_EXIT, REG_SZ, (void *) exit_action_strings[NSSM_EXIT_RESTART], false, ADDITIONAL_MANDATORY, setting_set_exit_action, setting_get_exit_action, setting_dump_exit_action },
   { NSSM_REG_HOOK, REG_SZ, (void *) _T(""), false, ADDITIONAL_MANDATORY, setting_set_hook, setting_get_hook, setting_dump_hooks },
   { NSSM_REG_AFFINITY, REG_SZ, 0, false, 0, setting_set_affinity, setting_get_affinity, 0 },
@@ -1315,16 +1337,16 @@ settings_t settings[] = {
   { NSSM_REG_NO_CONSOLE, REG_DWORD, 0, false, 0, setting_set_number, setting_get_number, 0 },
   { NSSM_REG_PRIORITY, REG_SZ, (void *) priority_strings[NSSM_NORMAL_PRIORITY], false, 0, setting_set_priority, setting_get_priority, setting_dump_priority },
   { NSSM_REG_RESTART_DELAY, REG_DWORD, 0, false, 0, setting_set_number, setting_get_number, 0 },
-  { NSSM_REG_STDIN, REG_EXPAND_SZ, NULL, false, 0, setting_set_string, setting_get_string, 0 },
+  { NSSM_REG_STDIN, REG_EXPAND_SZ, NULL, false, 0, setting_set_string, setting_get_string, dump_launch_string },
   { NSSM_REG_STDIN NSSM_REG_STDIO_SHARING, REG_DWORD, (void *) NSSM_STDIN_SHARING, false, 0, setting_set_number, setting_get_number, 0 },
   { NSSM_REG_STDIN NSSM_REG_STDIO_DISPOSITION, REG_DWORD, (void *) NSSM_STDIN_DISPOSITION, false, 0, setting_set_number, setting_get_number, 0 },
   { NSSM_REG_STDIN NSSM_REG_STDIO_FLAGS, REG_DWORD, (void *) NSSM_STDIN_FLAGS, false, 0, setting_set_number, setting_get_number, 0 },
-  { NSSM_REG_STDOUT, REG_EXPAND_SZ, NULL, false, 0, setting_set_string, setting_get_string, 0 },
+  { NSSM_REG_STDOUT, REG_EXPAND_SZ, NULL, false, 0, setting_set_string, setting_get_string, dump_launch_string },
   { NSSM_REG_STDOUT NSSM_REG_STDIO_SHARING, REG_DWORD, (void *) NSSM_STDOUT_SHARING, false, 0, setting_set_number, setting_get_number, 0 },
   { NSSM_REG_STDOUT NSSM_REG_STDIO_DISPOSITION, REG_DWORD, (void *) NSSM_STDOUT_DISPOSITION, false, 0, setting_set_number, setting_get_number, 0 },
   { NSSM_REG_STDOUT NSSM_REG_STDIO_FLAGS, REG_DWORD, (void *) NSSM_STDOUT_FLAGS, false, 0, setting_set_number, setting_get_number, 0 },
   { NSSM_REG_STDOUT NSSM_REG_STDIO_COPY_AND_TRUNCATE, REG_DWORD, 0, false, 0, setting_set_number, setting_get_number, 0 },
-  { NSSM_REG_STDERR, REG_EXPAND_SZ, NULL, false, 0, setting_set_string, setting_get_string, 0 },
+  { NSSM_REG_STDERR, REG_EXPAND_SZ, NULL, false, 0, setting_set_string, setting_get_string, dump_launch_string },
   { NSSM_REG_STDERR NSSM_REG_STDIO_SHARING, REG_DWORD, (void *) NSSM_STDERR_SHARING, false, 0, setting_set_number, setting_get_number, 0 },
   { NSSM_REG_STDERR NSSM_REG_STDIO_DISPOSITION, REG_DWORD, (void *) NSSM_STDERR_DISPOSITION, false, 0, setting_set_number, setting_get_number, 0 },
   { NSSM_REG_STDERR NSSM_REG_STDIO_FLAGS, REG_DWORD, (void *) NSSM_STDERR_FLAGS, false, 0, setting_set_number, setting_get_number, 0 },

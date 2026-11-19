@@ -164,6 +164,15 @@ static void finish() {
 
 void test_account_lookup() {
   using namespace account_test;
+  reset(); allocation_failure = 0;
+  auto previous = imports.IsWellKnownSid;
+  imports.IsWellKnownSid = reinterpret_cast<IsWellKnownSid_ptr>(GetProcAddress(GetModuleHandle(_T("advapi32.dll")), "IsWellKnownSid"));
+  REQUIRE(imports.IsWellKnownSid);
+  CHECK(is_virtual_account(_T("Example"), _T("nt service\\EXAMPLE")));
+  CHECK(!is_virtual_account(_T("Example"), _T("NT SERVICE2\\Example")));
+  CHECK(!is_virtual_account(_T("Example"), _T("NT SERVICE\\Examples")));
+  CHECK(allocations_seen == 0 && additions == 0);
+  imports.IsWellKnownSid = previous; finish();
   for (int scenario : {0, 1, 2, 3, 7, 8, 9, 10, 11}) {
     reset(scenario); TCHAR *output = reinterpret_cast<TCHAR *>(1);
     int result = canonicalise_username(scenario == 11 ? _T(".\\Example") : _T("MACHINE\\Example"), &output);

@@ -233,7 +233,7 @@ void test_export_access() {
     args[0] = const_cast<TCHAR *>(verbs[i]);
     CHECK(pre_edit_service(i == 2 ? 4 : (i == 1 || i == 3 ? 3 : 2), args) == 3);
     CHECK(scm::requested_access == (SERVICE_QUERY_CONFIG | (i < 2 ? 0 : SERVICE_CHANGE_CONFIG)));
-    CHECK(scm::requested_manager_access == (SC_MANAGER_CONNECT | SC_MANAGER_ENUMERATE_SERVICE));
+    CHECK(scm::requested_manager_access == SC_MANAGER_CONNECT);
     CHECK(scm::export_objects.empty());
   }
   fail_affinity_allocation = true;
@@ -242,6 +242,8 @@ void test_export_access() {
   CHECK(scm::export_objects.empty());
   scm::export_access = false;
 }
+
+DWORD WINAPI test_power_worker(void *context) { return dispatch_power_hooks(context); }
 
 void test_handle_waits() {
   using namespace wait_test;

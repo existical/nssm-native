@@ -33,4 +33,21 @@ $fixtureRoot = [IO.Path]::GetFullPath($repo) + [IO.Path]::DirectorySeparatorChar
 if (-not $gitDirectory.StartsWith($fixtureRoot, [StringComparison]::OrdinalIgnoreCase) -or
     ((Get-Item -LiteralPath $gitDirectory -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Unexpected fixture Git path.' }
 Remove-Item -LiteralPath $gitDirectory -Recurse -Force
-Write-Output 'Wrong revision, untracked, unstaged and staged changes rejected before package output.'
+$pkg = Join-Path $repo 'incomplete-package'
+New-Item -ItemType Directory -Path (Join-Path $pkg 'evidence') | Out-Null
+$report = 'x64-Release-tests.xml'
+$record = @{build=@{architecture='x64'; configuration='Release'; validation=@{tests=37; failures=0; report=$report}}}
+@{builds=@($record)*4; source=@{commit=$commit; clean=$true}} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $pkg 'build-info.json')
+$sums = Join-Path $pkg 'SHA256SUMS.txt'
+[IO.File]::WriteAllText($sums, '')
+function Reject-Evidence($reason) {
+    try { & (Join-Path $SourceDirectory 'tests/package.ps1') -PackageDirectory $pkg -WorkDirectory $WorkDirectory }
+    catch { if ($_.Exception.Message -like "*$reason*") { return }; throw }
+    throw "Expected evidence rejection: $reason"
+}
+Reject-Evidence 'Missing checksum-covered test report'
+$xml = Join-Path $pkg "evidence/$report"
+[IO.File]::WriteAllText($xml, '<testsuite tests="1" failures="1"><testcase name="example" status="run"/></testsuite>')
+[IO.File]::WriteAllText($sums, ((Get-FileHash -LiteralPath $xml).Hash.ToLowerInvariant() + "  evidence/$report"))
+Reject-Evidence 'Test results disagree'
+Write-Output 'Revision, cleanliness and incomplete release evidence rejections passed.'

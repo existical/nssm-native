@@ -213,10 +213,10 @@ int is_virtual_account(const TCHAR *service_name, const TCHAR *username) {
   if (! service_name) return 0;
   if (! username) return 0;
 
-  TCHAR *canon = virtual_account(service_name);
-  int ret = str_equiv(canon, username);
-  HeapFree(GetProcessHeap(), 0, canon);
-  return ret;
+  const TCHAR domain[] = NSSM_VIRTUAL_SERVICE_ACCOUNT_DOMAIN;
+  size_t length = _countof(domain) - 1;
+  return !_tcsnicmp(username, domain, length) && username[length] == _T('\\') &&
+         str_equiv(username + length + 1, service_name);
 }
 
 /*

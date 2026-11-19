@@ -157,10 +157,30 @@ bool resolve_io_path(const TCHAR *directory, TCHAR *path) {
   return len && len < PATH_LENGTH;
 }
 
+/* File IDs identify the containing file, including all of its named streams. */
+static const TCHAR *stream_suffix(const TCHAR *path) {
+  const TCHAR *leaf = path;
+  for (const TCHAR *p = path; *p; p++) if (*p == _T('\\') || *p == _T('/')) leaf = p + 1;
+  if (_istalpha(leaf[0]) && leaf[1] == _T(':') && leaf == path) leaf += 2;
+  const TCHAR *suffix = _tcschr(leaf, _T(':'));
+  return suffix ? suffix : _T("");
+}
+
+static size_t stream_name_length(const TCHAR *suffix) {
+  size_t length = _tcslen(suffix);
+  const TCHAR data[] = _T(":$DATA");
+  if (length >= _countof(data) && ! _tcsicmp(suffix + length - (_countof(data) - 1), data))
+    length -= _countof(data) - 1;
+  return length == 1 && suffix[0] == _T(':') ? 0 : length;
+}
+
 /* Metadata-only handles leave the startup creation dispositions untouched. */
 bool same_file(const TCHAR *left, const TCHAR *right) {
   if (! *left || ! *right) return false;
   if (! _tcscmp(left, right)) return true;
+  const TCHAR *a = stream_suffix(left), *b = stream_suffix(right);
+  size_t length = stream_name_length(a);
+  if (length != stream_name_length(b) || _tcsnicmp(a, b, length)) return false;
   BY_HANDLE_FILE_INFORMATION info[2];
   const TCHAR *paths[] = {left, right};
   for (unsigned int i = 0; i < 2; i++) {
@@ -267,12 +287,36 @@ int delete_createfile_parameter(HKEY key, TCHAR *prefix, TCHAR *suffix) {
   return error != ERROR_SUCCESS && error != ERROR_FILE_NOT_FOUND;
 }
 
-HANDLE write_to_file(TCHAR *path, unsigned long sharing, SECURITY_ATTRIBUTES *attributes, unsigned long disposition, unsigned long flags) {
+HANDLE write_to_file(TCHAR *path, unsigned long sharing, SECURITY_ATTRIBUTES *attributes, unsigned long disposition, unsigned long flags, bool resize) {
   static LARGE_INTEGER offset = { 0 };
+  bool append = !resize && (disposition == OPEN_ALWAYS || disposition == OPEN_EXISTING);
   DWORD access = disposition == TRUNCATE_EXISTING ? GENERIC_WRITE : FILE_WRITE_DATA;
+  if (append) access |= FILE_APPEND_DATA | FILE_READ_ATTRIBUTES;
   HANDLE ret = CreateFile(path, access, sharing, attributes, disposition, flags, 0);
+  /* Pipes can grant FILE_WRITE_DATA without FILE_APPEND_DATA (which is a
+     different pipe permission). Keep their original access contract. */
+  if (ret == INVALID_HANDLE_VALUE && append && GetLastError() == ERROR_ACCESS_DENIED) {
+    ret = CreateFile(path, FILE_WRITE_DATA, sharing, attributes, disposition, flags, 0);
+    if (ret != INVALID_HANDLE_VALUE && GetFileType(ret) != FILE_TYPE_DISK) return ret;
+    if (ret != INVALID_HANDLE_VALUE) CloseHandle(ret);
+    ret = CreateFile(path, FILE_APPEND_DATA, sharing, attributes, disposition, flags, 0);
+    if (ret != INVALID_HANDLE_VALUE && GetFileType(ret) == FILE_TYPE_DISK) return ret;
+    if (ret != INVALID_HANDLE_VALUE) CloseHandle(ret);
+    SetLastError(ERROR_ACCESS_DENIED);
+    ret = INVALID_HANDLE_VALUE;
+  }
   if (ret != INVALID_HANDLE_VALUE) {
-    if (GetFileType(ret) != FILE_TYPE_DISK || SetFilePointerEx(ret, offset, NULL, FILE_END)) return ret;
+    if (GetFileType(ret) != FILE_TYPE_DISK) return ret;
+    if (append) {
+      HANDLE append = NULL;
+      if (DuplicateHandle(GetCurrentProcess(), ret, GetCurrentProcess(), &append,
+                          FILE_APPEND_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+                          attributes && attributes->bInheritHandle, 0)) {
+        CloseHandle(ret);
+        return append;
+      }
+    }
+    else if (SetFilePointerEx(ret, offset, NULL, FILE_END)) return ret;
     DWORD error = GetLastError();
     CloseHandle(ret);
     SetLastError(error);
@@ -309,10 +353,11 @@ static rotation_options_t offline_rotation_options(const nssm_service_t *service
   bytes.HighPart = service->rotate_bytes_high;
   options.bytes = bytes.QuadPart;
   options.copy_and_truncate = copy_and_truncate;
+  options.stop_event = service->stop_event;
   return options;
 }
 
-void rotate_file(TCHAR *service_name, TCHAR *path, const rotation_options_t &options) {
+rotation_result rotate_file(TCHAR *service_name, TCHAR *path, const rotation_options_t &options) {
   unsigned long error;
   unsigned long seconds = options.seconds;
   ULONGLONG minimum_bytes = options.bytes;
@@ -338,7 +383,7 @@ void rotate_file(TCHAR *service_name, TCHAR *path, const rotation_options_t &opt
   }
   else {
     error = GetLastError();
-    if (error == ERROR_FILE_NOT_FOUND) return;
+    if (error == ERROR_FILE_NOT_FOUND) return rotation_result::skipped;
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, service_name, path, _T("CreateFile()"), path, error_string(error));
     /* Reuse current time for rotation timestamp. */
     seconds = 0;
@@ -357,7 +402,7 @@ void rotate_file(TCHAR *service_name, TCHAR *path, const rotation_options_t &opt
     s.QuadPart -= seconds * 10000000LL;
     ft.dwLowDateTime = s.LowPart;
     ft.dwHighDateTime = s.HighPart;
-    if (CompareFileTime(&info.ftLastWriteTime, &ft) > 0) return;
+    if (CompareFileTime(&info.ftLastWriteTime, &ft) > 0) return rotation_result::skipped;
   }
 
   /* Check file size. */
@@ -365,7 +410,7 @@ void rotate_file(TCHAR *service_name, TCHAR *path, const rotation_options_t &opt
     ULARGE_INTEGER bytes;
     bytes.LowPart = info.nFileSizeLow;
     bytes.HighPart = info.nFileSizeHigh;
-    if (bytes.QuadPart < minimum_bytes) return;
+    if (bytes.QuadPart < minimum_bytes) return rotation_result::skipped;
   }
 
   /* Get new filename. */
@@ -384,10 +429,21 @@ void rotate_file(TCHAR *service_name, TCHAR *path, const rotation_options_t &opt
       file = CreateFile(path, GENERIC_WRITE, NSSM_STDOUT_SHARING, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
       ok = file != INVALID_HANDLE_VALUE;
       if (ok) {
-        Sleep(options.delay_ms);
-        /* A newly opened synchronous handle starts at offset zero. */
-        function = _T("SetEndOfFile()");
-        ok = SetEndOfFile(file) != FALSE;
+        /* With no service event (standalone callers), keep the wait finite. */
+        DWORD delay = options.delay_ms == INFINITE ? INFINITE - 1 : options.delay_ms;
+        DWORD waited = WAIT_TIMEOUT;
+        if (options.stop_event) waited = WaitForSingleObject(options.stop_event, delay);
+        else Sleep(delay);
+        if (waited == WAIT_OBJECT_0) {
+          CloseHandle(file);
+          return rotation_result::cancelled;
+        }
+        function = _T("WaitForSingleObject()");
+        ok = waited == WAIT_TIMEOUT;
+        if (ok) {
+          function = _T("SetEndOfFile()");
+          ok = SetEndOfFile(file) != FALSE;
+        }
         error = ok ? ERROR_SUCCESS : GetLastError();
         CloseHandle(file);
         if (! ok) SetLastError(error);
@@ -401,12 +457,12 @@ void rotate_file(TCHAR *service_name, TCHAR *path, const rotation_options_t &opt
   }
   if (ok) {
     log_event(EVENTLOG_INFORMATION_TYPE, NSSM_EVENT_ROTATED, service_name, path, rotated);
-    return;
+    return rotation_result::completed;
   }
   error = GetLastError();
 
   log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, service_name, path, function, rotated, error_string(error));
-  return;
+  return rotation_result::failed;
 }
 
 static bool fill_standard_handle(HANDLE *handle, DWORD id, DWORD access) {
@@ -431,6 +487,14 @@ static int complete_standard_handles(STARTUPINFO *si) {
   si->dwFlags &= ~STARTF_USESTDHANDLES;
   close_output_handles(si);
   return 1;
+}
+
+static bool prepare_log(nssm_service_t *service, TCHAR *path, bool copy_and_truncate, DWORD disposition) {
+  if (!service->rotate_files) return true;
+  rotation_result result = rotate_file(service->name, path, offline_rotation_options(service, copy_and_truncate));
+  if (result == rotation_result::cancelled) return false;
+  /* Keep logging after an archive failure only when reopening preserves data. */
+  return result != rotation_result::failed || disposition == OPEN_ALWAYS || disposition == OPEN_EXISTING;
 }
 
 int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
@@ -458,8 +522,9 @@ int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
   bool shared_output = same_file(service->stdout_path, service->stderr_path);
   /* stdout */
   if (service->stdout_path[0]) {
-    if (service->rotate_files) rotate_file(service->name, service->stdout_path, offline_rotation_options(service, service->stdout_copy_and_truncate));
-    HANDLE stdout_handle = write_to_file(service->stdout_path, service->stdout_sharing, 0, service->stdout_disposition, service->stdout_flags);
+    if (!prepare_log(service, service->stdout_path, service->stdout_copy_and_truncate, service->stdout_disposition)) return 4;
+    HANDLE stdout_handle = write_to_file(service->stdout_path, service->stdout_sharing, 0, service->stdout_disposition, service->stdout_flags,
+                                         service->use_stdout_pipe && service->rotate_stdout_online && service->stdout_copy_and_truncate);
     if (stdout_handle == INVALID_HANDLE_VALUE) return 4;
     service->stdout_si = 0;
 
@@ -493,8 +558,9 @@ int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
       if (dup_handle(service->stdout_si, &service->stderr_si, _T("stdout"), _T("stderr"))) return 6;
     }
     else {
-      if (service->rotate_files) rotate_file(service->name, service->stderr_path, offline_rotation_options(service, service->stderr_copy_and_truncate));
-      HANDLE stderr_handle = write_to_file(service->stderr_path, service->stderr_sharing, 0, service->stderr_disposition, service->stderr_flags);
+      if (!prepare_log(service, service->stderr_path, service->stderr_copy_and_truncate, service->stderr_disposition)) return 7;
+      HANDLE stderr_handle = write_to_file(service->stderr_path, service->stderr_sharing, 0, service->stderr_disposition, service->stderr_flags,
+                                           service->use_stderr_pipe && service->rotate_stderr_online && service->stderr_copy_and_truncate);
       if (stderr_handle == INVALID_HANDLE_VALUE) return 7;
       service->stderr_si = 0;
 
@@ -836,6 +902,7 @@ unsigned long WINAPI log_and_rotate(void *arg) {
   bool size_known = logger_file_size(logger->write_handle, &size);
   char buffer[1024 + 4];
   unsigned long pending = 0, charsize = 0;
+  const bool plain = !logger->timestamp_log && !InterlockedCompareExchange(&logger->rotate_online, 0, 0);
   int complained = 0;
   while (! logger_stopping(logger)) {
     unsigned long in = 0;
@@ -846,6 +913,12 @@ unsigned long WINAPI log_and_rotate(void *arg) {
     bool eof = ret == -2 || ! in;
     in += pending;
     if (! in && eof) break;
+    if (plain) {
+      unsigned long out;
+      if (try_write(logger, buffer, in, &out, &complained)) return finish_logger(logger, 3);
+      if (eof) break;
+      continue;
+    }
     if (! charsize) {
       bool bom = in >= 2 && (unsigned char) buffer[0] == 0xff && (unsigned char) buffer[1] == 0xfe;
       /* IsTextUnicode cannot reliably classify a single BOM-less code unit. */

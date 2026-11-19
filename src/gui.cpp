@@ -743,7 +743,9 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
   service->priority = priority_index_to_constant((unsigned long) SendMessage(combo, CB_GETCURSEL, 0, 0));
 
   service->affinity = 0LL;
-  if (! (SendDlgItemMessage(tablist[NSSM_TAB_PROCESS], IDC_AFFINITY_ALL, BM_GETCHECK, 0, 0) & BST_CHECKED)) {
+  if (orig_service && !GetWindowLongPtr(tablist[NSSM_TAB_PROCESS], DWLP_USER))
+    service->affinity = orig_service->affinity;
+  else if (!(SendDlgItemMessage(tablist[NSSM_TAB_PROCESS], IDC_AFFINITY_ALL, BM_GETCHECK, 0, 0) & BST_CHECKED)) {
     HWND list = GetDlgItem(tablist[NSSM_TAB_PROCESS], IDC_AFFINITY);
     if (affinity_from_list(list, &service->affinity)) {
       popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_WARN_AFFINITY_NONE);
@@ -1148,7 +1150,11 @@ INT_PTR CALLBACK tab_dlg(HWND tab, UINT message, WPARAM w, LPARAM l) {
           break;
 
         /* Affinity. */
+        case IDC_AFFINITY:
+          if (HIWORD(w) == LBN_SELCHANGE) SetWindowLongPtr(tab, DWLP_USER, TRUE);
+          break;
         case IDC_AFFINITY_ALL:
+          if (HIWORD(w) == BN_CLICKED) SetWindowLongPtr(tab, DWLP_USER, TRUE);
           if (SendDlgItemMessage(tab, LOWORD(w), BM_GETCHECK, 0, 0) & BST_CHECKED) enabled = 0;
           else enabled = 1;
           set_affinity_enabled(enabled);
