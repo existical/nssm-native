@@ -1,6 +1,6 @@
 # NSSM post-implementation review
 
-Reviewed production revision `395c7b98b5f1c00d6df30c23e688cd2573f4b892` against baseline `012cd5f`. All 31 numbered findings and both follow-ups have implementation changes. The five original probes now pass, and all 148 tests in the standard Windows build matrix passed. Acceptance under the Windows Service Control Manager (SCM), including upgrade and rollback, remains open. The [original review](2026-11-19-code-review.txt) and [fix register](../fixes/november-supervision-and-configuration.md) give the evidence for each issue.
+Reviewed production revision `395c7b98b5f1c00d6df30c23e688cd2573f4b892` against baseline `012cd5f`. All 31 numbered findings and both follow-ups have implementation changes. The five original probes, all 148 standard Windows matrix tests and all five live Service Control Manager (SCM) suites passed. The [original review](2026-11-19-code-review.txt) and [fix register](../fixes/november-supervision-and-configuration.md) give the evidence for each issue.
 
 ## Findings from reviewing the changes
 
@@ -35,8 +35,23 @@ The production x64 Release probes produced the following observations.
 
 Read-only CLI checks also covered a native service, a driver, and service display-name resolution. Dumping EventLog returned an error without emitting an install command. Reading the Null driver's account returned success with an empty value. Both Print Spooler names resolved to the same service and PID. The process listing then returned an access error under the local token. The elevation regression captured a real child exit code of 43 through an injected shell launcher. The interactive UAC prompt remains untested.
 
-## Remaining validation and operational limits
+## Live SCM and upgrade results
 
-- **Live SCM and upgrade.** The repository requires an elevated disposable Windows host for `nssm.export_live`, `nssm.dependencies_live`, `nssm.controls_live`, `nssm.lifecycle_live` and `nssm.upgrade_live`. This workstation's token is non-administrative. The open checklist entry covers all five suites, the pinned legacy executable and the ten lifecycle repeats. The [Windows workflow](../../.github/workflows/ci.yml) specifies the run.
+On 19 November 2026, an elevated Windows 11 Pro VM (build 26300) ran the five repository fixtures under CTest 4.4.3. The candidate executable came from the verified x64 Release package. Its SHA-256 was `9170d04b19acb868006fe160dc0e4d6de08e5eabe36300fd47c66ffda8e907f9`. The legacy executable was the pinned rebuild of `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`, SHA-256 `ee78cef9d582a8655b33f826df359a810ba532278b67e40e7389124ee171b796`. Both executable hashes were checked on the VM before testing.
+
+| Test | Result | Elapsed |
+| --- | --- | ---: |
+| `nssm.export_live` | Passed wrapper repair, query-only export, clone naming, quoted command replay and native environment updates. | 32.06 s |
+| `nssm.dependencies_live` | Passed dependency edits and export/import across four disabled fixture services. | 0.92 s |
+| `nssm.controls_live` | Passed CLI control checks on normal, stalled and failing services. | 10.02 s |
+| `nssm.lifecycle_live` | Passed start, crash, restart and stop with a real wrapped application, hooks and child processes. | 10.23 s |
+| `nssm.upgrade_live` | Passed legacy → candidate → legacy replacement at the same service and executable path. Configuration, persistent worker state and log tails survived the upgrade and rollback. | 41.29 s |
+
+The lifecycle fixture then passed ten consecutive runs with CTest's `--repeat until-fail:10`. In run order, the durations were 9.77, 9.52, 9.23, 9.19, 9.24, 9.52, 9.21, 9.59, 9.63 and 9.65 seconds. Each run exercised the wrapped application's crash and restart, two operator stops, quoted hooks, log tails and descendant cleanup.
+
+Comparing service names before and after both runs found zero new fixture services. The local evidence directory `build/vm-acceptance-395c7b9/` contains JUnit XML and the complete CTest logs for the five suites and the ten repetitions.
+
+## Operational limits
+
 - **Configuration write failures.** An edit that fails partway through optional settings can leave earlier successful changes in place. The dialog reports the failure and keeps the entered values for retry. Restoring earlier mandatory values also requires continued registry write access.
 - **Quiet log streams.** Manual rotation takes place at a line boundary. Rotate/Post can wait indefinitely if a participating stream stays open and silent. Concurrent rotation requests coalesce, and shutdown cancels the outstanding wait.

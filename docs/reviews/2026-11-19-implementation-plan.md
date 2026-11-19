@@ -32,7 +32,7 @@ Baseline commit `012cd5f`. Numbers in parentheses refer to [the review](2026-11-
 - [x] Check CLI hook reads and dumps for raw registry value and type preservation (hook follow-up).
 - [x] Add focused regression coverage at the existing test entry points. Build and run the x64 and x86 Debug and Release presets, run static analysis, and exercise applicable Windows integration tests. Record the exact results and any environmental limitations.
 - [x] Review the final diff afresh for configuration loss, resource ownership, races and command compatibility. Fix and retest issues found. Record the results and remaining risks in the [post-implementation review](2026-11-19-post-implementation-review.md).
-- [ ] Run the five opt-in Service Control Manager suites on an elevated disposable Windows host, including the pinned legacy upgrade and rollback test. Retain the x64 Release results and the ten repeated lifecycle runs. This workstation has a non-administrative token. The [Windows CI workflow](../../.github/workflows/ci.yml) defines the remaining run.
+- [x] Run the five opt-in Service Control Manager suites on an elevated disposable Windows host, including the pinned legacy upgrade and rollback test. All five suites and ten additional lifecycle runs passed on the Windows 11 VM. A before/after service inventory confirmed fixture cleanup. See the [live SCM results](2026-11-19-post-implementation-review.md#live-scm-and-upgrade-results).
 
 ## Commits
 
