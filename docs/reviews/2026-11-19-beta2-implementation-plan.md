@@ -29,4 +29,18 @@ Baseline `e1cc746`. The numbers in parentheses refer to the [beta.2 review](2026
 ## 4. Verify release evidence and close the review
 
 - [x] **Package evidence (13).** Require checksum-covered JUnit reports for all four builds. Validate their identities, counts and results against the manifests. Exercise missing and contradictory evidence and a valid package.
-- [ ] **Acceptance.** Run x86 and x64 Debug and Release suites, exercise the current x64 build on the disposable Windows VM, including upgrade/rollback, and review the complete diff against the sixteen findings. Record results, any limits and the final checklist state here.
+- [x] **Acceptance.** Run x86 and x64 Debug and Release suites, exercise the current x64 build on the disposable Windows VM, including upgrade/rollback, and review the complete diff against the sixteen findings. Record results, any limits and the final checklist state here.
+
+## Acceptance results
+
+Verified on 19 November 2026 from clean implementation commit `eb125f8160a336a640921c34a3f78c2792428c2c`. The initial plan was committed at `ad79bf6` before implementation began.
+
+| Check | Result |
+| --- | --- |
+| Windows builds | x86 Debug, x86 Release, x64 Debug and x64 Release each passed all 37 standard tests, for 148 passing executions. |
+| Package verification | The verifier checked the four packaged binaries and symbols, their hashes, the four JUnit reports and the source archive identity. The rejection tests passed for missing and contradictory evidence. |
+| Elevated Windows 11 VM | Export/import, dependencies, controls, lifecycle and in-place legacy → candidate → legacy upgrade/rollback all passed. The before/after service inventory found zero new fixture services remaining. |
+| Tested binary | The VM ran the packaged x64 Release executable with SHA-256 `716845173e0117664c407f5162ec3ebd591a303d8c74f13783c413f18194598f`. |
+| Final code review | Traced all sixteen findings against the implementation and regression tests. The final pass also corrected the launch-string export buffer for long values and preserved service startup when the optional power-notification worker cannot start. |
+
+An earlier VM run timed out in the legacy phase of the upgrade test before the candidate was installed. The same build and deadline passed on retry. The final revision passed in a fresh fixture directory with that deadline. The power tests use synthetic notifications, and the access tests exercise service-specific permissions without changing the machine-wide SCM access policy.
