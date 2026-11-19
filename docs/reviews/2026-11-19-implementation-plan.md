@@ -30,5 +30,15 @@ Baseline commit `012cd5f`. Numbers in parentheses refer to [the review](2026-11-
 ## Verification
 
 - [x] Check CLI hook reads and dumps for raw registry value and type preservation (hook follow-up).
-- [ ] Add focused regression coverage at the existing test entry points. Build and run the x64 and x86 Debug and Release presets, run static analysis, and exercise applicable Windows integration tests. Record the exact results and any environmental limitations.
-- [ ] Review the final diff afresh for configuration loss, resource ownership, races and command compatibility. Fix and retest any issues found, record remaining risks and commit the completed checklist and changes.
+- [x] Add focused regression coverage at the existing test entry points. Build and run the x64 and x86 Debug and Release presets, run static analysis, and exercise applicable Windows integration tests. Record the exact results and any environmental limitations.
+- [x] Review the final diff afresh for configuration loss, resource ownership, races and command compatibility. Fix and retest issues found. Record the results and remaining risks in the [post-implementation review](2026-11-19-post-implementation-review.md).
+- [ ] Run the five opt-in Service Control Manager suites on an elevated disposable Windows host, including the pinned legacy upgrade and rollback test. Retain the x64 Release results and the ten repeated lifecycle runs. This workstation has a non-administrative token. The [Windows CI workflow](../../.github/workflows/ci.yml) defines the remaining run.
+
+## Commits
+
+| Commit | Work |
+| --- | --- |
+| `fb1020d` | Recorded the original findings and committed this plan before implementation. |
+| `d2fb5a9` | Implemented the 31 findings and two follow-ups, fixed a bounds issue found during implementation and added regression coverage. The [fix register](../fixes/november-supervision-and-configuration.md) maps each issue to its checks. |
+| `b2f8d7c` | Preserved the full rotation threshold and raw application directory on GUI edits. Exercised shutdown races and offline truncation failure. |
+| `395c7b9` | Corrected hook counter formatting and candidate package fix IDs. This is the source revision used for the final package and test matrix. |
