@@ -26,4 +26,18 @@ Review baseline `e5edea8`, 19 November 2026. Reviewed the service lifecycle and 
 - [x] **Configuration errors.** Propagate hook deletion and delayed-start failures, and release the delayed-start query buffer on every path.
 - [x] **Release evidence.** Use a consistent revision for pull-request CI, run upgrade/rollback on the opted-in package binary and require its evidence and executable/symbol identities. Preserve verification of existing package formats.
 - [x] **Dialog name boundaries.** The final inspection found that the install, edit and remove dialogs read service names into a fixed buffer before checking their lengths. An oversized input can select its shorter prefix, and the buffer also excludes the last character of a full-length display name. Allocate room for the terminator, reject oversized input before any service operation, and test both boundaries. [Windows service and display name limits](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-createservicew)
-- [ ] **Acceptance.** Review the complete diff, run x86 and x64 Debug and Release, verify candidate packages, and run elevated Windows configuration, control, lifecycle and upgrade/rollback checks plus the targeted regressions. Record the tested revision and results.
+- [x] **Acceptance.** Review the complete diff, run x86 and x64 Debug and Release, verify candidate packages, and run elevated Windows configuration, control, lifecycle and upgrade/rollback checks plus the targeted regressions. Record the tested revision and results.
+
+## Acceptance results
+
+Tested source commit `3beb9a70c5bdfc0d47e487680a3e3a649f741c62` with MSVC 19.44.35229.0 and Windows SDK 10.0.26100.0. The x64 Release executable used on the VM had SHA-256 `a34fff7e7a755ea55b3b034e4932e7f4efcfd07d82306b0ee92a0c5e3fcce3e5`.
+
+| Check | Result |
+| --- | --- |
+| Four clean-source configurations | x86 and x64, Debug and Release, each passed all 37 CTest groups. The four JUnit reports recorded 148 passes and zero failures or disabled cases. |
+| Package verification | Verified binary and PDB hashes, archive identity, checksums and test evidence for all four builds. An existing schema-1 candidate also passed the new verifier. The opted-in CMake configuration registered 42 tests, including upgrade/rollback. |
+| Live Service Control Manager tests | Windows 11 build 26300 passed all five suites against the packaged x64 executable. They exercised export and replay, dependencies, controls, lifecycle, and upgrade and rollback with a fresh build of pinned legacy revision `dee49fc1a0804f06687299b8e9612a3fce1c5e9a`. |
+| Original data-loss cases | Independent production-object checks preserved both writers’ bytes and the effective working directory after an unchanged configuration save. All 17,000 argument characters reached the runtime parameter reader. The VM preserved Unicode and restored an explicitly empty replacement environment. |
+| Rotation and permissions | The start command returned success after an eight-second offline rotation delay. A write flushed during the delay survived in the active file, and the archive retained its original contents. A LocalService hook received all 256 characters of the configured display name and the account successfully removed its delegated test service. The fixture inventory matched its starting state. |
+
+The hosted GitHub Actions workflow was reviewed locally. The clean-source package matrix ran on the workstation and the privileged tests ran separately on the disposable VM. Copy/truncate now reads both the original data and the archive before clearing a matching file, which increases I/O for large logs.
