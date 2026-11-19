@@ -149,6 +149,10 @@ int wmain(int argc, wchar_t **argv) {
       service_fixture::set(source.key, L"AppStdout", raw_log, REG_SZ);
       service_fixture::set(source.key, L"AppStderr", raw_log, REG_EXPAND_SZ);
       service_fixture::set(source.key, L"Application", argv[1], REG_SZ);
+      const std::wstring unicode = L"\u96ea\u03a9";
+      service_fixture::set(source.key, L"AppParameters", unicode, REG_SZ);
+      const wchar_t empty_environment[2] = {};
+      require(RegSetValueExW(source.key, L"AppEnvironment", 0, REG_MULTI_SZ, (const BYTE *)empty_environment, sizeof(empty_environment)) == ERROR_SUCCESS, "Write empty replacement environment");
       source.query_only();
       require(run(argv[1], L"status " + quoted(source.name)).code != 0, "Named status requires service query-status access");
       // Remove destination rules so replay must reconstruct all of them.
@@ -156,6 +160,8 @@ int wmain(int argc, wchar_t **argv) {
       result exported = run(argv[1], L"dump " + quoted(source.name) + L" " + quoted(imported.name));
       if (exported.code) fwprintf(stderr, L"%ls\n", exported.output.c_str());
       require(exported.code == 0, "Query-only service export succeeds");
+      require(exported.output.find(unicode) != std::wstring::npos, "Headless UTF-8 dump retains Unicode");
+      require(exported.output.find(L" AppEnvironment :") != std::wstring::npos, "Export retains an empty replacement environment");
       require(exported.output.find(L" DisplayName ") == std::wstring::npos, "Cloned backup leaves the target display name available");
       {
         output_file base;
@@ -203,7 +209,7 @@ int wmain(int argc, wchar_t **argv) {
           require(line.find(imported.name) != std::wstring::npos, "Replay targets only the destination fixture");
           require(run(argv[1], line.substr(command + 1)).code == 0, "Replay exported AppExit setting"); replayed++;
         }
-        if (line.find(L" REG_SZ:") != std::wstring::npos || line.find(L" AppStderr ") != std::wstring::npos) {
+        if (line.find(L" REG_SZ:") != std::wstring::npos || line.find(L" AppStderr ") != std::wstring::npos || line.find(L" AppEnvironment :") != std::wstring::npos) {
           size_t command = line.find(L" set ");
           require(command != std::wstring::npos && line.find(imported.name) != std::wstring::npos, "Typed setter targets the destination");
           wchar_t system[MAX_PATH];
@@ -213,6 +219,9 @@ int wmain(int argc, wchar_t **argv) {
         offset = end + 1;
       }
       require(replayed == 4, "Replay all four rules");
+      wchar_t restored[2] = {1,1}; DWORD size = sizeof(restored), kind = REG_NONE;
+      require(RegQueryValueExW(imported.key, L"AppEnvironment", NULL, &kind, (BYTE *)restored, &size) == ERROR_SUCCESS &&
+              kind == REG_MULTI_SZ && size == sizeof(restored) && !restored[0] && !restored[1], "Restore a present empty environment");
       for (auto value : {L"Application", L"AppStdout"}) {
         DWORD type = 0;
         require(RegQueryValueExW(imported.key, value, NULL, &type, NULL, NULL) == ERROR_SUCCESS && type == REG_SZ, "Restored literal registry type");

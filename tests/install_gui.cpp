@@ -126,7 +126,9 @@ void test_gui_retry() {
   _tcscpy_s(original.stdout_path, _T("%UserProfile%\\app.log"));
   SetDlgItemText(tablist[NSSM_TAB_IO], IDC_STDOUT, original.stdout_path);
   nssm_service_t *edited = alloc_nssm_service(); REQUIRE(edited);
+  SendDlgItemMessage(tablist[NSSM_TAB_ENVIRONMENT], IDC_ENVIRONMENT_REPLACE, BM_SETCHECK, BST_CHECKED, 0);
   REQUIRE(configure(window, edited, &original) == 0);
+  CHECK(!edited->dir[0] && edited->envlen == 2 && edited->env && !edited->env[0] && !edited->env[1]);
   CHECK(edited->stdout_copy_and_truncate && edited->stderr_copy_and_truncate);
   CHECK(edited->rotate_delay == 71 && edited->stderr_disposition == OPEN_EXISTING);
   CHECK(edited->affinity == original.affinity);

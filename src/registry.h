@@ -3,6 +3,8 @@
 
 #define NSSM_REGISTRY _T("SYSTEM\\CurrentControlSet\\Services\\%s")
 #define NSSM_REG_PARAMETERS _T("Parameters")
+/* Capacity for the full service registry path, including an optional subkey. */
+#define NSSM_SERVICE_KEY_PATH_LENGTH (SERVICE_NAME_LENGTH + KEY_LENGTH + _countof(NSSM_REGISTRY) + _countof(NSSM_REG_PARAMETERS) + 2)
 #define NSSM_REGISTRY_GROUPS _T("SYSTEM\\CurrentControlSet\\Control\\ServiceGroupOrder")
 #define NSSM_REG_GROUPS _T("List")
 #define NSSM_REG_EXE _T("Application")

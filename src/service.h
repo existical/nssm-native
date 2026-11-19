@@ -44,7 +44,7 @@ typedef struct {
   unsigned long type;
   TCHAR image[PATH_LENGTH];
   TCHAR exe[EXE_LENGTH];
-  TCHAR flags[VALUE_LENGTH];
+  TCHAR flags[CMD_LENGTH];
   TCHAR dir[DIR_LENGTH];
   TCHAR *env;
   __int64 affinity;

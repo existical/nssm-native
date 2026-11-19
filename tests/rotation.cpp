@@ -2,7 +2,7 @@
 
 namespace rotation_test {
 bool active;
-static bool fail_copy, fail_move, override_size;
+static bool fail_copy, fail_move, override_size, append_after_copy;
 static ULONGLONG reported_size;
 static unsigned copies, moves, rotated_events, failed_events;
 static std::vector<DWORD> sleeps;
@@ -13,7 +13,15 @@ BOOL WINAPI copy(LPCTSTR from, LPCTSTR to, BOOL fail_exists) {
     copies++;
     if (fail_copy) { SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
   }
-  return CopyFile(from, to, fail_exists);
+  BOOL copied = CopyFile(from, to, fail_exists);
+  if (copied && active && append_after_copy) {
+    HANDLE writer = CreateFile(from, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+    REQUIRE(writer != INVALID_HANDLE_VALUE);
+    DWORD written;
+    REQUIRE(WriteFile(writer, "late", 4, &written, NULL) && written == 4);
+    CloseHandle(writer);
+  }
+  return copied;
 }
 BOOL WINAPI move(LPCTSTR from, LPCTSTR to) {
   if (active) {
@@ -52,7 +60,7 @@ struct fixture {
   fixture() : service(alloc_nssm_service()), si() {
     REQUIRE(service);
     active = true;
-    fail_copy = fail_move = override_size = false;
+    fail_copy = fail_move = override_size = append_after_copy = false;
     copies = moves = rotated_events = failed_events = 0; sleeps.clear();
     TCHAR temp[MAX_PATH];
     REQUIRE(GetTempPath(_countof(temp), temp));
@@ -207,6 +215,53 @@ static void failures_and_collision(bool stderr_stream, bool copy_mode, bool coll
   CHECK(f.contents(stderr_stream ? f.service->stderr_path : f.service->stdout_path) == "data");
 }
 
+static void concurrent_log_writers() {
+  {
+    fixture f;
+    f.prepare(false, "");
+    f.service->rotate_files = false;
+    f.service->use_stdout_pipe = true;
+    f.service->rotate_stdout_online = NSSM_ROTATE_ONLINE;
+    f.service->stdout_copy_and_truncate = true;
+    REQUIRE(!get_output_handles(f.service, &f.si));
+    HANDLE writer = write_to_file(f.service->stdout_path, NSSM_STDOUT_SHARING, NULL, OPEN_ALWAYS, 0);
+    REQUIRE(writer != INVALID_HANDLE_VALUE);
+    DWORD n;
+    REQUIRE(WriteFile(writer, "outside\n", 8, &n, NULL) && n == 8);
+    CloseHandle(writer);
+    REQUIRE(WriteFile(f.si.hStdOutput, "local\n", 6, &n, NULL) && n == 6);
+    f.stop();
+    CHECK(f.contents(f.service->stdout_path) == "outside\nlocal\n");
+  }
+  {
+    fixture f;
+    auto archive = f.prepare(false, "before");
+    append_after_copy = true;
+    f.service->stdout_copy_and_truncate = true;
+    f.service->stdout_disposition = CREATE_ALWAYS;
+    CHECK(get_output_handles(f.service, &f.si) != 0);
+    CHECK(f.contents(f.service->stdout_path) == "beforelate");
+    CHECK(f.contents(archive.c_str()) == "before");
+  }
+  for (bool copy_mode : {false, true}) {
+    fixture f;
+    auto archive = f.prepare(false, "before");
+    f.service->stdout_copy_and_truncate = copy_mode;
+    f.service->stdout_disposition = TRUNCATE_EXISTING;
+    REQUIRE(!get_output_handles(f.service, &f.si));
+    HANDLE other = write_to_file(f.service->stdout_path, NSSM_STDOUT_SHARING, NULL, OPEN_ALWAYS, 0);
+    REQUIRE(other != INVALID_HANDLE_VALUE);
+    DWORD written;
+    REQUIRE(WriteFile(other, "outside", 7, &written, NULL) && written == 7);
+    CloseHandle(other);
+    REQUIRE(WriteFile(f.si.hStdOutput, "local", 5, &written, NULL) && written == 5);
+    f.stop();
+    CHECK(f.contents(f.service->stdout_path) == "outsidelocal");
+    CHECK(f.contents(archive.c_str()) == "before");
+    CHECK(f.service->stdout_disposition == TRUNCATE_EXISTING);
+  }
+}
+
 static void failed_offline_truncation() {
   fixture f;
   std::basic_string<TCHAR> archive = f.prepare(false, "original");
@@ -277,6 +332,7 @@ void test_offline_rotation() {
     CHECK(get_output_handles(f.service, &f.si) != 0);
     CHECK(f.contents(archive.c_str()) == "original" && f.contents(f.service->stdout_path) == "original");
   }
+  rotation_test::concurrent_log_writers();
   rotation_test::shared_outputs();
   rotation_test::failed_offline_truncation();
   rotation_test::small_file_regression(false);

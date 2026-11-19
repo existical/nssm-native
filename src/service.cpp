@@ -216,7 +216,7 @@ static unsigned long control_wait_setting(HKEY key, const TCHAR *name, unsigned 
    for an unbounded number of descendants or outstanding hook workers. */
 static unsigned long service_control_timeout(unsigned long control, const TCHAR *service_name) {
   if (control != SERVICE_CONTROL_STOP && control != SERVICE_CONTROL_SHUTDOWN) return NSSM_CONTROL_TIMEOUT;
-  TCHAR path[KEY_LENGTH];
+  TCHAR path[NSSM_SERVICE_KEY_PATH_LENGTH];
   HKEY key;
   if (_sntprintf_s(path, _countof(path), _TRUNCATE, NSSM_REGISTRY _T("\\") NSSM_REG_PARAMETERS, service_name) < 0 ||
       RegOpenKeyEx(HKEY_LOCAL_MACHINE, path, 0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) return NSSM_STOP_TIMEOUT;
@@ -485,19 +485,26 @@ SC_HANDLE open_service(SC_HANDLE services, TCHAR *service_name, unsigned long ac
 
   unsigned long error = GetLastError();
   if (error != ERROR_SERVICE_DOES_NOT_EXIST) {
-    print_message(stderr, NSSM_MESSAGE_OPENSERVICE_FAILED, error_string(GetLastError()));
+    print_message(stderr, NSSM_MESSAGE_OPENSERVICE_FAILED, error_string(error));
+    SetLastError(error);
     return 0;
   }
 
   TCHAR resolved[SERVICE_NAME_LENGTH];
   DWORD length = _countof(resolved);
   if (! GetServiceKeyName(services, service_name, resolved, &length)) {
-    print_message(stderr, NSSM_MESSAGE_OPENSERVICE_FAILED, error_string(GetLastError()));
+    error = GetLastError();
+    print_message(stderr, NSSM_MESSAGE_OPENSERVICE_FAILED, error_string(error));
+    SetLastError(error);
     return NULL;
   }
   if (canonical_name && _tcscpy_s(canonical_name, canonical_namelen, resolved)) return NULL;
   service_handle = OpenService(services, resolved, access);
-  if (! service_handle) print_message(stderr, NSSM_MESSAGE_OPENSERVICE_FAILED, error_string(GetLastError()));
+  if (! service_handle) {
+    error = GetLastError();
+    print_message(stderr, NSSM_MESSAGE_OPENSERVICE_FAILED, error_string(error));
+    SetLastError(error);
+  }
   return service_handle;
 }
 
@@ -737,6 +744,7 @@ int get_service_description(const TCHAR *service_name, SC_HANDLE service_handle,
       return 0;
     }
     else {
+      error = GetLastError();
       HeapFree(GetProcessHeap(), 0, description);
       print_message(stderr, NSSM_MESSAGE_QUERYSERVICECONFIG2_FAILED, service_name, _T("SERVICE_CONFIG_DESCRIPTION"), error_string(error));
       return 3;
@@ -778,6 +786,7 @@ int get_service_startup(const TCHAR *service_name, SC_HANDLE service_handle, con
     }
     else {
       error = GetLastError();
+      HeapFree(GetProcessHeap(), 0, info);
       if (error != ERROR_INVALID_LEVEL) {
         print_message(stderr, NSSM_MESSAGE_QUERYSERVICECONFIG2_FAILED, service_name, _T("SERVICE_CONFIG_DELAYED_AUTO_START_INFO"), error_string(error));
         return 3;
@@ -873,7 +882,14 @@ void cleanup_nssm_service(nssm_service_t *service) {
 }
 
 /* About to install the service */
+static bool valid_service_name(const TCHAR *name) {
+  if (name && *name && _tcslen(name) < SERVICE_NAME_LENGTH) return true;
+  print_message(stderr, NSSM_MESSAGE_OPENSERVICE_FAILED, error_string(ERROR_INVALID_NAME));
+  return false;
+}
+
 int pre_install_service(int argc, TCHAR **argv) {
+  if (argc && !valid_service_name(argv[0])) return 2;
   nssm_service_t *service = alloc_nssm_service();
   if (! service) {
     print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("service"), _T("pre_install_service()"));
@@ -952,6 +968,7 @@ static bool wrapper_image(const TCHAR *command) {
 int pre_edit_service(int argc, TCHAR **argv) {
   /* Require service name. */
   if (argc < 2) return usage(1);
+  if (!valid_service_name(argv[1])) return 2;
 
   /* Are we editing on the command line? */
   enum { MODE_EDITING, MODE_GETTING, MODE_SETTING, MODE_RESETTING, MODE_DUMPING } mode = MODE_EDITING;
@@ -1139,7 +1156,10 @@ int pre_edit_service(int argc, TCHAR **argv) {
 
   if (mode == MODE_DUMPING) {
     TCHAR *service_name = service->name;
-    if (argc > remainder) service_name = argv[remainder];
+    if (argc > remainder) {
+      if (!valid_service_name(argv[remainder])) return 2;
+      service_name = argv[remainder];
+    }
     key = open_registry(service->name, KEY_READ);
     if (! key) return 4;
 
@@ -1260,9 +1280,11 @@ int pre_edit_service(int argc, TCHAR **argv) {
 
 /* About to remove the service */
 int pre_remove_service(int argc, TCHAR **argv) {
+  if (argc && !valid_service_name(argv[0])) return 2;
   nssm_service_t *service = alloc_nssm_service();
+  if (!service) return 1;
   set_nssm_service_defaults(service);
-  if (argc) _sntprintf_s(service->name, _countof(service->name), _TRUNCATE, _T("%s"), argv[0]);
+  if (argc) _tcscpy_s(service->name, argv[0]);
 
   /* Show dialogue box if we didn't pass service name and "confirm" */
   if (argc < 2) return nssm_gui(IDD_REMOVE, service);
@@ -1272,6 +1294,7 @@ int pre_remove_service(int argc, TCHAR **argv) {
     return ret;
   }
   print_message(stderr, NSSM_MESSAGE_PRE_REMOVE_SERVICE);
+  cleanup_nssm_service(service);
   return 100;
 }
 
@@ -1573,15 +1596,17 @@ int remove_service(nssm_service_t *service) {
   /* Open service manager */
   SC_HANDLE services = open_service_manager(SC_MANAGER_CONNECT);
   if (! services) {
+    DWORD error = GetLastError();
     print_message(stderr, NSSM_MESSAGE_OPEN_SERVICE_MANAGER_FAILED);
-    return 2;
+    return error == ERROR_ACCESS_DENIED ? ERROR_ACCESS_DENIED : 2;
   }
 
   /* Try to open the service */
   service->handle = open_service(services, service->name, DELETE, service->name, _countof(service->name));
   if (! service->handle) {
+    DWORD error = GetLastError();
     CloseServiceHandle(services);
-    return 3;
+    return error == ERROR_ACCESS_DENIED ? ERROR_ACCESS_DENIED : 3;
   }
 
   /* Get the canonical service name. We open it case insensitively. */
@@ -1643,21 +1668,19 @@ void WINAPI service_main(unsigned long argc, TCHAR **argv) {
   service->status.dwWaitHint = service->throttle_delay + NSSM_WAITHINT_MARGIN;
   SetServiceStatus(service->status_handle, &service->status);
 
-  if (is_admin) {
-    /* Try to create the exit action parameters; we don't care if it fails */
-    create_exit_action(service->name, exit_action_strings[0], false);
+  if (is_admin) create_exit_action(service->name, exit_action_strings[0], false);
 
-    SC_HANDLE services = open_service_manager(SC_MANAGER_CONNECT);
-    if (services) {
+  _tcscpy_s(service->displayname, service->name);
+  SC_HANDLE services = open_service_manager(SC_MANAGER_CONNECT);
+  if (services) {
+    unsigned long length = _countof(service->displayname);
+    if (!GetServiceDisplayName(services, service->name, service->displayname, &length))
+      _tcscpy_s(service->displayname, service->name);
+    if (is_admin) {
       service->handle = open_service(services, service->name, SERVICE_CHANGE_CONFIG, 0, 0);
       set_service_recovery(service);
-
-      /* Remember our display name. */
-      unsigned long displayname_len = _countof(service->displayname);
-      GetServiceDisplayName(services, service->name, service->displayname, &displayname_len);
-
-      CloseServiceHandle(services);
     }
+    CloseServiceHandle(services);
   }
 
   service->resume_event = CreateEvent(NULL, FALSE, FALSE, NULL);

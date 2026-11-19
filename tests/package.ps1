@@ -13,6 +13,7 @@ foreach ($line in [IO.File]::ReadAllLines((Join-Path $package 'SHA256SUMS.txt'))
 }
 $manifest = Get-Content -LiteralPath (Join-Path $package 'build-info.json') -Raw | ConvertFrom-Json
 if ($manifest.builds.Count -ne 4 -or $manifest.source.commit -notmatch '^[0-9a-f]{40}$' -or -not $manifest.source.clean) { throw 'Invalid package manifest.' }
+if ($manifest.schema -notin @(1, 2)) { throw 'Unsupported package manifest version.' }
 $combinations = @()
 $work = Join-Path $WorkDirectory ('package-check-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $work | Out-Null
@@ -34,10 +35,23 @@ foreach ($record in $manifest.builds) {
         @($cases.name | Sort-Object -Unique).Count -ne $cases.Count) { throw "Test results disagree with manifest: $report" }
     $smoke = @($cases | Where-Object name -CEQ 'nssm.smoke')
     if ($smoke.Count -ne 1 -or !$build.version_output -or !([string]$smoke[0].'system-out').Contains($build.version_output)) { throw "Smoke test identity mismatch: $report" }
+    if ($manifest.schema -eq 2 -and $build.validation.scm_enabled) {
+        if ('nssm.upgrade_live' -cnotin $cases.name) { throw "Missing upgrade/rollback evidence in $report" }
+        $legacyPath = Join-Path $package 'evidence/legacy-build-info.json'
+        if (!$checkedFiles.ContainsKey($legacyPath)) { throw 'Missing checksum-covered legacy build identity.' }
+        $legacy = Get-Content -LiteralPath $legacyPath -Raw | ConvertFrom-Json
+        if ($legacy.source_commit -ne 'dee49fc1a0804f06687299b8e9612a3fce1c5e9a' -or
+            $legacy.source_commit -ne $manifest.source.legacy_baseline -or $legacy.original_files_unchanged -ne $true -or
+            $legacy.executable_sha256 -notmatch '^[0-9a-f]{64}$') { throw 'Legacy comparison identity mismatch.' }
+    }
     if ($build.validation.scm_enabled) {
         foreach ($required in 'nssm.export_live','nssm.dependencies_live','nssm.controls_live','nssm.lifecycle_live') {
             if ($required -cnotin $cases.name) { throw "Missing live test $required in $report" }
         }
+    }
+    $expectedFiles = @('nssm.exe', 'nssm.pdb')
+    if ($build.artifacts.Count -ne 2 -or (Compare-Object $expectedFiles @($build.artifacts.name) -CaseSensitive)) {
+        throw 'Package must declare an executable and its symbols.'
     }
     $archive = Join-Path $package $record.archive
     if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $record.sha256) { throw 'Archive hash mismatch.' }
@@ -48,10 +62,16 @@ foreach ($record in $manifest.builds) {
     Expand-Archive -LiteralPath $archive -DestinationPath $destination
     $inner = Get-Content -LiteralPath (Join-Path $destination 'build-info.json') -Raw | ConvertFrom-Json
     if ($inner.source.commit -ne $manifest.source.commit -or $inner.validation.failures -ne 0 -or $inner.validation.tests -lt 37) { throw 'Binary identity or validation mismatch.' }
-    if ($inner.architecture -ne $build.architecture -or $inner.configuration -ne $build.configuration -or
+    if ($build.schema -ne $manifest.schema -or $inner.schema -ne $manifest.schema -or
+        $inner.architecture -ne $build.architecture -or $inner.configuration -ne $build.configuration -or
         $inner.version_output -cne $build.version_output -or $inner.validation.report -cne $report -or
         $inner.validation.tests -ne $cases.Count -or $inner.validation.scm_enabled -ne $build.validation.scm_enabled) { throw "Inner package details disagree with $report" }
+    if ($inner.artifacts.Count -ne 2 -or (Compare-Object $expectedFiles @($inner.artifacts.name) -CaseSensitive)) {
+        throw 'Inner package must declare an executable and its symbols.'
+    }
     foreach ($artifact in $inner.artifacts) {
+        $outer = $build.artifacts | Where-Object name -CEQ $artifact.name
+        if ($outer.sha256 -cne $artifact.sha256) { throw 'Inner and outer artifact hashes disagree.' }
         if ((Get-FileHash -LiteralPath (Join-Path $destination $artifact.name) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $artifact.sha256) { throw 'Executable/symbol hash mismatch.' }
     }
     $actual = (& (Join-Path $destination 'nssm.exe') version) -join "`n"

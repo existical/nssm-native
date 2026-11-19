@@ -261,6 +261,21 @@ static void test_parameter_saves() {
   REQUIRE(RegDeleteValue(key, NSSM_REG_HOOK_SHARE_OUTPUT_HANDLES) == ERROR_SUCCESS);
   REQUIRE(! get_parameters(service, NULL));
   CHECK(service->priority == NORMAL_PRIORITY_CLASS && ! service->hook_share_output_handles);
+  REQUIRE(RegDeleteValue(key, NSSM_REG_DIR) == ERROR_SUCCESS);
+  REQUIRE(!set_expand_string(key, NSSM_REG_EXE, _T("%NSSM_TEST_FULL_EXE%")));
+  REQUIRE(SetEnvironmentVariable(_T("NSSM_TEST_FULL_EXE"), _T("C:\\Dynamic\\child.exe")));
+  REQUIRE(!get_parameters(service, NULL));
+  CHECK(!service->dir[0]);
+  REQUIRE(!create_parameters(service, true));
+  CHECK(RegQueryValueExW(key, NSSM_REG_DIR, NULL, NULL, NULL, NULL) == ERROR_FILE_NOT_FOUND);
+  std::wstring flags(17000, L'x');
+  REQUIRE(!set_string(key, NSSM_REG_FLAGS, &flags[0]));
+  STARTUPINFO si = {};
+  REQUIRE(!get_parameters(service, &si));
+  CHECK(!_tcscmp(service->dir, _T("C:\\Dynamic")) && flags == service->flags);
+  REQUIRE(!set_number(key, NSSM_REG_FLAGS, 42));
+  CHECK(get_parameters(service, &si) != 0);
+  SetEnvironmentVariable(_T("NSSM_TEST_FULL_EXE"), NULL);
   RegCloseKey(key); cleanup_nssm_service(service);
 }
 
@@ -268,6 +283,10 @@ void test_registry_bounds() {
   using namespace registry_test;
   registry_fixture fixture;
   test_parameter_saves();
+  exit_open_error = true;
+  CHECK(set_hook(_T("restricted"), NSSM_HOOK_EVENT_START, NSSM_HOOK_ACTION_PRE, _T("")) != 0);
+  exit_open_error = false;
+  CHECK(!set_hook(_T("missing"), NSSM_HOOK_EVENT_START, NSSM_HOOK_ACTION_PRE, _T("")));
   HKEY key = open_registry(_T("registry-bounds"), KEY_READ | KEY_WRITE);
   REQUIRE(key);
   reset();

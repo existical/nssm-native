@@ -2,16 +2,15 @@
 
 static unsigned long cp;
 
-void setup_utf8() {
+void setup_utf8(bool console) {
 #ifdef UNICODE
-  /*
-    Ensure we write in UTF-8 mode, so that non-ASCII characters don't get
-    mangled.  If we were compiled in ANSI mode it won't work.
-   */
-  cp = GetConsoleOutputCP();
-  SetConsoleOutputCP(CP_UTF8);
-  _setmode(_fileno(stdout), _O_U8TEXT);
-  _setmode(_fileno(stderr), _O_U8TEXT);
+  if (console) {
+    cp = GetConsoleOutputCP();
+    SetConsoleOutputCP(CP_UTF8);
+  }
+  /* A headless management process can still have redirected output. */
+  if (_fileno(stdout) >= 0) _setmode(_fileno(stdout), _O_U8TEXT);
+  if (_fileno(stderr) >= 0) _setmode(_fileno(stderr), _O_U8TEXT);
 #endif
 }
 

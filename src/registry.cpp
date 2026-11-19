@@ -108,10 +108,12 @@ static int save_launch_parameters(HKEY key, nssm_service_t *service) {
   }
   bool changed[_countof(names)] = {};
   for (unsigned i = 0; i < _countof(names); i++) {
+    /* Keep an absent working directory dynamic on later launches. */
+    if (i == 2 && !old[i].exists && !values[i][0]) continue;
     DWORD bytes = (DWORD) ((_tcslen(values[i]) + 1) * sizeof(TCHAR));
     if (old[i].exists && (old[i].type == REG_SZ || old[i].type == REG_EXPAND_SZ) &&
         old[i].size == bytes && ! memcmp(old[i].data, values[i], bytes)) continue;
-    if (! set_expand_string(key, names[i], values[i])) { changed[i] = true; continue; }
+    if (!set_string(key, names[i], values[i], !old[i].exists || old[i].type != REG_SZ)) { changed[i] = true; continue; }
     while (i) {
       --i;
       if (! changed[i]) continue;
@@ -246,7 +248,7 @@ int create_parameters(nssm_service_t *service, bool editing) {
 
 int create_exit_action(TCHAR *service_name, const TCHAR *action_string, bool editing) {
   /* Get registry */
-  TCHAR registry[KEY_LENGTH];
+  TCHAR registry[NSSM_SERVICE_KEY_PATH_LENGTH];
   if (service_registry_path(service_name, true, NSSM_REG_EXIT, registry, _countof(registry)) < 0) {
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, _T("NSSM_REG_EXIT"), _T("create_exit_action()"));
     return 1;
@@ -731,7 +733,7 @@ void override_milliseconds(TCHAR *service_name, HKEY key, TCHAR *value, unsigned
 /* Open the key of the service itself Services\<service_name>. */
 HKEY open_service_registry(const TCHAR *service_name, REGSAM sam, bool must_exist) {
   /* Get registry */
-  TCHAR registry[KEY_LENGTH];
+  TCHAR registry[NSSM_SERVICE_KEY_PATH_LENGTH];
   if (service_registry_path(service_name, false, 0, registry, _countof(registry)) < 0) {
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, NSSM_REGISTRY, _T("open_service_registry()"));
     return 0;
@@ -744,7 +746,7 @@ HKEY open_service_registry(const TCHAR *service_name, REGSAM sam, bool must_exis
 long open_registry(const TCHAR *service_name, const TCHAR *sub, REGSAM sam, HKEY *key, bool must_exist) {
   *key = 0;
   /* Get registry */
-  TCHAR registry[KEY_LENGTH];
+  TCHAR registry[NSSM_SERVICE_KEY_PATH_LENGTH];
   if (service_registry_path(service_name, true, sub, registry, _countof(registry)) < 0) {
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, NSSM_REGISTRY, _T("open_registry()"));
     return ERROR_INSUFFICIENT_BUFFER;
@@ -823,14 +825,18 @@ int get_parameters(nssm_service_t *service, STARTUPINFO *si) {
     return 1;
   }
 
-  /* Try to get flags - may fail and we don't care */
-  if (get_string(key, NSSM_REG_FLAGS, service->flags, sizeof(service->flags), expand, false, true)) {
-    log_event(EVENTLOG_WARNING_TYPE, NSSM_EVENT_NO_FLAGS, NSSM_REG_FLAGS, service->name, service->exe);
-    ZeroMemory(service->flags, sizeof(service->flags));
+  /* Missing arguments are optional. Corrupt or oversized arguments must fail launch. */
+  if (get_string(key, NSSM_REG_FLAGS, service->flags, sizeof(service->flags), expand, false, false)) {
+    RegCloseKey(key);
+    return 3;
   }
 
-  /* Try to get startup directory - may fail and we fall back to a default */
-  if (get_string(key, NSSM_REG_DIR, service->dir, sizeof(service->dir), expand, expand, true) || ! service->dir[0]) {
+  int directory_error = get_string(key, NSSM_REG_DIR, service->dir, sizeof(service->dir), expand, expand, false);
+  if (directory_error && !si) {
+    RegCloseKey(key);
+    return 4;
+  }
+  if (si && (directory_error || !service->dir[0])) {
     _sntprintf_s(service->dir, _countof(service->dir), _TRUNCATE, _T("%s"), service->exe);
     strip_basename(service->dir);
     if (service->dir[0] == _T('\0')) {
@@ -1035,11 +1041,13 @@ int set_hook(const TCHAR *service_name, const TCHAR *hook_event, const TCHAR *ho
 
   /* Don't create keys needlessly. */
   if (! _tcslen(cmd)) {
-    key = open_registry(service_name, registry, KEY_READ, false);
-    if (! key) return 0;
+    error = open_registry(service_name, registry, KEY_QUERY_VALUE, &key, false);
+    if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) return 0;
+    if (error != ERROR_SUCCESS) return 1;
     error = RegQueryValueEx(key, hook_action, 0, 0, 0, 0);
     RegCloseKey(key);
     if (error == ERROR_FILE_NOT_FOUND) return 0;
+    if (error != ERROR_SUCCESS) return 1;
   }
 
   key = open_registry(service_name, registry, KEY_WRITE);

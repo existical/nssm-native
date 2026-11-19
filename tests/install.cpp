@@ -69,5 +69,11 @@ void test_install_ownership() {
   install_test::reset(0);
   CHECK(pre_install_service(3, long_args) == 2);
   install_test::finish();
+  std::basic_string<TCHAR> oversized(SERVICE_NAME_LENGTH, _T('x'));
+  TCHAR *remove_args[] = {&oversized[0], _T("confirm")};
+  CHECK(pre_remove_service(2, remove_args) == 2);
+  install_test::reset(0); install_test::fail_allocation = true;
+  CHECK(pre_remove_service(2, args) == 1);
+  install_test::finish();
   test_install_gui();
 }

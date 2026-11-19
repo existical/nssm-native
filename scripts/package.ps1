@@ -60,6 +60,13 @@ $previousEpoch = $env:SOURCE_DATE_EPOCH
 $env:SOURCE_DATE_EPOCH = $epoch
 $records = @()
 try {
+    $legacyPath = ''
+    if ($EnableScmTests) {
+        $legacy = Join-Path $work 'legacy'
+        & (Join-Path $projectRoot 'tests/build-legacy.ps1') -OutputDirectory $legacy
+        $legacyPath = Join-Path $legacy 'build/bin/Release/nssm.exe'
+        Copy-Item -LiteralPath (Join-Path $legacy 'build-info.json') -Destination (Join-Path $evidence 'legacy-build-info.json')
+    }
     foreach ($architecture in @('x64', 'x86')) {
         $preset = "windows-$architecture"
         $build = Join-Path $source "build/$preset"
@@ -68,7 +75,7 @@ try {
         foreach ($configuration in @('Release', 'Debug')) {
             $name = "$architecture-$configuration"
             $scm = $EnableScmTests -and $architecture -eq 'x64' -and $configuration -eq 'Release'
-            Invoke-Checked cmake @('-S', $source, '-B', $build, ('-DNSSM_ENABLE_SCM_TESTS=' + $(if ($scm) {'ON'} else {'OFF'}))) (Join-Path $evidence "$name-configure.log")
+            Invoke-Checked cmake @('-S', $source, '-B', $build, "-DNSSM_LEGACY_EXECUTABLE=$legacyPath", ('-DNSSM_ENABLE_SCM_TESTS=' + $(if ($scm) {'ON'} else {'OFF'}))) (Join-Path $evidence "$name-configure.log")
             Invoke-Checked cmake @('--build', $build, '--config', $configuration, '--parallel') (Join-Path $evidence "$name-build.log")
             $report = Join-Path $evidence "$name-tests.xml"
             Invoke-Checked ctest @('--test-dir', $build, '-C', $configuration, '--output-on-failure', '--no-tests=error', '--output-junit', $report) (Join-Path $evidence "$name-tests.log")
@@ -83,7 +90,7 @@ try {
             if (-not $toolchain.compiler -or -not $toolchain.windows_sdk) { throw 'Missing compiler/SDK identity.' }
             $files = @($binary, $symbols) | ForEach-Object { [ordered]@{name=[IO.Path]::GetFileName($_); sha256=(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant()} }
             $manifest = [ordered]@{
-                schema=1; product='NSSM Native'; source=$identity; version_output=$version.Trim(); file_version=$fileInfo.FileVersion; product_version=$fileInfo.ProductVersion
+                schema=2; product='NSSM Native'; source=$identity; version_output=$version.Trim(); file_version=$fileInfo.FileVersion; product_version=$fileInfo.ProductVersion
                 architecture=$architecture; configuration=$configuration; crt=$(if ($configuration -eq 'Debug') {'/MTd'} else {'/MT'}); compiler=$toolchain.compiler; windows_sdk=$toolchain.windows_sdk; generator=$toolchain.generator
                 cmake=((& cmake --version | Select-Object -First 1) -join ''); build_os=[Environment]::OSVersion.VersionString
                 built_at_utc=[DateTime]::UtcNow.ToString('o'); source_date_epoch=$epoch
@@ -109,7 +116,7 @@ try {
     Copy-Item -LiteralPath $sourceZip -Destination $destination
     foreach ($record in $records) { Copy-Item -LiteralPath (Join-Path $work $record.archive) -Destination $destination }
     Copy-Item -LiteralPath $evidence -Destination $destination -Recurse
-    Write-JsonFile ([ordered]@{schema=1; source=$identity; builds=$records; source_archive=[ordered]@{name=[IO.Path]::GetFileName($sourceZip); sha256=(Get-FileHash -LiteralPath $sourceZip -Algorithm SHA256).Hash.ToLowerInvariant()}}) (Join-Path $destination 'build-info.json')
+    Write-JsonFile ([ordered]@{schema=2; source=$identity; builds=$records; source_archive=[ordered]@{name=[IO.Path]::GetFileName($sourceZip); sha256=(Get-FileHash -LiteralPath $sourceZip -Algorithm SHA256).Hash.ToLowerInvariant()}}) (Join-Path $destination 'build-info.json')
     $hashes = Get-ChildItem -LiteralPath $destination -File -Recurse | Sort-Object FullName | ForEach-Object {
         (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $_.FullName.Substring($destination.Length + 1).Replace('\','/')
     }

@@ -102,6 +102,11 @@ The maximum DWORD delay is treated as 4294967294 milliseconds and remains interr
 If archiving fails, append mode can continue writing to the active log. An open that
 would truncate the active log fails. An existing archive with the same name is preserved.
 
+During a configured offline delay NSSM updates its startup checkpoint. In copy/truncate
+mode it compares the archive with the active stream under a handle that excludes other
+writers before truncating. A changed stream or an open competing writer leaves the
+active data intact. This comparison can read the file a second time.
+
 Legacy 2.24-103 source passed these arguments in the wrong order. A byte
 threshold could become a long sleep, and a delay could become a very large
 size threshold. Existing values need no format migration, but review any
@@ -175,7 +180,12 @@ diagnostics and test coverage.
 
 NSSM requires a nonempty Application. Resetting it fails and retains the executable path.
 Resetting AppParameters or AppDirectory stores an empty expandable string.
-Resetting AppStdin, AppStdout or AppStderr removes the value.
+Resetting AppStdin, AppStdout or AppStderr removes the value. Leaving AppDirectory empty
+in the editor keeps the working directory derived from the expanded application path at startup.
+
+Use `nssm set MyService AppEnvironment :` to store an explicitly empty replacement
+environment. Resetting AppEnvironment restores inheritance. Dump preserves this distinction
+and writes UTF-8 when its standard output is redirected by a headless caller.
 
 A zero AppThrottle or stop-method delay now queries the process handle once
 without sleeping or publishing wait progress. Signalled, still-running and

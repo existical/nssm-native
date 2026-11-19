@@ -287,9 +287,9 @@ int delete_createfile_parameter(HKEY key, TCHAR *prefix, TCHAR *suffix) {
   return error != ERROR_SUCCESS && error != ERROR_FILE_NOT_FOUND;
 }
 
-HANDLE write_to_file(TCHAR *path, unsigned long sharing, SECURITY_ATTRIBUTES *attributes, unsigned long disposition, unsigned long flags, bool resize) {
+HANDLE write_to_file(TCHAR *path, unsigned long sharing, SECURITY_ATTRIBUTES *attributes, unsigned long disposition, unsigned long flags) {
   static LARGE_INTEGER offset = { 0 };
-  bool append = !resize && (disposition == OPEN_ALWAYS || disposition == OPEN_EXISTING);
+  bool append = disposition == OPEN_ALWAYS || disposition == OPEN_EXISTING;
   DWORD access = disposition == TRUNCATE_EXISTING ? GENERIC_WRITE : FILE_WRITE_DATA;
   if (append) access |= FILE_APPEND_DATA | FILE_READ_ATTRIBUTES;
   HANDLE ret = CreateFile(path, access, sharing, attributes, disposition, flags, 0);
@@ -344,8 +344,73 @@ static void rotated_filename(TCHAR *path, TCHAR *rotated, unsigned long rotated_
   _sntprintf_s(rotated, rotated_len, _TRUNCATE, _T("%s%s"), buffer, extension);
 }
 
-static rotation_options_t offline_rotation_options(const nssm_service_t *service, bool copy_and_truncate) {
-  rotation_options_t options;
+/* Pin the directory entry while copying. The later write reservation also
+   excludes existing writers and the archive must still contain every byte. */
+struct log_file {
+  HANDLE handle;
+  explicit log_file(HANDLE file) : handle(file) {}
+  ~log_file() { if (handle != INVALID_HANDLE_VALUE) CloseHandle(handle); }
+};
+
+static DWORD truncate_archived_file(const TCHAR *path, const TCHAR *archive, HANDLE stop) {
+  log_file source(CreateFile(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL,
+                             OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL));
+  if (source.handle == INVALID_HANDLE_VALUE) return GetLastError();
+  log_file copy(CreateFile(archive, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL));
+  if (copy.handle == INVALID_HANDLE_VALUE) return GetLastError();
+  LARGE_INTEGER source_size, copy_size;
+  if (!GetFileSizeEx(source.handle, &source_size) || !GetFileSizeEx(copy.handle, &copy_size)) return GetLastError();
+  if (source_size.QuadPart != copy_size.QuadPart) return ERROR_FILE_INVALID;
+  char original[16384], saved[sizeof(original)];
+  for (;;) {
+    if (stop) {
+      DWORD wait = WaitForSingleObject(stop, 0);
+      if (wait == WAIT_OBJECT_0) return ERROR_CANCELLED;
+      if (wait != WAIT_TIMEOUT) return GetLastError();
+    }
+    DWORD a, b;
+    if (!ReadFile(source.handle, original, sizeof(original), &a, NULL) ||
+        !ReadFile(copy.handle, saved, sizeof(saved), &b, NULL)) return GetLastError();
+    if (a != b || memcmp(original, saved, a)) return ERROR_FILE_INVALID;
+    if (!a) break;
+  }
+  LARGE_INTEGER zero = {};
+  if (!SetFilePointerEx(source.handle, zero, NULL, FILE_BEGIN) || !SetEndOfFile(source.handle)) return GetLastError();
+  return ERROR_SUCCESS;
+}
+
+static DWORD copy_and_truncate_log(TCHAR *path, TCHAR *archive, const rotation_options_t &options,
+                                   HANDLE *writer, const TCHAR **operation) {
+  *operation = _T("CreateFile()");
+  log_file pin(CreateFile(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL));
+  if (pin.handle == INVALID_HANDLE_VALUE) return GetLastError();
+  if (writer) close_handle(writer);
+  *operation = _T("CopyFile()");
+  if (!CopyFile(path, archive, TRUE)) return GetLastError();
+  DWORD delay = options.delay_ms == INFINITE ? INFINITE - 1 : options.delay_ms;
+  *operation = _T("WaitForSingleObject()");
+  if (options.stop_event) {
+    do {
+      DWORD interval = delay;
+      if (options.status_handle && options.status) {
+        if (interval > NSSM_SERVICE_STATUS_DEADLINE) interval = NSSM_SERVICE_STATUS_DEADLINE;
+        options.status->dwWaitHint = interval + NSSM_WAITHINT_MARGIN;
+        options.status->dwCheckPoint++;
+        SetServiceStatus(options.status_handle, options.status);
+      }
+      DWORD waited = WaitForSingleObject(options.stop_event, interval);
+      if (waited == WAIT_OBJECT_0) return ERROR_CANCELLED;
+      if (waited != WAIT_TIMEOUT) return GetLastError();
+      delay -= interval;
+    } while (delay);
+  }
+  else Sleep(delay);
+  *operation = _T("Verify archive and truncate");
+  return truncate_archived_file(path, archive, options.stop_event);
+}
+
+static rotation_options_t offline_rotation_options(nssm_service_t *service, bool copy_and_truncate) {
+  rotation_options_t options = {};
   options.seconds = service->rotate_seconds;
   options.delay_ms = service->rotate_delay;
   ULARGE_INTEGER bytes;
@@ -354,6 +419,8 @@ static rotation_options_t offline_rotation_options(const nssm_service_t *service
   options.bytes = bytes.QuadPart;
   options.copy_and_truncate = copy_and_truncate;
   options.stop_event = service->stop_event;
+  options.status_handle = service->status_handle;
+  options.status = &service->status;
   return options;
 }
 
@@ -421,46 +488,20 @@ rotation_result rotate_file(TCHAR *service_name, TCHAR *path, const rotation_opt
 
   /* Rotate. */
   bool ok = true;
-  TCHAR *function;
+  const TCHAR *function;
   if (options.copy_and_truncate) {
-    function = _T("CopyFile()");
-    if (CopyFile(path, rotated, TRUE)) {
-      function = _T("CreateFile()");
-      file = CreateFile(path, GENERIC_WRITE, NSSM_STDOUT_SHARING, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-      ok = file != INVALID_HANDLE_VALUE;
-      if (ok) {
-        /* With no service event (standalone callers), keep the wait finite. */
-        DWORD delay = options.delay_ms == INFINITE ? INFINITE - 1 : options.delay_ms;
-        DWORD waited = WAIT_TIMEOUT;
-        if (options.stop_event) waited = WaitForSingleObject(options.stop_event, delay);
-        else Sleep(delay);
-        if (waited == WAIT_OBJECT_0) {
-          CloseHandle(file);
-          return rotation_result::cancelled;
-        }
-        function = _T("WaitForSingleObject()");
-        ok = waited == WAIT_TIMEOUT;
-        if (ok) {
-          function = _T("SetEndOfFile()");
-          ok = SetEndOfFile(file) != FALSE;
-        }
-        error = ok ? ERROR_SUCCESS : GetLastError();
-        CloseHandle(file);
-        if (! ok) SetLastError(error);
-      }
-    }
-    else ok = false;
+    error = copy_and_truncate_log(path, rotated, options, NULL, &function);
+    if (error == ERROR_CANCELLED) return rotation_result::cancelled;
+    ok = error == ERROR_SUCCESS;
   }
   else {
     function = _T("MoveFile()");
-    if (! MoveFile(path, rotated)) ok = false;
+    if (! MoveFile(path, rotated)) { ok = false; error = GetLastError(); }
   }
   if (ok) {
     log_event(EVENTLOG_INFORMATION_TYPE, NSSM_EVENT_ROTATED, service_name, path, rotated);
     return rotation_result::completed;
   }
-  error = GetLastError();
-
   log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, service_name, path, function, rotated, error_string(error));
   return rotation_result::failed;
 }
@@ -489,10 +530,12 @@ static int complete_standard_handles(STARTUPINFO *si) {
   return 1;
 }
 
-static bool prepare_log(nssm_service_t *service, TCHAR *path, bool copy_and_truncate, DWORD disposition) {
+static bool prepare_log(nssm_service_t *service, TCHAR *path, bool copy_and_truncate, DWORD &disposition) {
   if (!service->rotate_files) return true;
   rotation_result result = rotate_file(service->name, path, offline_rotation_options(service, copy_and_truncate));
   if (result == rotation_result::cancelled) return false;
+  /* Rotation already emptied or moved the file. Preserve any new arrivals. */
+  if (result == rotation_result::completed && (disposition == TRUNCATE_EXISTING || disposition == CREATE_ALWAYS)) disposition = OPEN_ALWAYS;
   /* Keep logging after an archive failure only when reopening preserves data. */
   return result != rotation_result::failed || disposition == OPEN_ALWAYS || disposition == OPEN_EXISTING;
 }
@@ -522,9 +565,9 @@ int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
   bool shared_output = same_file(service->stdout_path, service->stderr_path);
   /* stdout */
   if (service->stdout_path[0]) {
-    if (!prepare_log(service, service->stdout_path, service->stdout_copy_and_truncate, service->stdout_disposition)) return 4;
-    HANDLE stdout_handle = write_to_file(service->stdout_path, service->stdout_sharing, 0, service->stdout_disposition, service->stdout_flags,
-                                         service->use_stdout_pipe && service->rotate_stdout_online && service->stdout_copy_and_truncate);
+    DWORD disposition = service->stdout_disposition;
+    if (!prepare_log(service, service->stdout_path, service->stdout_copy_and_truncate, disposition)) return 4;
+    HANDLE stdout_handle = write_to_file(service->stdout_path, service->stdout_sharing, 0, disposition, service->stdout_flags);
     if (stdout_handle == INVALID_HANDLE_VALUE) return 4;
     service->stdout_si = 0;
 
@@ -558,9 +601,9 @@ int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
       if (dup_handle(service->stdout_si, &service->stderr_si, _T("stdout"), _T("stderr"))) return 6;
     }
     else {
-      if (!prepare_log(service, service->stderr_path, service->stderr_copy_and_truncate, service->stderr_disposition)) return 7;
-      HANDLE stderr_handle = write_to_file(service->stderr_path, service->stderr_sharing, 0, service->stderr_disposition, service->stderr_flags,
-                                           service->use_stderr_pipe && service->rotate_stderr_online && service->stderr_copy_and_truncate);
+      DWORD disposition = service->stderr_disposition;
+      if (!prepare_log(service, service->stderr_path, service->stderr_copy_and_truncate, disposition)) return 7;
+      HANDLE stderr_handle = write_to_file(service->stderr_path, service->stderr_sharing, 0, disposition, service->stderr_flags);
       if (stderr_handle == INVALID_HANDLE_VALUE) return 7;
       service->stderr_si = 0;
 
@@ -849,32 +892,20 @@ static bool rotate_logger(logger_t *logger, ULONGLONG *size, bool *size_known, i
   const TCHAR *function = _T("MoveFile()");
   unsigned long error = ERROR_SUCCESS;
   if (logger->copy_and_truncate) {
-    function = _T("FlushFileBuffers()");
-    if (FlushFileBuffers(logger->write_handle)) {
-      function = _T("CopyFile()");
-      if (CopyFile(logger->path, rotated, TRUE)) {
-        if (logger_stopping(logger, logger->rotate_delay)) return false;
-        LARGE_INTEGER zero = { 0 };
-        function = _T("SetFilePointerEx()");
-        if (SetFilePointerEx(logger->write_handle, zero, NULL, FILE_BEGIN)) {
-          function = _T("SetEndOfFile()");
-          ok = SetEndOfFile(logger->write_handle) != FALSE;
-        }
-      }
-    }
-    if (! ok) error = GetLastError();
-    /* A failed truncation must never leave the write pointer before existing data. */
-    LARGE_INTEGER zero = { 0 };
-    if (! SetFilePointerEx(logger->write_handle, zero, NULL, FILE_END)) {
-      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, logger->service_name, logger->path, _T("SetFilePointerEx()"), rotated, error_string(GetLastError()));
-      return false;
-    }
+    rotation_options_t options = {};
+    options.delay_ms = logger->rotate_delay;
+    options.stop_event = logger->stop_event;
+    error = copy_and_truncate_log(logger->path, rotated, options, &logger->write_handle, &function);
+    if (error == ERROR_CANCELLED) return false;
+    ok = error == ERROR_SUCCESS;
   }
   else {
     close_handle(&logger->write_handle);
     ok = MoveFile(logger->path, rotated) != FALSE;
-    if (! ok) error = GetLastError();
-    /* On failure always append; CREATE_ALWAYS would destroy the original file. */
+    if (!ok) error = GetLastError();
+  }
+  /* A failed archive must never turn reopening into a destructive operation. */
+  if (!logger->write_handle) {
     logger->write_handle = write_to_file(logger->path, logger->sharing, NULL, OPEN_ALWAYS, logger->flags);
     if (logger->write_handle == INVALID_HANDLE_VALUE) return false;
   }

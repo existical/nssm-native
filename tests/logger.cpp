@@ -26,7 +26,7 @@ static unsigned rotations, write_errors;
 static std::vector<std::basic_string<TCHAR> > rotated_paths;
 static SYSTEMTIME fixed_time = {2026, 11, 1, 2, 3, 4, 5, 6};
 static BOOL WINAPI read(HANDLE h, LPVOID data, DWORD size, LPDWORD count, LPOVERLAPPED overlap) {
-  if (! stream_test) return ReadFile(h, data, size, count, overlap);
+  if (!stream_test || GetFileType(h) == FILE_TYPE_DISK) return ReadFile(h, data, size, count, overlap);
   if (check_short_output && read_position == stream_input.size()) CHECK(bytes_written == stream_input.size());
   if (fail_read) { *count = 0; SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
   *count = static_cast<DWORD>((std::min)(size_t((std::min)(size, read_chunk)), stream_input.size() - read_position));

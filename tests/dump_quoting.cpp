@@ -6,6 +6,19 @@ static text_t dump_output;
 static text_t dump_executable = _T("C:\\Tools\\nssm.exe");
 static bool capture_dump = false;
 static bool fail_output;
+static DWORD delayed_error;
+static BOOL WINAPI change_config(SC_HANDLE handle, DWORD type, DWORD start, DWORD error, LPCTSTR binary, LPCTSTR group,
+                                 LPDWORD tag, LPCTSTR deps, LPCTSTR user, LPCTSTR password, LPCTSTR display) {
+  if (delayed_error) return TRUE;
+  return dependency_test::change(handle, type, start, error, binary, group, tag, deps, user, password, display);
+}
+static BOOL WINAPI change_config2(SC_HANDLE handle, DWORD level, LPVOID value) {
+  if (delayed_error && level == SERVICE_CONFIG_DELAYED_AUTO_START_INFO) {
+    SetLastError(delayed_error);
+    return FALSE;
+  }
+  return ChangeServiceConfig2(handle, level, value);
+}
 static bool fail_exit_enumeration;
 static unsigned exit_enum_calls;
 static long test_enumerate_exit(HKEY key, unsigned long *index, TCHAR *name, unsigned long count) {
@@ -78,10 +91,14 @@ static int test_dump_printf(const TCHAR *format, ...) {
 #define RegDeleteValue reset_test::remove
 #define enumerate_registry_values test_enumerate_exit
 #undef ChangeServiceConfig
-#define ChangeServiceConfig dependency_test::change
+#define ChangeServiceConfig change_config
+#undef ChangeServiceConfig2
+#define ChangeServiceConfig2 change_config2
 #include "../src/settings.cpp"
 #undef ChangeServiceConfig
 #define ChangeServiceConfig ChangeServiceConfigW
+#undef ChangeServiceConfig2
+#define ChangeServiceConfig2 ChangeServiceConfig2W
 #undef enumerate_registry_values
 #undef HeapAlloc
 #undef HeapFree
@@ -187,6 +204,13 @@ void test_exit_export() {
 }
 
 void test_setting_ownership() {
+  value_t startup = {};
+  startup.string = _T("SERVICE_DELAYED_AUTO_START");
+  for (DWORD failure : {DWORD(ERROR_ACCESS_DENIED), DWORD(ERROR_INVALID_LEVEL)}) {
+    delayed_error = failure;
+    CHECK(native_set_startup(_T("test"), &startup, NSSM_NATIVE_STARTUP, NULL, &startup, NULL) < 0);
+  }
+  delayed_error = 0;
   registry_fixture registry;
   HKEY key = open_registry(_T("NSSM-Test-Reset"), KEY_READ | KEY_WRITE); REQUIRE(key);
   const TCHAR *names[] = {NSSM_REG_EXE, NSSM_REG_FLAGS, NSSM_REG_DIR, NSSM_REG_STDIN, NSSM_REG_STDOUT, NSSM_REG_STDERR};

@@ -521,7 +521,7 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
     }
 
     /* Get startup directory. */
-    if (! GetDlgItemText(tablist[NSSM_TAB_APPLICATION], IDC_DIR, service->dir, _countof(service->dir))) {
+    if (! GetDlgItemText(tablist[NSSM_TAB_APPLICATION], IDC_DIR, service->dir, _countof(service->dir)) && !orig_service) {
       _sntprintf_s(service->dir, _countof(service->dir), _TRUNCATE, _T("%s"), service->exe);
       strip_basename(service->dir);
     }
@@ -857,6 +857,11 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
       service->env_extralen = envlen;
     }
   }
+  else if (SendDlgItemMessage(tablist[NSSM_TAB_ENVIRONMENT], IDC_ENVIRONMENT_REPLACE, BM_GETCHECK, 0, 0) & BST_CHECKED) {
+    service->envlen = 2;
+    service->env = (TCHAR *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, service->envlen * sizeof(TCHAR));
+    if (!service->env) return 5;
+  }
 
   /* When both blocks exist, the editor shows AppEnvironmentExtra. */
   if (orig_service && orig_service->env && orig_service->env_extra && ! service->env &&
@@ -968,6 +973,7 @@ int remove(HWND window) {
       cleanup_nssm_service(service);
       return 3;
 
+    case ERROR_ACCESS_DENIED:
     case 4:
       popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_REMOVE_SERVICE_FAILED);
       cleanup_nssm_service(service);

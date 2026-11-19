@@ -122,7 +122,7 @@ static int setting_set_string(const TCHAR *service_name, void *param, const TCHA
 
 static int setting_get_string(const TCHAR *service_name, void *param, const TCHAR *name, void *default_value, value_t *value, const TCHAR *additional) {
   HKEY key = (HKEY) param;
-  TCHAR buffer[VALUE_LENGTH];
+  TCHAR buffer[CMD_LENGTH];
 
   if (get_string(key, (TCHAR *) name, (TCHAR *) buffer, (unsigned long) sizeof(buffer), false, false, false)) return -1;
 
@@ -497,6 +497,11 @@ static int setting_set_environment(const TCHAR *service_name, void *param, const
     }
   }
 
+  /* A lone replacement prefix denotes a present, empty block. */
+  if (!op && value && value->string && str_equiv(value->string, _T(":"))) {
+    const TCHAR empty[2] = {};
+    return RegSetValueEx(key, name, 0, REG_MULTI_SZ, (const BYTE *) empty, sizeof(empty)) == ERROR_SUCCESS ? 1 : -1;
+  }
   if (! string || ! string[0]) {
     if (unformatted) HeapFree(GetProcessHeap(), 0, unformatted);
     long error = RegDeleteValue(key, name);
@@ -577,6 +582,14 @@ static int setting_dump_environment(const TCHAR *service_name, void *param, cons
   unsigned long envlen;
   if (get_environment((TCHAR *) service_name, key, (TCHAR *) name, &env, &envlen)) return -1;
   if (! envlen) return 0;
+
+  if (!*env) {
+    value_t empty;
+    empty.string = _T(":");
+    int ret = setting_dump_string(service_name, REG_SZ, name, &empty, NULL);
+    HeapFree(GetProcessHeap(), 0, env);
+    return ret;
+  }
 
   TCHAR *s;
   for (s = env; *s; s++) {
@@ -1140,8 +1153,9 @@ int native_set_startup(const TCHAR *service_name, void *param, const TCHAR *name
   if (! ChangeServiceConfig2(service_handle, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, &delayed)) {
     unsigned long error = GetLastError();
     /* Pre-Vista we expect to fail with ERROR_INVALID_LEVEL */
-    if (error != ERROR_INVALID_LEVEL) {
+    if (error != ERROR_INVALID_LEVEL || delayed.fDelayedAutostart) {
       log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SERVICE_CONFIG_DELAYED_AUTO_START_INFO_FAILED, service_name, error_string(error));
+      return -1;
     }
   }
 

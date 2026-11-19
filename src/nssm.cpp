@@ -239,7 +239,7 @@ const TCHAR *nssm_exe() {
 }
 
 int _tmain(int argc, TCHAR **argv) {
-  if (check_console()) setup_utf8();
+  setup_utf8(check_console());
 
   /* Remember if we are admin */
   check_admin();
@@ -291,8 +291,10 @@ int _tmain(int argc, TCHAR **argv) {
     if (str_equiv(argv[1], _T("list"))) nssm_exit(list_nssm_services(argc - 2, argv + 2));
     if (str_equiv(argv[1], _T("processes"))) nssm_exit(service_process_tree(argc - 2, argv + 2));
     if (str_equiv(argv[1], _T("remove"))) {
-      if (! is_admin) nssm_exit(elevate(NSSM_MESSAGE_NOT_ADMINISTRATOR_CANNOT_REMOVE));
-      nssm_exit(pre_remove_service(argc - 2, argv + 2));
+      if (!is_admin && argc < 4) nssm_exit(elevate(NSSM_MESSAGE_NOT_ADMINISTRATOR_CANNOT_REMOVE));
+      int ret = pre_remove_service(argc - 2, argv + 2);
+      if (ret == ERROR_ACCESS_DENIED && !is_admin) nssm_exit(elevate(NSSM_MESSAGE_NOT_ADMINISTRATOR_CANNOT_REMOVE));
+      nssm_exit(ret);
     }
   }
 
