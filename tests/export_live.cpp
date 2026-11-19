@@ -196,7 +196,7 @@ int wmain(int argc, wchar_t **argv) {
       for (const wchar_t *rule : rules) require(exported.output.find(L" AppExit " + std::wstring(rule)) != std::wstring::npos, "Export contains every exit rule");
       require(run(argv[1], L"set " + quoted(source.name) + L" AppParameters denied").code != 0, "Setter still requires change access");
       result original = run(argv[1], L"get " + quoted(source.name) + L" AppParameters");
-      require(original.code == 0 && original.output.find(L"round trip") != std::wstring::npos, "Denied setter did not modify the source");
+      require(original.code == 0 && original.output.find(unicode) != std::wstring::npos, "Denied setter preserves the original Unicode arguments");
       size_t offset = 0; unsigned replayed = 0;
       while (offset < exported.output.size()) {
         size_t end = exported.output.find(L'\n', offset);
@@ -219,6 +219,8 @@ int wmain(int argc, wchar_t **argv) {
         offset = end + 1;
       }
       require(replayed == 4, "Replay all four rules");
+      result arguments = run(argv[1], L"get " + quoted(imported.name) + L" AppParameters");
+      require(arguments.code == 0 && arguments.output.find(unicode) != std::wstring::npos, "Replay preserves Unicode arguments");
       wchar_t restored[2] = {1,1}; DWORD size = sizeof(restored), kind = REG_NONE;
       require(RegQueryValueExW(imported.key, L"AppEnvironment", NULL, &kind, (BYTE *)restored, &size) == ERROR_SUCCESS &&
               kind == REG_MULTI_SZ && size == sizeof(restored) && !restored[0] && !restored[1], "Restore a present empty environment");

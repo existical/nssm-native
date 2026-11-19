@@ -19,10 +19,10 @@ Review baseline `e5edea8`, 19 November 2026. Reviewed the service lifecycle and 
 ## Implementation checklist
 
 - [x] **Log writers.** Use append-at-write handles for ordinary logger writes in copy/truncate mode. Protect truncation against concurrent changes and retain both the active data and the archive on a conflict. Test two independent writers and the rotation failure path.
-- [ ] **Startup progress.** Report checkpoints during configured offline waits and retain prompt stop cancellation. Verify with a delay longer than the initial wait hint.
+- [x] **Startup progress.** Report checkpoints during configured offline waits and retain prompt stop cancellation. Verify with a delay longer than the initial wait hint.
 - [x] **Launch configuration.** Align argument capacity across set, get, dump and launch. Fail startup on unreadable configured arguments. Preserve dynamic working-directory fallback on unrelated editor saves.
-- [ ] **Portable backups.** Configure redirected Unicode output for headless callers. Give empty replacement environments a replayable representation and preserve them through the GUI. Exercise Unicode and empty-value cases.
-- [ ] **Service management.** Validate service names before storage, honor delegated remove rights, handle allocation and cleanup on removal, and populate hook display names for standard service accounts.
+- [x] **Portable backups.** Configure redirected Unicode output for headless callers. Give empty replacement environments a replayable representation and preserve them through the GUI. Exercise Unicode and empty-value cases.
+- [x] **Service management.** Validate service names before storage, honor delegated remove rights, handle allocation and cleanup on removal, and populate hook display names for standard service accounts.
 - [x] **Configuration errors.** Propagate hook deletion and delayed-start failures, and release the delayed-start query buffer on every path.
-- [ ] **Release evidence.** Use a consistent revision for pull-request CI, run upgrade/rollback on the opted-in package binary and require its evidence and executable/symbol identities. Preserve verification of existing package formats.
+- [x] **Release evidence.** Use a consistent revision for pull-request CI, run upgrade/rollback on the opted-in package binary and require its evidence and executable/symbol identities. Preserve verification of existing package formats.
 - [ ] **Acceptance.** Review the complete diff, run x86 and x64 Debug and Release, verify candidate packages, and run elevated Windows configuration, control, lifecycle and upgrade/rollback checks plus the targeted regressions. Record the tested revision and results.
