@@ -18,7 +18,23 @@ Reviewed baseline `fede1ec` on `review/beta4-followup`. The review covered servi
 - [x] Read GUI lists and credential fields using checked lengths and complete copies. Preserve deliberately empty input. Exercise short reads and missing controls through the editor.
 - [x] Validate every configured environment entry directly before saving. Preserve empty blocks, empty values, embedded equals in values and existing runtime handling of older configurations. Replace process-based validation tests with input and persistence checks.
 - [x] Read the wrapper image once, check bounds and construct the SCM image string with explicit capacity. Verify ordinary, spaced, long and unrepresentable paths. [Windows module path contract](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getmodulefilenamew)
-- [ ] Verify argument forwarding using a native service fixture. Pass only caller-supplied startup arguments, including on restart, if the guest confirms the extra name.
-- [ ] Make version, get, status and processes report stdout write or flush errors. Preserve the numeric contract of statuscode. Exercise a failing redirected destination.
-- [ ] Compare the package's source identity across the top-level manifest, outer build records, inner manifests and source archive. Exercise inconsistent records and verify a real clean-source package.
-- [ ] Review the final diff, run the x86/x64 Debug and Release suites, production static analysis, x64 AddressSanitizer and live Windows integration including upgrade and rollback. Record the tested revision and limits.
+- [x] Verify argument forwarding using a native service fixture. Pass only caller-supplied startup arguments, including on restart, if the guest confirms the extra name.
+- [x] Make version, get, status and processes report stdout write or flush errors. Preserve the numeric contract of statuscode. Exercise a failing redirected destination.
+- [x] Compare the package's source identity across the top-level manifest, outer build records, inner manifests and source archive. Exercise inconsistent records and verify a real clean-source package.
+- [x] Review the final diff, run the x86/x64 Debug and Release suites, production static analysis, x64 AddressSanitizer and live Windows integration including upgrade and rollback. Record the tested revision and limits.
+
+## Verification
+
+Tested implementation `a64a36c1cf4ed0c06e44effb79155851dabdb6e2`. The Windows 11 x64 guest verified the packaged Release executable's SHA-256 as `c4e27b489ad8fd1856e07e7791aa9625ece3406023432f537ecce5c49fe686e3`.
+
+| Check | Result |
+| --- | --- |
+| Clean-source build and regression matrix | 37 of 37 test groups passed in each x86 and x64 Debug and Release configuration, for 148 passes. |
+| MSVC production static analysis | Fresh x86 and x64 Release builds each reported zero warnings. |
+| x64 Release with AddressSanitizer | All 37 test groups passed. |
+| Package verification | Verified checksums, binary and symbol archives, source identities and test evidence. The preceding clean candidate also passed. A conflicting source commit in an outer build record failed verification. |
+| Windows 11 x64 service integration | Export, dependencies, controls, lifecycle and legacy upgrade/rollback all passed. Three additional consecutive lifecycle runs passed. The guest reported zero leftover fixture services. |
+| Windows service arguments | The same native fixture received two arguments on a plain start from the previous build. The revised build delivered just the SCM-provided name on plain start and preserved both caller-supplied arguments on start and restart. |
+| Windows CLI and configuration | Unwritable stdout produced failure for version, get, status and processes. Statuscode still returned the service state. A malformed replacement environment left the original value readable. |
+
+GUI failure cases used hidden Windows controls. Rotation tests used real files and injected a metadata error, then checked that the active file still contained the exact original bytes. Long wrapper paths were checked at the formatting boundary. Live acceptance used one Windows 11 guest. The local logs and JUnit reports are under `build/post-analyzer-acceptance/`.

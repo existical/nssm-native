@@ -25,6 +25,8 @@ elevated terminal when installing, removing or changing a Windows service.
 ./nssm.exe remove MyService confirm
 ```
 
+For a native Windows service that accepts startup arguments, `nssm start MyService "first option" second` passes two arguments to its service entry point. `restart` forwards them when it starts the service again. For an application wrapped by NSSM, configure its command line with `AppParameters`.
+
 `nssm start` waits for the Service Control Manager to report `SERVICE_RUNNING`.
 Its polling is limited to 60 seconds and can fail sooner if the service stops,
 a status query fails, or a checkpoint stalls beyond its wait hint. A missing
@@ -145,12 +147,12 @@ caller waits keep the worker tracked for later cleanup. A synchronous wait
 timeout now reports 102 instead of exposing a still-running thread's Windows
 status. Hook process-tree termination uses the identity checks described below.
 
-Environment validation waits up to five seconds for its suspended test child
-to exit and closes both returned handles. If exit cannot be confirmed, it
-reports an internal error. An OS refusal to terminate a process is not a
-successful validation, unless exit is independently observed. Failure to
-resume an affinity-suspended application now fails startup and enters the
-existing service cleanup path.
+When saving an environment, NSSM checks that each entry has a nonempty name
+followed by `=`. Empty values and additional equals signs in values are valid.
+A malformed entry leaves the previous setting in place.
+
+If a child started suspended for affinity setup cannot be resumed, NSSM fails
+startup and enters the existing service cleanup path.
 
 ## Process-tree cleanup
 

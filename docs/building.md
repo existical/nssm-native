@@ -78,7 +78,7 @@ CTest runs the following regression groups:
 - `nssm.smoke`: command exit status, exact version output, PE machine type and
   embedded file/product metadata.
 - `nssm.environment`: empty values in every position and combination, set and
-  unset operations, block termination, and environment expansion.
+  unset operations, block termination, assignment validation, and environment expansion.
 - `nssm.hooks`: command quoting, expansion, missing/deleted hooks, argument
   parsing, and launching a test executable whose path contains spaces.
 - `nssm.startup`: slow startup independent of `AppThrottle`, checkpoint progress,
@@ -98,8 +98,8 @@ CTest runs the following regression groups:
   row/CPU mapping.
 - `nssm.hook_lifecycle`: immediate/deferred completion, fallback results,
   allocation and wait failures, ownership accounting and thread-list cleanup.
-- `nssm.launch`: injected service/validator launch failures, resume/abort cleanup,
-  200 simulated service starts and 200 real suspended validator children.
+- `nssm.launch` covers injected service launch failures, resume and abort cleanup,
+  wait cancellation and 200 simulated service starts.
 - `nssm.hook_live`: 200 real hook launches with stable handle counts, plus
   concurrent worker cleanup and hook registration.
 - `nssm.logger`: writer-close/join ordering, shared-stream EOF, trailing output,

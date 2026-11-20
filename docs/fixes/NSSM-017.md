@@ -12,6 +12,8 @@
 | Merge commit | `7fa9ca9e99e2a862b04b524b3ed312d81b987630` |
 | First release | [v2.25.0-beta.1](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.1) (beta) |
 
+The validation-child behavior and tests below describe beta.1. Current builds validate environment entries in memory before saving. [Follow-up review](../reviews/2026-11-20-post-analyzer-review.md)
+
 Hook and application launches retained the primary-thread handle returned by
 `CreateProcess`. Environment validation retained both returned handles after
 terminating its suspended child. Repeated operations could grow the NSSM
