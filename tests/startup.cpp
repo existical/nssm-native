@@ -329,6 +329,15 @@ void test_export_access() {
     CHECK(scm::closes == 1);
   }
   scm::export_access = true;
+  TCHAR names[][32] = {NSSM_REG_ENV, NSSM_REG_ENV_EXTRA, NSSM_NATIVE_ENVIRONMENT};
+  for (auto &name : names) {
+    TCHAR *arguments[] = {_T("set"), _T("NSSM-Test-Access"), name, _T("+A=1"), _T("B=2"), NULL};
+    CHECK(pre_edit_service(5, arguments) == 1);
+    arguments[3] = _T("-A");
+    CHECK(pre_edit_service(5, arguments) == 1);
+    arguments[3] = _T(":A=1");
+    CHECK(pre_edit_service(5, arguments) == 3); // Whole-block replacement reaches the SCM stub.
+  }
   TCHAR *args[] = {_T("dump"), _T("NSSM-Test-Access"), _T("AppParameters"), _T("value"), NULL};
   const TCHAR *verbs[] = {_T("dump"), _T("get"), _T("set"), _T("reset"), _T("edit")};
   for (unsigned i = 0; i < _countof(verbs); i++) {

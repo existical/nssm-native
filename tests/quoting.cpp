@@ -175,7 +175,7 @@ void test_quoting() {
   // NSSM-002: the legacy preflight accepted capacity 9, then wrote 13 TCHARs.
   check_capacity(_T("&&&&"), _T("^\"^&^&^&^&^\""), 9);
   const TCHAR *inputs[] = { _T(""), _T("plain"), _T("two words"), _T("a\tb"),
-    _T("a\nb"), _T("a\vb"), _T("a\"b"), _T("a\\\"b"), _T("a\\\\\"b"),
+    _T("a\vb"), _T("a\"b"), _T("a\\\"b"), _T("a\\\\\"b"),
     _T("space \\"), _T("&\\\\"), _T("\\\\&\\\\"), _T("<>|%^") };
   for (size_t i = 0; i < _countof(inputs); i++) check_bounds(inputs[i]);
   text_t input;

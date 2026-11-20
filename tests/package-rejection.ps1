@@ -93,4 +93,30 @@ $record.archive = 'absent.zip'
 $manifest | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $manifestPath
 Update-Checksums
 Reject-Evidence 'Missing checksum-covered archive'
+$publisher = Join-Path $SourceDirectory 'scripts/publish-package-directory.ps1'
+$publication = Join-Path $repo 'publication'
+$candidate = Join-Path $publication 'candidate'
+try {
+    & $publisher $candidate {
+        param($directory)
+        [IO.File]::WriteAllText((Join-Path $directory 'artifact'), 'partial')
+        if (Test-Path -LiteralPath $candidate) { throw 'Candidate visible during assembly.' }
+        throw 'Injected package write failure.'
+    }
+    throw 'Expected package write failure.'
+} catch { if ($_.Exception.Message -ne 'Injected package write failure.') { throw } }
+if (Get-ChildItem -LiteralPath $publication -Force) { throw 'Failed assembly left files behind.' }
+& $publisher $candidate {
+    param($directory)
+    [IO.File]::WriteAllText((Join-Path $directory 'artifact'), 'complete')
+}
+try {
+    & $publisher $candidate {
+        param($directory)
+        [IO.File]::WriteAllText((Join-Path $directory 'artifact'), 'conflict')
+    }
+    throw 'Expected a publication conflict.'
+} catch [IO.IOException] {}
+if (@(Get-ChildItem -LiteralPath $publication -Force).Count -ne 1 -or
+    [IO.File]::ReadAllText((Join-Path $candidate 'artifact')) -ne 'complete') { throw 'Publication conflict altered the output.' }
 Write-Output 'Revision, cleanliness, incomplete test evidence and missing artifact rejections passed.'

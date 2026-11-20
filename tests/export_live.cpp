@@ -197,9 +197,18 @@ int wmain(int argc, wchar_t **argv) {
       result original_dump = run(argv[1], L"dump " + quoted(source.name));
       require(original_dump.code == 0 && original_dump.output.find(L" DisplayName ") != std::wstring::npos, "Same-name backup preserves the custom display name");
       require(run(argv[1], L"set " + quoted(imported.name) + L" Environment MODE=production").code == 0, "Set native environment");
+      require(run(argv[1], L"set " + quoted(imported.name) + L" Environment +MODE=changed EXTRA=2").code != 0, "Reject a multi-argument environment append");
       require(run(argv[1], L"set " + quoted(imported.name) + L" Environment +ADDED=value").code == 0, "Append native environment");
       require(run(argv[1], L"set " + quoted(imported.name) + L" Environment -MODE=prod").code == 0, "Remove conditional nonmatch");
       require(run(argv[1], L"get " + quoted(imported.name) + L" Environment MODE").output.find(L"production") != std::wstring::npos, "Keep full environment value on prefix mismatch");
+      DWORD invalid_priority = HIGH_PRIORITY_CLASS | 1;
+      require(RegSetValueExW(imported.key, L"AppPriority", 0, REG_DWORD, (const BYTE *)&invalid_priority, sizeof(invalid_priority)) == ERROR_SUCCESS, "Store a noncanonical priority");
+      require(run(argv[1], L"get " + quoted(imported.name) + L" AppPriority").code != 0, "Reject the noncanonical priority on get");
+      require(run(argv[1], L"dump " + quoted(imported.name)).code != 0, "Reject the noncanonical priority on dump");
+      require(RegDeleteValueW(imported.key, L"AppPriority") == ERROR_SUCCESS, "Restore default priority");
+      service_fixture::set(imported.key, L"AppParameters", L"first\r\nsecond", REG_SZ);
+      result multiline = run(argv[1], L"dump " + quoted(imported.name));
+      require(multiline.code != 0 && multiline.output.find(L"second") == std::wstring::npos, "Suppress the unrepresentable command");
       const wchar_t *rules[] = {L"Default Ignore", L"0 Restart", L"42 Exit", L"4294967295 Suicide"};
       for (const wchar_t *rule : rules) require(exported.output.find(L" AppExit " + std::wstring(rule)) != std::wstring::npos, "Export contains every exit rule");
       require(run(argv[1], L"set " + quoted(source.name) + L" AppParameters denied").code != 0, "Setter still requires change access");

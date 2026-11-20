@@ -1049,6 +1049,13 @@ int pre_edit_service(int argc, TCHAR **argv) {
       return 1;
     }
 
+    if (mode == MODE_SETTING && argc > remainder + 1 &&
+        (str_equiv(parameter, NSSM_REG_ENV) || str_equiv(parameter, NSSM_REG_ENV_EXTRA) || str_equiv(parameter, NSSM_NATIVE_ENVIRONMENT)) &&
+        (*argv[remainder] == _T('+') || *argv[remainder] == _T('-'))) {
+      print_message(stderr, NSSM_GUI_INVALID_ENVIRONMENT);
+      return 1;
+    }
+
     additional = 0;
     if (additional_mandatory) {
       if (argc < mandatory) {

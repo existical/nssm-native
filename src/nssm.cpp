@@ -76,7 +76,6 @@ static bool needs_escape(const TCHAR c) {
 static bool needs_quote(const TCHAR c) {
   if (c == _T(' ')) return true;
   if (c == _T('\t')) return true;
-  if (c == _T('\n')) return true;
   if (c == _T('\v')) return true;
   if (c == _T('"')) return true;
   if (c == _T('*')) return true;
@@ -135,7 +134,7 @@ static bool quote_emit(const TCHAR *unquoted, size_t len, bool escape, quote_buf
 int quote(const TCHAR *unquoted, TCHAR *buffer, size_t buflen) {
   if (! unquoted || ! buffer || ! buflen || buflen > ((size_t) -1) / sizeof(TCHAR)) return 1;
   size_t len = _tcslen(unquoted);
-  if (len >= buflen) return 1;
+  if (len >= buflen || _tcspbrk(unquoted, _T("\r\n"))) return 1;
 
   bool escape = false;
   bool quotes = false;

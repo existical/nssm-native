@@ -163,6 +163,29 @@ void test_install_gui() {
   SetDlgItemText(tablist[NSSM_TAB_DETAILS], IDC_DISPLAYNAME, maximum.c_str());
   CHECK(configure(window, draft, NULL) == 0);
   CHECK(maximum == draft->name && maximum == draft->displayname);
+  struct choice_t { int tab, control; };
+  const choice_t choices[] = {{NSSM_TAB_DETAILS, IDC_STARTUP}, {NSSM_TAB_PROCESS, IDC_PRIORITY}, {NSSM_TAB_EXIT, IDC_APPEXIT}};
+  for (const auto &choice : choices) {
+    HWND combo = GetDlgItem(tablist[choice.tab], choice.control);
+    REQUIRE(combo);
+    LRESULT selected = SendMessage(combo, CB_GETCURSEL, 0, 0);
+    SendMessage(combo, CB_SETCURSEL, (WPARAM)-1, 0);
+    CHECK(configure(window, draft, NULL) == 5);
+    SendMessage(combo, CB_SETCURSEL, selected, 0);
+    SetWindowLongPtr(combo, GWLP_ID, 0);
+    CHECK(configure(window, draft, NULL) == 5);
+    SetWindowLongPtr(combo, GWLP_ID, choice.control);
+    LRESULT count = SendMessage(combo, CB_GETCOUNT, 0, 0);
+    LRESULT length = SendMessage(combo, CB_GETLBTEXTLEN, count - 1, 0);
+    REQUIRE(length >= 0);
+    std::vector<TCHAR> label((size_t)length + 1);
+    REQUIRE(SendMessage(combo, CB_GETLBTEXT, count - 1, (LPARAM)label.data()) == length);
+    SendMessage(combo, CB_DELETESTRING, count - 1, 0);
+    CHECK(configure(window, draft, NULL) == 5);
+    REQUIRE(SendMessage(combo, CB_INSERTSTRING, count - 1, (LPARAM)label.data()) == count - 1);
+    SendMessage(combo, CB_SETCURSEL, selected, 0);
+    REQUIRE(configure(window, draft, NULL) == 0);
+  }
   HWND exit_tab = tablist[NSSM_TAB_EXIT];
   for (const TCHAR *invalid : {_T(""), _T("42ms"), _T("-1"), _T("4294967296")}) {
     SetDlgItemText(exit_tab, IDC_THROTTLE, invalid);
@@ -267,15 +290,16 @@ static void test_edit_list_load() {
   MSG message;
   while (PeekMessage(&message, NULL, WM_QUIT, WM_QUIT, PM_REMOVE)) {}
   for (int field : {IDC_DEPENDENCIES, IDC_ENVIRONMENT}) {
-    for (int failure = 0; failure < 3; ++failure) {
+    for (int failure = 0; failure < 4; ++failure) {
       gui_test::reset();
       nssm_service_t *owned = alloc_nssm_service(); REQUIRE(owned);
       owned->handle = gui_test::borrowed;
-      TCHAR *copy = copy_environment_block(block); REQUIRE(copy);
-      DWORD length = failure ? _countof(block) : 3;
+      TCHAR multiline[] = _T("ONE=1\r\nTWO=2\0");
+      TCHAR *copy = copy_environment_block(failure == 3 ? multiline : block); REQUIRE(copy);
+      DWORD length = failure == 3 ? _countof(multiline) : failure ? _countof(block) : 3;
       if (field == IDC_DEPENDENCIES) { owned->dependencies = copy; owned->dependencieslen = length; }
       else { owned->env_extra = copy; owned->env_extralen = length; }
-      gui_test::display_failure = failure ? field : 0;
+      gui_test::display_failure = failure == 1 || failure == 2 ? field : 0;
       gui_test::short_display = failure == 2;
       CHECK(nssm_gui(IDD_EDIT, owned) == 1);
       CHECK(gui_test::closes == 1 && !gui_test::saves);

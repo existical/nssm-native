@@ -190,6 +190,11 @@ the configured directory or its expanded value cannot be read.
 Use `nssm set MyService AppEnvironment :` to store an explicitly empty replacement
 environment. Resetting AppEnvironment restores inheritance. Dump preserves this distinction
 and writes UTF-8 when its standard output is redirected by a headless caller.
+Pass one argument to add or remove one variable, for example
+`nssm set MyService AppEnvironmentExtra "+MODE=test"`. To replace the whole
+block, pass the assignments as separate arguments without a leading plus or minus.
+For a stored value containing a literal line break, use the CLI. The GUI
+cannot display that entry alongside other variables without losing its boundary.
 
 A zero AppThrottle or stop-method delay now queries the process handle once
 without sleeping or publishing wait progress. Signalled, still-running and
@@ -236,14 +241,14 @@ Replay these commands with a version supporting this selector. An ordinary sette
 `nssm dump MyService` prints commands for cmd.exe. Check its exit status before
 using the output: an error can leave earlier complete lines in the stream, so
 discard the entire output on failure. Do not pipe a dump directly into a shell.
-Arguments whose escaped form exceeds the dump buffer now cause an error instead
-of a buffer overwrite.
+Dump fails when an argument contains a carriage return or line feed, or when
+its escaped form exceeds the dump buffer.
 
 The quoting tests use `cmd.exe /d /v:off`, with AutoRun and delayed expansion
 disabled. The latter keeps exclamation marks literal. Legacy escaping still has
 limits: percent signs can change or disappear in saved batch files, and
-environment expansion can affect percent-delimited text. Newlines and nested
-shell contexts such as `CALL` or parenthesized blocks are not guaranteed to
+environment expansion can affect percent-delimited text. Nested shell
+contexts such as `CALL` or parenthesized blocks are not guaranteed to
 round-trip. Review such values before executing a saved dump; a successful dump
 exit status does not verify its shell interpretation. See
 [NSSM-002](fixes/NSSM-002.md) for the tested cases and remaining limitations.

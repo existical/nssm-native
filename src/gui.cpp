@@ -129,6 +129,13 @@ static bool display_edit_list(HWND tab, int control, TCHAR *block, DWORD length)
   TCHAR *formatted;
   DWORD capacity;
   if (format_double_null(block, length, &formatted, &capacity)) return false;
+  // A literal line break would become an entry separator on the next save.
+  for (const TCHAR *entry = block; *entry; entry += _tcslen(entry) + 1) {
+    if (_tcspbrk(entry, _T("\r\n"))) {
+      HeapFree(GetProcessHeap(), 0, formatted);
+      return false;
+    }
+  }
   const TCHAR *text = formatted ? formatted : _T("");
   HWND field = GetDlgItem(tab, control);
   bool complete = field && SetWindowText(field, text) &&
@@ -363,6 +370,19 @@ void centre_window(HWND window) {
 static inline void check_stop_method(nssm_service_t *service, unsigned long method, unsigned long control) {
   if (SendDlgItemMessage(tablist[NSSM_TAB_SHUTDOWN], control, BM_GETCHECK, 0, 0) & BST_CHECKED) return;
   service->stop_method &= ~method;
+}
+
+static bool read_choice(HWND tab, int control, int count, const TCHAR *setting, DWORD *value) {
+  HWND combo = GetDlgItem(tab, control);
+  if (combo && SendMessage(combo, CB_GETCOUNT, 0, 0) == count) {
+    LRESULT selected = SendMessage(combo, CB_GETCURSEL, 0, 0);
+    if (selected >= 0 && selected < count) {
+      *value = (DWORD)selected;
+      return true;
+    }
+  }
+  popup_message(GetParent(tab), MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_SETTING_LOAD_FAILED, setting);
+  return false;
 }
 
 static bool read_number(HWND tab, int control, const TCHAR *setting, DWORD *value) {
@@ -603,9 +623,8 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
     return 5;
   }
 
-  HWND combo = GetDlgItem(tablist[NSSM_TAB_DETAILS], IDC_STARTUP);
-  service->startup = (unsigned long) SendMessage(combo, CB_GETCURSEL, 0, 0);
-  if (service->startup == CB_ERR) service->startup = 0;
+  if (!read_choice(tablist[NSSM_TAB_DETAILS], IDC_STARTUP, NSSM_STARTUP_DISABLED + 1,
+      NSSM_NATIVE_STARTUP, &service->startup)) return 5;
 
   /* Get logon stuff. */
   if (SendDlgItemMessage(tablist[NSSM_TAB_LOGON], IDC_LOCALSYSTEM, BM_GETCHECK, 0, 0) & BST_CHECKED) {
@@ -774,8 +793,10 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
   if (service->native) return 0;
 
   /* Get process stuff. */
-  combo = GetDlgItem(tablist[NSSM_TAB_PROCESS], IDC_PRIORITY);
-  service->priority = priority_index_to_constant((unsigned long) SendMessage(combo, CB_GETCURSEL, 0, 0));
+  DWORD priority_index;
+  if (!read_choice(tablist[NSSM_TAB_PROCESS], IDC_PRIORITY, NSSM_IDLE_PRIORITY + 1,
+      NSSM_REG_PRIORITY, &priority_index)) return 5;
+  service->priority = priority_index_to_constant(priority_index);
 
   service->affinity = 0LL;
   if (orig_service && !GetWindowLongPtr(tablist[NSSM_TAB_PROCESS], DWLP_USER))
@@ -806,9 +827,8 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
   /* Get exit action stuff. */
   if (!read_number(tablist[NSSM_TAB_EXIT], IDC_THROTTLE, NSSM_REG_THROTTLE, &service->throttle_delay) ||
       !read_number(tablist[NSSM_TAB_EXIT], IDC_RESTART_DELAY, NSSM_REG_RESTART_DELAY, &service->restart_delay)) return 5;
-  combo = GetDlgItem(tablist[NSSM_TAB_EXIT], IDC_APPEXIT);
-  service->default_exit_action = (unsigned long) SendMessage(combo, CB_GETCURSEL, 0, 0);
-  if (service->default_exit_action == CB_ERR) service->default_exit_action = 0;
+  if (!read_choice(tablist[NSSM_TAB_EXIT], IDC_APPEXIT, NSSM_NUM_EXIT_ACTIONS,
+      NSSM_REG_EXIT, &service->default_exit_action)) return 5;
 
   /* Get I/O stuff. */
   if (! check_io(window, _T("stdin"), service->stdin_path, _countof(service->stdin_path), IDC_STDIN) ||

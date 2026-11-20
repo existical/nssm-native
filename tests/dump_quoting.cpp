@@ -182,6 +182,17 @@ void test_exit_export() {
   CHECK(type == REG_MULTI_SZ && bytes == 2 * sizeof(TCHAR) && !checked[0] && !checked[1]);
   CHECK(!setting_set_environment(service, parameters, NSSM_REG_ENV, NULL, NULL, NULL));
   CHECK(RegQueryValueEx(parameters, NSSM_REG_ENV, NULL, NULL, NULL, NULL) == ERROR_FILE_NOT_FOUND);
+  value_t update = {};
+  update.string = _T("-");
+  CHECK(setting_set_environment(service, parameters, NSSM_REG_ENV, NULL, &update, NULL) < 0);
+  update.string = _T("+MODE=first\r\nsecond");
+  const TCHAR multiline[] = _T("MODE=first\r\nsecond\0");
+  for (int i = 0; i < 2; i++) {
+    REQUIRE(setting_set_environment(service, parameters, NSSM_REG_ENV, NULL, &update, NULL) == 1);
+    bytes = sizeof(checked);
+    REQUIRE(!RegQueryValueEx(parameters, NSSM_REG_ENV, NULL, &type, (BYTE *)checked, &bytes));
+    CHECK(bytes == sizeof(multiline) && !memcmp(checked, multiline, bytes));
+  }
   TCHAR raw_path[] = _T("%SystemRoot%\\test");
   value_t path; path.string = raw_path;
   capture_dump = true;
@@ -290,6 +301,12 @@ void test_dump_quoting() {
   value.string = &oversized[0];
   CHECK(setting_dump_string(_T("Test"), REG_SZ, _T("AppParameters"), &value, NULL) == 2);
   CHECK(dump_output.empty());
+  TCHAR lines[][24] = {_T("first\rsecond"), _T("first\nsecond"), _T("first&\r\nsecond")};
+  for (auto &multiline : lines) {
+    value.string = multiline;
+    CHECK(setting_dump_string(_T("Test"), REG_SZ, _T("AppParameters"), &value, NULL) != 0);
+    CHECK(dump_output.empty());
+  }
   value.string = valid;
   CHECK(setting_dump_string(_T("Test"), REG_SZ, _T("AppParameters"), &value, oversized.c_str()) == 3);
   CHECK(dump_output.empty());
@@ -305,6 +322,28 @@ void test_numeric_settings() {
   const TCHAR *service = _T("NSSM-Test-Numeric");
   HKEY key = open_registry(service, KEY_READ | KEY_WRITE);
   REQUIRE(key);
+  settings_t *priority = settings;
+  while (priority->name && !str_equiv(priority->name, NSSM_REG_PRIORITY)) ++priority;
+  REQUIRE(priority->name);
+  capture_dump = true;
+  dump_output.clear();
+  CHECK(!dump_setting(service, key, NULL, priority) && dump_output.empty());
+  for (int index = NSSM_REALTIME_PRIORITY; index <= NSSM_IDLE_PRIORITY; ++index) {
+    REQUIRE(!set_number(key, NSSM_REG_PRIORITY, priority_index_to_constant(index)));
+    dump_output.clear();
+    CHECK(!dump_setting(service, key, NULL, priority));
+    CHECK(dump_output.find(priority_strings[index]) != text_t::npos);
+  }
+  for (DWORD invalid : {0UL, HIGH_PRIORITY_CLASS | 1UL, HIGH_PRIORITY_CLASS | IDLE_PRIORITY_CLASS | 0UL}) {
+    REQUIRE(!set_number(key, NSSM_REG_PRIORITY, invalid));
+    value_t value = {};
+    CHECK(get_setting(service, key, priority, &value, NULL) < 0);
+    dump_output.clear();
+    CHECK(dump_setting(service, key, NULL, priority) != 0 && dump_output.empty());
+    DWORD stored = 0;
+    CHECK(get_number(key, NSSM_REG_PRIORITY, &stored) == 1 && stored == invalid);
+  }
+  capture_dump = false;
   CHECK(set_number(key, NSSM_REG_THROTTLE, 17) == 0);
   const TCHAR *invalid[] = { _T(""), _T("-1"), _T("4294967296"), _T("1,2"), _T("12ms") };
   for (size_t i = 0; i < _countof(invalid); i++) {

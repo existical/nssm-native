@@ -112,14 +112,16 @@ try {
     }
     # Refuse a changed checkout even though the actual builds came from git archive.
     if ((Git-Text @('rev-parse','HEAD')) -ne $Commit -or (Git-Text @('status','--porcelain','--untracked-files=all'))) { throw 'Checkout changed during packaging.' }
-    New-Item -ItemType Directory -Path $destination | Out-Null
-    Copy-Item -LiteralPath $sourceZip -Destination $destination
-    foreach ($record in $records) { Copy-Item -LiteralPath (Join-Path $work $record.archive) -Destination $destination }
-    Copy-Item -LiteralPath $evidence -Destination $destination -Recurse
-    Write-JsonFile ([ordered]@{schema=2; source=$identity; builds=$records; source_archive=[ordered]@{name=[IO.Path]::GetFileName($sourceZip); sha256=(Get-FileHash -LiteralPath $sourceZip -Algorithm SHA256).Hash.ToLowerInvariant()}}) (Join-Path $destination 'build-info.json')
-    $hashes = Get-ChildItem -LiteralPath $destination -File -Recurse | Sort-Object FullName | ForEach-Object {
-        (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $_.FullName.Substring($destination.Length + 1).Replace('\','/')
+    & (Join-Path $PSScriptRoot 'publish-package-directory.ps1') $destination {
+        param($outputPath)
+        Copy-Item -LiteralPath $sourceZip -Destination $outputPath
+        foreach ($record in $records) { Copy-Item -LiteralPath (Join-Path $work $record.archive) -Destination $outputPath }
+        Copy-Item -LiteralPath $evidence -Destination $outputPath -Recurse
+        Write-JsonFile ([ordered]@{schema=2; source=$identity; builds=$records; source_archive=[ordered]@{name=[IO.Path]::GetFileName($sourceZip); sha256=(Get-FileHash -LiteralPath $sourceZip -Algorithm SHA256).Hash.ToLowerInvariant()}}) (Join-Path $outputPath 'build-info.json')
+        $hashes = Get-ChildItem -LiteralPath $outputPath -File -Recurse | Sort-Object FullName | ForEach-Object {
+            (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $_.FullName.Substring($outputPath.Length + 1).Replace('\','/')
+        }
+        [IO.File]::WriteAllLines((Join-Path $outputPath 'SHA256SUMS.txt'), $hashes, (New-Object Text.UTF8Encoding($false)))
     }
-    [IO.File]::WriteAllLines((Join-Path $destination 'SHA256SUMS.txt'), $hashes, (New-Object Text.UTF8Encoding($false)))
     Write-Output "Candidate packages: $destination"
 } finally { $env:SOURCE_DATE_EPOCH = $previousEpoch }

@@ -9,6 +9,7 @@ Reviewed baseline `eab2a7a` on `review/beta4-followup`. This pass followed servi
 | Medium | `src/settings.cpp:674` | A priority DWORD with unsupported bits can export as a valid high priority even though startup uses normal priority. |
 | Medium | `src/service.cpp:1247`, `src/settings.cpp:471` | A prefixed environment edit with multiple arguments can merge two assignments or silently fail to remove the requested entry. Adding to an absent block also parses the same input differently. |
 | Medium | `scripts/package.ps1:115` | Copy or hash failures leave a partially populated candidate directory at the requested output path and prevent a clean retry. |
+| Medium | `src/gui.cpp:127` | The line-based list editor cannot distinguish a line break inside an existing registry entry from the boundary between entries. Saving can split one environment variable into two. |
 
 ## Implementation plan
 
@@ -17,4 +18,5 @@ Reviewed baseline `eab2a7a` on `review/beta4-followup`. This pass followed servi
 - [ ] Validate the complete AppPriority DWORD using the runtime's conversion rules. Cover valid values, absent settings and unsupported bits through the settings and dump paths.
 - [ ] Distinguish multiple command-line arguments from one environment edit. Preserve whole-block replacement, single-variable changes, empty values and literal line breaks in a single add. Check stored bytes and failed edits.
 - [ ] Assemble candidate contents and checksums in a unique sibling directory, then rename the complete directory into place. Exercise successful publication, failed assembly and a destination conflict.
+- [ ] Check that stored list entries can be represented before opening the line-based editor. Exercise the dialog with an embedded line break and verify that no save occurs.
 - [ ] Review the implementation diff, build and test x86 and x64 in Release and Debug, run the package verifier and record the results and coverage limits.

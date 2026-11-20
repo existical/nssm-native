@@ -469,32 +469,21 @@ static int setting_set_environment(const TCHAR *service_name, void *param, const
     }
   }
 
-  if (op > 0 && (!value->string[1] || value->string[1] == _T('=') || !_tcschr(value->string + 1, _T('=')))) {
-    print_message(stderr, NSSM_GUI_INVALID_ENVIRONMENT);
-    return -1;
-  }
   if (op) {
     string++;
+    if (!*string || *string == _T('=') || (op > 0 && !_tcschr(string, _T('=')))) {
+      print_message(stderr, NSSM_GUI_INVALID_ENVIRONMENT);
+      return -1;
+    }
     TCHAR *env = 0;
     if (get_environment((TCHAR *) service_name, key, (TCHAR *) name, &env, &envlen)) return -1;
-    if (env) {
-      int ret;
-      if (op > 0) ret = append_to_environment_block(env, envlen, string, &unformatted, &newlen);
-      else ret = remove_from_environment_block(env, envlen, string, &unformatted, &newlen);
-      if (envlen) HeapFree(GetProcessHeap(), 0, env);
-      if (ret) return -1;
-
-      string = unformatted;
-    }
-    else {
-      /*
-        No existing environment.
-        We can't remove from an empty environment so just treat an add
-        operation as setting a new string.
-      */
-      if (op < 0) return 0;
-      op = 0;
-    }
+    if (op < 0 && !env) return 0;
+    int ret;
+    if (op > 0) ret = append_to_environment_block(env, envlen, string, &unformatted, &newlen);
+    else ret = remove_from_environment_block(env, envlen, string, &unformatted, &newlen);
+    if (env) HeapFree(GetProcessHeap(), 0, env);
+    if (ret) return -1;
+    string = unformatted;
   }
 
   bool explicit_empty = value && value->string && str_equiv(value->string, _T(":"));
@@ -671,7 +660,14 @@ static int setting_get_priority(const TCHAR *service_name, void *param, const TC
     default: return -1;
   }
 
-  return value_from_string(name, value, priority_strings[priority_constant_to_index(constant)]);
+  int index = priority_constant_to_index(constant);
+  if (priority_index_to_constant(index) != constant) {
+    TCHAR raw[16];
+    _stprintf_s(raw, _T("0x%08lx"), constant);
+    print_message(stderr, NSSM_MESSAGE_INVALID_PRIORITY, raw);
+    return -1;
+  }
+  return value_from_string(name, value, priority_strings[index]);
 }
 
 static int setting_dump_priority(const TCHAR *service_name, void *key_ptr, const TCHAR *name, void *setting_ptr, value_t *value, const TCHAR *additional) {
