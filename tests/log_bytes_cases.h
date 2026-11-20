@@ -58,6 +58,15 @@ static void test_stream_bytes() {
     CHECK(f.run() == 0 && move_attempts == 3 && !rotations);
     CHECK(f.contents() == stream_input);
   }
+  {
+    stream_fixture f("abc\nx\ntail", 1, false, 4);
+    // A complete DWORD cycle between reads must still expire the retry delay.
+    ticks_per_byte = 1ULL << 32;
+    fail_first_move = true;
+    CHECK(f.run() == 0 && move_attempts == 2 && rotations == 1);
+    REQUIRE(rotated_paths.size() == 1);
+    CHECK(read_path(rotated_paths[0].c_str()) + f.contents() == stream_input);
+  }
   for (bool manual : {false, true}) {
     stream_fixture f("abc\nx\nx\nx\ntail", 1, false, 4);
     fail_first_move = true;

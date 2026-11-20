@@ -1,5 +1,4 @@
 #include "nssm.h"
-#include <limits.h>
 
 typedef struct {
   TCHAR name[HOOK_NAME_LENGTH];
@@ -67,29 +66,6 @@ static BOOL set_hook_runtime(TCHAR *v, FILETIME *start, FILETIME *now) {
   return SetEnvironmentVariable(v, _T(""));
 }
 
-/* Caller holds service->hook_section. Reserve before publishing a worker. */
-static bool reserve_thread_handle(hook_thread_t *hook_threads) {
-  if (! hook_threads) return false;
-  if (hook_threads->num_threads < 0 || hook_threads->num_threads == INT_MAX) return false;
-  size_t count = (size_t) hook_threads->num_threads + 1;
-  if (count > ((size_t) -1) / sizeof(hook_thread_data_t)) return false;
-  hook_thread_data_t *data = (hook_thread_data_t *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, count * sizeof(*data));
-  if (! data) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, _T("hook_thread_t"), _T("reserve_thread_handle()"));
-    return false;
-  }
-  if (hook_threads->num_threads) memmove(data, hook_threads->data, hook_threads->num_threads * sizeof(*data));
-  if (hook_threads->data) HeapFree(GetProcessHeap(), 0, hook_threads->data);
-  hook_threads->data = data;
-  return true;
-}
-
-static void free_empty_thread_list(hook_thread_t *hook_threads) {
-  if (! hook_threads || hook_threads->num_threads) return;
-  if (hook_threads->data) HeapFree(GetProcessHeap(), 0, hook_threads->data);
-  hook_threads->data = NULL;
-}
-
 bool valid_hook_name(const TCHAR *hook_event, const TCHAR *hook_action, bool quiet) {
   bool valid_event = false;
   bool valid_action = false;
@@ -155,27 +131,29 @@ bool valid_hook_name(const TCHAR *hook_event, const TCHAR *hook_action, bool qui
   return false;
 }
 
-/* The service hook critical section serializes append, wait and compaction. */
-void await_hook_threads(hook_thread_t *hook_threads, SERVICE_STATUS_HANDLE status_handle, SERVICE_STATUS *status, unsigned long deadline) {
-  if (! hook_threads) return;
-  int retained = 0;
-  for (int i = 0; i < hook_threads->num_threads; i++) {
-    hook_thread_data_t entry = hook_threads->data[i];
-    bool complete;
-    if (deadline) complete = await_single_handle(status_handle, status, entry.thread_handle, entry.name, _T(__FUNCTION__), deadline) == 0;
-    else complete = WaitForSingleObject(entry.thread_handle, 0) == WAIT_OBJECT_0;
-    if (complete) CloseHandle(entry.thread_handle);
+/* The service hook lock protects this list. Only started workers are linked. */
+void await_hook_threads(hook_thread_t *threads, SERVICE_STATUS_HANDLE status_handle, SERVICE_STATUS *status, unsigned long deadline) {
+  if (!threads) return;
+  hook_thread_data_t **link = &threads->first;
+  threads->last = NULL;
+  while (*link) {
+    hook_thread_data_t *worker = *link;
+    bool complete = deadline ?
+        await_single_handle(status_handle, status, worker->thread_handle, worker->name, _T(__FUNCTION__), deadline) == 0 :
+        WaitForSingleObject(worker->thread_handle, 0) == WAIT_OBJECT_0;
+    if (complete) {
+      *link = worker->next;
+      CloseHandle(worker->thread_handle);
+      HeapFree(GetProcessHeap(), 0, worker);
+    }
     else {
-      /* Retain live workers on timeout or wait failure. No allocation needed. */
-      if (retained != i) hook_threads->data[retained] = entry;
-      retained++;
+      threads->last = worker;
+      link = &worker->next;
     }
   }
-  hook_threads->num_threads = retained;
-  free_empty_thread_list(hook_threads);
 }
 
-static bool set_hook_environment(nssm_service_t *service, TCHAR *hook_event, TCHAR *hook_action, unsigned long *hook_control, unsigned long deadline, FILETIME *now) {
+static bool set_hook_environment(nssm_service_t *service, TCHAR *hook_event, TCHAR *hook_action, unsigned long *hook_control, unsigned long deadline, FILETIME *now, text_buffer<CMD_LENGTH> &command) {
   /* ABI version. */
   TCHAR number[16];
   _sntprintf_s(number, _countof(number), _TRUNCATE, _T("%lu"), NSSM_HOOK_VERSION);
@@ -256,9 +234,8 @@ static bool set_hook_environment(nssm_service_t *service, TCHAR *hook_event, TCH
   if (!SetEnvironmentVariable(NSSM_HOOK_ENV_THROTTLE_COUNT, number)) return false;
 
   /* Command line. */
-  TCHAR app[CMD_LENGTH];
-  if (_sntprintf_s(app, _countof(app), _TRUNCATE, _T("\"%s\" %s"), service->exe, service->flags) < 0) return false;
-  return SetEnvironmentVariable(NSSM_HOOK_ENV_COMMAND_LINE, app) != FALSE;
+  if (_sntprintf_s(command.get(), command.size(), _TRUNCATE, _T("\"%s\" %s"), service->exe, service->flags) < 0) return false;
+  return SetEnvironmentVariable(NSSM_HOOK_ENV_COMMAND_LINE, command.get()) != FALSE;
 }
 
 /*
@@ -274,6 +251,11 @@ static bool set_hook_environment(nssm_service_t *service, TCHAR *hook_event, TCH
 int nssm_hook(hook_thread_t *hook_threads, nssm_service_t *service, TCHAR *hook_event, TCHAR *hook_action, unsigned long *hook_control, unsigned long deadline, bool async) {
   int ret = 0;
 
+  text_buffer<CMD_LENGTH> command;
+  if (!command.get()) {
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, _T("command line"), _T("nssm_hook()"));
+    return NSSM_HOOK_STATUS_ERROR;
+  }
   hook_t *hook = (hook_t *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(hook_t));
   if (! hook) {
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, _T("hook"), _T("nssm_hook()"));
@@ -293,7 +275,7 @@ int nssm_hook(hook_thread_t *hook_threads, nssm_service_t *service, TCHAR *hook_
   }
 
   /* Set the environment. */
-  if (set_service_environment(service) || !set_hook_environment(service, hook_event, hook_action, hook_control, deadline, &now)) {
+  if (set_service_environment(service) || !set_hook_environment(service, hook_event, hook_action, hook_control, deadline, &now, command)) {
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_GET_PARAMETERS_FAILED, service->name);
     unset_service_environment(service);
     LeaveCriticalSection(&service->hook_section);
@@ -301,8 +283,8 @@ int nssm_hook(hook_thread_t *hook_threads, nssm_service_t *service, TCHAR *hook_
     return NSSM_HOOK_STATUS_ERROR;
   }
 
-  TCHAR cmd[CMD_LENGTH];
-  if (get_hook(service->name, hook_event, hook_action, cmd, sizeof(cmd))) {
+  TCHAR *cmd = command.get();
+  if (get_hook(service->name, hook_event, hook_action, cmd, command.bytes())) {
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_GET_HOOK_FAILED, hook_event, hook_action, service->name);
     unset_service_environment(service);
     LeaveCriticalSection(&service->hook_section);
@@ -347,20 +329,28 @@ int nssm_hook(hook_thread_t *hook_threads, nssm_service_t *service, TCHAR *hook_
     hook->deadline = deadline;
     if (get_process_creation_time(hook->process_handle, &hook->creation_time)) GetSystemTimeAsFileTime(&hook->creation_time);
 
-    /* Neither registration nor synchronous waits may read hook after CreateThread. */
-    hook_thread_data_t entry = {0};
-    memmove(entry.name, hook->name, sizeof(entry.name));
     await_hook_threads(hook_threads, service->status_handle, &service->status, 0);
-    if (! reserve_thread_handle(hook_threads)) ret = (int) await_hook(hook);
+    hook_thread_data_t *entry = hook_threads ? (hook_thread_data_t *) HeapAlloc(GetProcessHeap(), 0, sizeof(*entry)) : NULL;
+    if (!entry) {
+      if (hook_threads) log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, _T("hook worker record"), _T("nssm_hook()"));
+      ret = (int) await_hook(hook);
+    }
     else {
-      unsigned long tid;
-      entry.thread_handle = CreateThread(NULL, 0, await_hook, (void *) hook, 0, &tid);
-      if (! entry.thread_handle) {
+      // The worker may free its snapshot before CreateThread returns.
+      memcpy(entry->name, hook->name, sizeof(entry->name));
+      entry->next = NULL;
+      DWORD tid;
+      entry->thread_handle = CreateThread(NULL, 0, await_hook, hook, 0, &tid);
+      if (!entry->thread_handle) {
         log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_CREATETHREAD_FAILED, error_string(GetLastError()));
+        HeapFree(GetProcessHeap(), 0, entry);
         ret = (int) await_hook(hook);
       }
       else {
-        hook_threads->data[hook_threads->num_threads++] = entry;
+        hook_thread_data_t *previous = hook_threads->last;
+        if (previous) previous->next = entry;
+        else hook_threads->first = entry;
+        hook_threads->last = entry;
         ret = NSSM_HOOK_STATUS_SUCCESS;
         if (! async) {
           /* Avoid wrapping a large deadline to zero or the INFINITE sentinel. */
@@ -371,7 +361,7 @@ int nssm_hook(hook_thread_t *hook_threads, nssm_service_t *service, TCHAR *hook_
              shutdown and use a separate observer while Stop/Pre acquires the lock. */
           if (str_equiv(hook_event, NSSM_HOOK_EVENT_ROTATE)) {
             HANDLE observer = NULL;
-            BOOL duplicated = DuplicateHandle(GetCurrentProcess(), entry.thread_handle, GetCurrentProcess(),
+            BOOL duplicated = DuplicateHandle(GetCurrentProcess(), entry->thread_handle, GetCurrentProcess(),
                                               &observer, SYNCHRONIZE | THREAD_QUERY_INFORMATION, FALSE, 0);
             unset_service_environment(service);
             LeaveCriticalSection(&service->hook_section);
@@ -383,18 +373,20 @@ int nssm_hook(hook_thread_t *hook_threads, nssm_service_t *service, TCHAR *hook_
             CloseHandle(observer);
             return ret;
           }
-          int waited = await_single_handle(service->status_handle, &service->status, entry.thread_handle, entry.name, _T(__FUNCTION__), timeout);
+          int waited = await_single_handle(service->status_handle, &service->status, entry->thread_handle, entry->name, _T(__FUNCTION__), timeout);
           if (! waited) {
             unsigned long exitcode;
-            ret = GetExitCodeThread(entry.thread_handle, &exitcode) ? (int) exitcode : NSSM_HOOK_STATUS_ERROR;
-            CloseHandle(entry.thread_handle);
-            hook_threads->num_threads--;
+            ret = GetExitCodeThread(entry->thread_handle, &exitcode) ? (int) exitcode : NSSM_HOOK_STATUS_ERROR;
+            CloseHandle(entry->thread_handle);
+            if (previous) previous->next = NULL;
+            else hook_threads->first = NULL;
+            hook_threads->last = previous;
+            HeapFree(GetProcessHeap(), 0, entry);
           }
           else ret = waited == 1 ? NSSM_HOOK_STATUS_TIMEOUT : NSSM_HOOK_STATUS_ERROR;
           /* A still-running worker remains tracked for the next cleanup. */
         }
       }
-      free_empty_thread_list(hook_threads);
     }
   }
   else {

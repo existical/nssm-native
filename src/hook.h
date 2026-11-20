@@ -56,15 +56,16 @@
 #define NSSM_HOOK_ENV_RUNTIME _T("NSSM_RUNTIME")
 #define NSSM_HOOK_ENV_APPLICATION_RUNTIME _T("NSSM_APPLICATION_RUNTIME")
 
-typedef struct {
+struct hook_thread_data_t {
   TCHAR name[HOOK_NAME_LENGTH];
   HANDLE thread_handle;
-} hook_thread_data_t;
+  hook_thread_data_t *next;
+};
 
-typedef struct {
-  hook_thread_data_t *data;
-  int num_threads;
-} hook_thread_t;
+struct hook_thread_t {
+  hook_thread_data_t *first;
+  hook_thread_data_t *last;
+};
 
 bool valid_hook_name(const TCHAR *, const TCHAR *, bool);
 /* Caller holds service->hook_section; nssm_hook acquires it internally.

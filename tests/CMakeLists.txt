@@ -11,7 +11,7 @@ endif()
 unset(CMAKE_REQUIRED_INCLUDES)
 unset(event_compile_prefix)
 set(regression_sources ${nssm_sources})
-list(REMOVE_ITEM regression_sources src/nssm.cpp src/env.cpp src/service.cpp src/registry.cpp src/settings.cpp src/hook.cpp src/io.cpp src/process.cpp src/gui.cpp src/event.cpp src/account.cpp)
+list(REMOVE_ITEM regression_sources src/nssm.cpp src/env.cpp src/service.cpp src/registry.cpp src/settings.cpp src/hook.cpp src/io.cpp src/process.cpp src/gui.cpp src/event.cpp src/account.cpp src/utf8.cpp)
 list(TRANSFORM regression_sources PREPEND "${PROJECT_SOURCE_DIR}/")
 add_executable(nssm_regressions ${regression_sources}
   main.cpp nssm_entry.cpp environment.cpp hooks.cpp startup.cpp registry.cpp quoting.cpp dump_quoting.cpp parsing.cpp hook_lifecycle.cpp launch.cpp logger.cpp rotation.cpp process_tree.cpp process_live.cpp install.cpp install_gui.cpp token.cpp error_messages.cpp accounts.cpp dependencies.cpp)

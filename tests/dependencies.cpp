@@ -6,7 +6,7 @@ static std::vector<std::basic_string<TCHAR>> current;
 static std::vector<void *> owned;
 static unsigned manager_opens, manager_closes, service_opens, service_closes, writes, queries;
 static bool fail_query, fail_change, fail_manager, fail_service;
-static bool fail_name;
+static bool fail_name, grow_query;
 static int fail_after = -1, malformed_query;
 static SC_HANDLE manager_handle = reinterpret_cast<SC_HANDLE>(1), dependency_handle = reinterpret_cast<SC_HANDLE>(2);
 LPVOID allocate(HANDLE h, DWORD f, SIZE_T n) {
@@ -48,6 +48,11 @@ BOOL WINAPI query(SC_HANDLE h, LPQUERY_SERVICE_CONFIG out, DWORD bytes, LPDWORD 
   queries++;
   if (fail_query) { SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
   auto data = block(); *needed = static_cast<DWORD>(sizeof(*out) + data.size() * sizeof(TCHAR));
+  if (grow_query && !out) {
+    *needed = sizeof(*out);
+    SetLastError(ERROR_INSUFFICIENT_BUFFER);
+    return FALSE;
+  }
   if (! out || bytes < *needed) { SetLastError(ERROR_INSUFFICIENT_BUFFER); return FALSE; }
   ZeroMemory(out, bytes); out->lpDependencies = reinterpret_cast<TCHAR *>(out + 1);
   memcpy(out->lpDependencies, &data[0], data.size() * sizeof(TCHAR));
@@ -70,7 +75,7 @@ BOOL WINAPI change(SC_HANDLE h, DWORD type, DWORD start, DWORD error, LPCTSTR pa
 static void reset(std::initializer_list<const TCHAR *> entries) {
   REQUIRE(owned.empty()); active = true; current.assign(entries.begin(), entries.end());
   manager_opens = manager_closes = service_opens = service_closes = writes = queries = 0;
-  fail_query = fail_change = fail_manager = fail_service = fail_name = false; fail_after = -1; malformed_query = 0;
+  grow_query = fail_query = fail_change = fail_manager = fail_service = fail_name = false; fail_after = -1; malformed_query = 0;
 }
 static void expect(std::initializer_list<const TCHAR *> entries) {
   std::vector<std::basic_string<TCHAR>> expected(entries.begin(), entries.end()); CHECK(current == expected);
@@ -146,6 +151,12 @@ void test_dependencies() {
     finish();
   }
   reset({_T("ServiceA")}); fail_after = 2; CHECK(dump(DEPENDENCY_SERVICES) != 0); finish();
+  reset({_T("ServiceA")}); grow_query = true;
+  DWORD bytes = 0;
+  QUERY_SERVICE_CONFIG *grown = query_service_config(_T("Target"), dependency_handle, &bytes);
+  REQUIRE(grown);
+  CHECK(queries == 3 && bytes > sizeof(*grown) && !_tcscmp(grown->lpDependencies, _T("ServiceA")));
+  release(GetProcessHeap(), 0, grown); finish();
   reset({}); TCHAR lower[] = _T("+alpha\0");
   CHECK(set_service_dependencies(_T("Target"), reinterpret_cast<SC_HANDLE>(3), lower) == 0);
   CHECK(! _tcscmp(lower, _T("+alpha"))); expect({_T("+Alpha")}); finish();

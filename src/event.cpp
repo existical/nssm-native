@@ -86,9 +86,13 @@ int popup_message(HWND owner, unsigned int type, unsigned long id, ...) {
     return MessageBox(0, _T("The message which was supposed to go here is missing!"), NSSM, MB_OK | MB_ICONEXCLAMATION);
   }
 
-  TCHAR blurb[NSSM_ERROR_BUFSIZE];
+  text_buffer<NSSM_ERROR_BUFSIZE> blurb;
+  if (!blurb.get()) {
+    LocalFree(format);
+    return MessageBox(owner, _T("Insufficient memory to display the message."), NSSM, MB_OK | MB_ICONEXCLAMATION);
+  }
   va_start(arg, id);
-  if (_vsntprintf_s(blurb, _countof(blurb), _TRUNCATE, format, arg) < 0) {
+  if (_vsntprintf_s(blurb.get(), blurb.size(), _TRUNCATE, format, arg) < 0) {
     va_end(arg);
     LocalFree(format);
     return MessageBox(0, _T("The message which was supposed to go here is too big!"), NSSM, MB_OK | MB_ICONEXCLAMATION);
@@ -100,7 +104,7 @@ int popup_message(HWND owner, unsigned int type, unsigned long id, ...) {
   params.cbSize = sizeof(params);
   params.hInstance = GetModuleHandle(0);
   params.hwndOwner = owner;
-  params.lpszText = blurb;
+  params.lpszText = blurb.get();
   params.lpszCaption = NSSM;
   params.dwStyle = type;
   if (type == MB_OK) {

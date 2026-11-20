@@ -19,11 +19,12 @@ static bool stream_test, fail_info, fail_size, fail_move, fail_truncate, fail_re
 static std::string stream_input;
 static size_t read_position;
 static bool check_short_output;
-static DWORD read_chunk, short_write, ticks_per_byte, manual_at;
+static DWORD read_chunk, short_write, manual_at;
+static ULONGLONG ticks_per_byte;
 static unsigned move_attempts;
 static bool fail_first_move;
-static DWORD WINAPI ticks() {
-  return stream_test ? MAXDWORD - 1500 + static_cast<DWORD>(read_position) * ticks_per_byte : GetTickCount();
+static ULONGLONG ticks() {
+  return stream_test ? (ULONGLONG)MAXDWORD - 1500 + read_position * ticks_per_byte : monotonic_milliseconds();
 }
 static LONGLONG fail_after;
 static ULONGLONG bytes_written;
@@ -191,9 +192,9 @@ static void console(nssm_service_t *) {}
 #define GetFileInformationByHandle logger_test::information
 #define Sleep rotation_test::sleep
 #define GetSystemTime logger_test::now
-#define GetTickCount logger_test::ticks
+#define monotonic_milliseconds logger_test::ticks
 #include "../src/io.cpp"
-#undef GetTickCount
+#undef monotonic_milliseconds
 #undef CopyFile
 #undef MoveFile
 #undef GetFileInformationByHandle

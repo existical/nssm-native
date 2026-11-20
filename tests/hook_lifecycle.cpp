@@ -282,22 +282,22 @@ void test_hook_lifecycle() {
     hook_test::fail_worker_wait = failure != 0;
     hook_test::timeout_worker_wait = ! failure;
     CHECK(f.run(false) == (failure ? NSSM_HOOK_STATUS_ERROR : NSSM_HOOK_STATUS_TIMEOUT));
-    CHECK(f.list.num_threads == 1);
+    CHECK(f.list.first && f.list.first == f.list.last && !f.list.first->next);
     await_hook_threads(&f.list, NULL, NULL, 0);
-    CHECK(f.list.num_threads == 1); // Failed/unfinished waits keep ownership.
+    CHECK(f.list.first && f.list.first == f.list.last && !f.list.first->next); // Failed/unfinished waits keep ownership.
     hook_test::fail_worker_wait = hook_test::timeout_worker_wait = false;
     f.drain();
-    CHECK(f.list.num_threads == 0);
+    CHECK(!f.list.first && !f.list.last);
   }
   {
     hook_test::fixture f;
     hook_test::deferred = true;
-    CHECK(f.run() == 0 && f.run() == 0 && f.list.num_threads == 2);
-    hook_test::wait(f.list.data[0].thread_handle, 100);
-    HANDLE retained = f.list.data[1].thread_handle;
+    CHECK(f.run() == 0 && f.run() == 0 && f.list.first && f.list.last && f.list.first->next == f.list.last);
+    hook_test::wait(f.list.first->thread_handle, 100);
+    HANDLE retained = f.list.last->thread_handle;
     hook_test::fail_after = 0;
     await_hook_threads(&f.list, NULL, NULL, 0);
-    CHECK(f.list.num_threads == 1 && f.list.data[0].thread_handle == retained);
+    CHECK(f.list.first && f.list.first == f.list.last && !f.list.first->next && f.list.first->thread_handle == retained);
     f.drain(); // Compaction/cleanup requires no allocation even under failure.
   }
   {
@@ -306,7 +306,7 @@ void test_hook_lifecycle() {
     CHECK(f.run() == 0);
     hook_test::fail_after = 1;
     CHECK(f.run() == 0); // Synchronous fallback preserves the existing worker.
-    CHECK(f.list.num_threads == 1);
+    CHECK(f.list.first && f.list.first == f.list.last && !f.list.first->next);
     f.drain();
   }
 }
@@ -347,7 +347,7 @@ void test_hook_live_handles() {
     EnterCriticalSection(&service->hook_section);
     await_hook_threads(&list, NULL, NULL, 5000);
     LeaveCriticalSection(&service->hook_section);
-    REQUIRE(list.num_threads == 0 && list.data == NULL);
+    REQUIRE(!list.first && !list.last);
     if (i == 1) before = test_handle_count();
   }
   after = test_handle_count();
@@ -373,7 +373,7 @@ void test_hook_live_handles() {
   EnterCriticalSection(&service->hook_section);
   await_hook_threads(&list, NULL, NULL, 5000);
   LeaveCriticalSection(&service->hook_section);
-  REQUIRE(list.num_threads == 0);
+  REQUIRE(!list.first && !list.last);
   CloseHandle(reaper); CloseHandle(launcher); CloseHandle(context.entered);
   CloseHandle(hook_test::cleanup_gate); CloseHandle(hook_test::cleanup_entered);
   hook_test::cleanup_gate = hook_test::cleanup_entered = NULL;
@@ -396,7 +396,7 @@ void test_gui_hook_launch(const TCHAR *name) {
   EnterCriticalSection(&service->hook_section);
   await_hook_threads(&list, NULL, NULL, 5000);
   LeaveCriticalSection(&service->hook_section);
-  CHECK(list.num_threads == 0 && list.data == NULL);
+  CHECK(!list.first && !list.last);
   hook_test::live = false;
   DeleteCriticalSection(&service->hook_section);
   HeapFree(GetProcessHeap(), 0, service->initial_env); delete service;

@@ -373,7 +373,9 @@ static DWORD truncate_archived_file(const TCHAR *path, const TCHAR *archive, HAN
   LARGE_INTEGER source_size, copy_size;
   if (!GetFileSizeEx(source.handle, &source_size) || !GetFileSizeEx(copy.handle, &copy_size)) return GetLastError();
   if (source_size.QuadPart != copy_size.QuadPart) return ERROR_FILE_INVALID;
-  char original[16384], saved[sizeof(original)];
+  struct comparison_buffers { char original[16384], saved[16384]; };
+  std::unique_ptr<comparison_buffers> buffers(new (std::nothrow) comparison_buffers);
+  if (!buffers) return ERROR_NOT_ENOUGH_MEMORY;
   for (;;) {
     if (stop) {
       DWORD wait = WaitForSingleObject(stop, 0);
@@ -381,9 +383,9 @@ static DWORD truncate_archived_file(const TCHAR *path, const TCHAR *archive, HAN
       if (wait != WAIT_TIMEOUT) return GetLastError();
     }
     DWORD a, b;
-    if (!ReadFile(source.handle, original, sizeof(original), &a, NULL) ||
-        !ReadFile(copy.handle, saved, sizeof(saved), &b, NULL)) return GetLastError();
-    if (a != b || memcmp(original, saved, a)) return ERROR_FILE_INVALID;
+    if (!ReadFile(source.handle, buffers->original, sizeof(buffers->original), &a, NULL) ||
+        !ReadFile(copy.handle, buffers->saved, sizeof(buffers->saved), &b, NULL)) return GetLastError();
+    if (a != b || memcmp(buffers->original, buffers->saved, a)) return ERROR_FILE_INVALID;
     if (!a) break;
   }
   LARGE_INTEGER zero = {};
@@ -495,10 +497,11 @@ rotation_result rotate_file(TCHAR *service_name, TCHAR *path, const rotation_opt
   /* Get new filename. */
   FileTimeToSystemTime(&info.ftLastWriteTime, &st);
 
-  TCHAR rotated[PATH_LENGTH];
-  error = rotated_filename(path, rotated, _countof(rotated), &st);
+  text_buffer<PATH_LENGTH> archive;
+  TCHAR *rotated = archive.get();
+  error = rotated ? rotated_filename(path, rotated, archive.size(), &st) : ERROR_NOT_ENOUGH_MEMORY;
   if (error) {
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, service_name, path, _T("rotated_filename()"), rotated, error_string(error));
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, service_name, path, _T("rotated_filename()"), rotated ? rotated : _T(""), error_string(error));
     return rotation_result::failed;
   }
 
@@ -902,8 +905,9 @@ static bool logger_file_size(HANDLE file, ULONGLONG *size) {
 static bool rotate_logger(logger_t *logger, ULONGLONG *size, bool *size_known, int *complained) {
   if (logger_stopping(logger)) return false;
   bool requested = InterlockedCompareExchange(&logger->rotate_online, NSSM_ROTATE_ONLINE, NSSM_ROTATE_ONLINE_ASAP) == NSSM_ROTATE_ONLINE_ASAP;
-  TCHAR rotated[PATH_LENGTH];
-  unsigned long error = rotated_filename(logger->path, rotated, _countof(rotated), NULL);
+  text_buffer<PATH_LENGTH> archive;
+  TCHAR *rotated = archive.get();
+  unsigned long error = rotated ? rotated_filename(logger->path, rotated, archive.size(), NULL) : ERROR_NOT_ENOUGH_MEMORY;
   bool ok = false;
   const TCHAR *function = _T("rotated_filename()");
   if (!error && logger->copy_and_truncate) {
@@ -931,9 +935,9 @@ static bool rotate_logger(logger_t *logger, ULONGLONG *size, bool *size_known, i
     log_event(EVENTLOG_INFORMATION_TYPE, NSSM_EVENT_ROTATED, logger->service_name, logger->path, rotated);
   }
   else {
-    logger->last_rotation_failure = GetTickCount();
+    logger->last_rotation_failure = monotonic_milliseconds();
     logger->rotation_retry_delay = logger->rotation_retry_delay ? (std::min)(60000UL, 2 * logger->rotation_retry_delay) : 1000;
-    if (! (*complained & COMPLAINED_ROTATE)) log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, logger->service_name, logger->path, function, rotated, error_string(error));
+    if (! (*complained & COMPLAINED_ROTATE)) log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, logger->service_name, logger->path, function, rotated ? rotated : _T(""), error_string(error));
     *complained |= COMPLAINED_ROTATE;
   }
   if (requested) {
@@ -1012,7 +1016,7 @@ unsigned long WINAPI log_and_rotate(void *arg) {
       LONG rotation = InterlockedCompareExchange(&logger->rotate_online, 0, 0);
       if (newline && ! InterlockedCompareExchange(&logger->draining, 0, 0) &&
           (rotation == NSSM_ROTATE_ONLINE_ASAP || (rotation == NSSM_ROTATE_ONLINE && logger->size && size >= logger->size &&
-           GetTickCount() - logger->last_rotation_failure >= logger->rotation_retry_delay))) {
+           monotonic_milliseconds() - logger->last_rotation_failure >= logger->rotation_retry_delay))) {
         if (! rotate_logger(logger, &size, &size_known, &complained)) return finish_logger(logger, 4);
       }
     }

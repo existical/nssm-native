@@ -122,11 +122,9 @@ static int setting_set_string(const TCHAR *service_name, void *param, const TCHA
 
 static int setting_get_string(const TCHAR *service_name, void *param, const TCHAR *name, void *default_value, value_t *value, const TCHAR *additional) {
   HKEY key = (HKEY) param;
-  TCHAR buffer[CMD_LENGTH];
-
-  if (get_string(key, (TCHAR *) name, (TCHAR *) buffer, (unsigned long) sizeof(buffer), false, false, false)) return -1;
-
-  return value_from_string(name, value, buffer);
+  text_buffer<CMD_LENGTH> buffer;
+  if (!buffer.get() || get_string(key, (TCHAR *) name, buffer.get(), buffer.bytes(), false, false, false)) return -1;
+  return value_from_string(name, value, buffer.get());
 }
 
 static int setting_not_dumpable(const TCHAR *service_name, void *param, const TCHAR *name, void *default_value, value_t *value, const TCHAR *additional) {
@@ -134,42 +132,38 @@ static int setting_not_dumpable(const TCHAR *service_name, void *param, const TC
 }
 
 static int setting_dump_string(const TCHAR *service_name, unsigned long type, const TCHAR *name, const value_t *value, const TCHAR *additional) {
-  TCHAR quoted_service_name[SERVICE_NAME_LENGTH * 2];
-  TCHAR quoted_value[VALUE_LENGTH * 2];
-  TCHAR quoted_additional[VALUE_LENGTH * 2];
-  TCHAR quoted_nssm[EXE_LENGTH * 2];
-
-  if (quote(service_name, quoted_service_name, _countof(quoted_service_name))) return 1;
-
-  if (additional) {
-    if (_tcslen(additional)) {
-      if (quote(additional, quoted_additional, _countof(quoted_additional))) return 3;
-    }
-  else _sntprintf_s(quoted_additional, _countof(quoted_additional), _TRUNCATE, _T("\"\""));
+  struct arguments {
+    TCHAR service[SERVICE_NAME_LENGTH * 2], executable[EXE_LENGTH * 2];
+    TCHAR value[VALUE_LENGTH * 2], additional[VALUE_LENGTH * 2];
+  };
+  std::unique_ptr<arguments> args(new (std::nothrow) arguments);
+  if (!args || quote(service_name, args->service, _countof(args->service))) return 1;
+  if (additional && *additional) {
+    if (quote(additional, args->additional, _countof(args->additional))) return 3;
   }
-  else quoted_additional[0] = _T('\0');
+  else _tcscpy_s(args->additional, additional ? _T("\"\"") : _T(""));
 
   if (is_string_type(type)) {
-    if (_tcslen(value->string)) {
-      if (quote(value->string, quoted_value, _countof(quoted_value))) return 2;
+    if (*value->string) {
+      if (quote(value->string, args->value, _countof(args->value))) return 2;
     }
-    else _sntprintf_s(quoted_value, _countof(quoted_value), _TRUNCATE, _T("\"\""));
+    else _tcscpy_s(args->value, _T("\"\""));
   }
-  else if (is_numeric_type(type)) _sntprintf_s(quoted_value, _countof(quoted_value), _TRUNCATE, _T("%lu"), value->numeric);
+  else if (is_numeric_type(type)) _stprintf_s(args->value, _T("%lu"), value->numeric);
   else return 2;
 
-  if (quote(nssm_exe(), quoted_nssm, _countof(quoted_nssm))) return 3;
+  if (quote(nssm_exe(), args->executable, _countof(args->executable))) return 3;
   int written;
-  if (*quoted_additional) written = _tprintf(_T("%s set %s %s %s %s\n"), quoted_nssm, quoted_service_name, name, quoted_additional, quoted_value);
-  else written = _tprintf(_T("%s set %s %s %s\n"), quoted_nssm, quoted_service_name, name, quoted_value);
+  if (additional) written = _tprintf(_T("%s set %s %s %s %s\n"), args->executable, args->service, name, args->additional, args->value);
+  else written = _tprintf(_T("%s set %s %s %s\n"), args->executable, args->service, name, args->value);
   return written < 0;
 }
 
 /* Restore literal launch/I/O values with an explicit setter after install. */
 static int dump_launch_string(const TCHAR *service_name, void *param, const TCHAR *name, void *, value_t *, const TCHAR *) {
-  TCHAR buffer[CMD_LENGTH];
+  text_buffer<CMD_LENGTH> buffer;
   DWORD type = REG_NONE;
-  if (get_string((HKEY) param, (TCHAR *) name, buffer, sizeof(buffer), false, false, false, &type)) return 1;
+  if (!buffer.get() || get_string((HKEY) param, (TCHAR *) name, buffer.get(), buffer.bytes(), false, false, false, &type)) return 1;
   /* Install derives a directory from the raw application path. Clear that
      derived value when the source used the runtime directory fallback. */
   if (type == REG_NONE) {
@@ -180,7 +174,7 @@ static int dump_launch_string(const TCHAR *service_name, void *param, const TCHA
   TCHAR selector[64];
   if (_sntprintf_s(selector, _countof(selector), _TRUNCATE, _T("%s%s"), type == REG_SZ ? _T("REG_SZ:") : _T(""), name) < 0) return 1;
   value_t value;
-  value.string = buffer;
+  value.string = buffer.get();
   return setting_dump_string(service_name, type, selector, &value, NULL);
 }
 
@@ -314,15 +308,17 @@ static int setting_get_hook(const TCHAR *service_name, void *param, const TCHAR 
   TCHAR hook_action[HOOK_NAME_LENGTH];
   if (! split_hook_name(additional, hook_event, hook_action)) return -1;
 
-  TCHAR cmd[CMD_LENGTH];
-  if (get_hook(service_name, hook_event, hook_action, cmd, sizeof(cmd), false)) return -1;
-  return value_from_string(name, value, cmd);
+  text_buffer<CMD_LENGTH> cmd;
+  if (!cmd.get() || get_hook(service_name, hook_event, hook_action, cmd.get(), cmd.bytes(), false)) return -1;
+  return value_from_string(name, value, cmd.get());
 }
 
 static int setting_dump_hooks(const TCHAR *service_name, void *param, const TCHAR *name, void *default_value, value_t *value, const TCHAR *additional) {
   const dump_context_t *context = (const dump_context_t *) default_value;
   int i, j;
 
+  text_buffer<CMD_LENGTH> cmd;
+  if (!cmd.get()) return -1;
   int errors = 0;
   for (i = 0; hook_event_strings[i]; i++) {
     const TCHAR *hook_event = hook_event_strings[i];
@@ -330,18 +326,17 @@ static int setting_dump_hooks(const TCHAR *service_name, void *param, const TCHA
       const TCHAR *hook_action = hook_action_strings[j];
       if (! valid_hook_name(hook_event, hook_action, true)) continue;
 
-      TCHAR cmd[CMD_LENGTH];
       DWORD type = REG_EXPAND_SZ;
-      if (get_hook(context->source_name, hook_event, hook_action, cmd, sizeof(cmd), false, &type)) {
+      if (get_hook(context->source_name, hook_event, hook_action, cmd.get(), cmd.bytes(), false, &type)) {
         errors++;
         continue;
       }
-      if (! *cmd) continue;
+      if (! *cmd.get()) continue;
       TCHAR hook_name[HOOK_NAME_LENGTH];
       _sntprintf_s(hook_name, _countof(hook_name), _TRUNCATE, _T("%s%s/%s"),
                    type == REG_SZ ? _T("REG_SZ:") : _T(""), hook_event, hook_action);
       value_t entry = {};
-      entry.string = cmd;
+      entry.string = cmd.get();
       if (setting_dump_string(service_name, REG_SZ, name, &entry, hook_name)) errors++;
     }
   }
@@ -896,10 +891,10 @@ int native_get_description(const TCHAR *service_name, void *param, const TCHAR *
   SC_HANDLE service_handle = (SC_HANDLE) param;
   if (! service_handle) return -1;
 
-  TCHAR buffer[VALUE_LENGTH];
-  if (get_service_description(service_name, service_handle, _countof(buffer), buffer)) return -1;
+  text_buffer<VALUE_LENGTH> buffer;
+  if (!buffer.get() || get_service_description(service_name, service_handle, buffer.size(), buffer.get())) return -1;
 
-  if (buffer[0]) return value_from_string(name, value, buffer);
+  if (*buffer.get()) return value_from_string(name, value, buffer.get());
   value->string = 0;
 
   return 0;

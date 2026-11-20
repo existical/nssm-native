@@ -27,7 +27,7 @@ typedef struct logger_t {
   HANDLE read_handle;
   HANDLE write_handle;
   ULONGLONG size;
-  DWORD last_rotation_failure;
+  ULONGLONG last_rotation_failure;
   DWORD rotation_retry_delay;
   bool timestamp_log;
   __int64 line_length;

@@ -30,6 +30,7 @@
 #define NSSM_ROTATE_ONLINE_ASAP 2
 
 struct logger_t;
+struct completed_wait_t;
 
 typedef struct {
   bool native;
@@ -103,6 +104,7 @@ typedef struct {
   HANDLE process_handle;
   unsigned long pid;
   HANDLE wait_handle;
+  completed_wait_t *retiring_waits;
   unsigned long exitcode;
   bool stopping;
   volatile LONG allow_restart;

@@ -2,15 +2,19 @@
 
 static unsigned long cp;
 
-void setup_utf8(bool console) {
+bool setup_utf8(bool console) {
 #ifdef UNICODE
   if (console) {
     cp = GetConsoleOutputCP();
-    SetConsoleOutputCP(CP_UTF8);
+    if (!cp || !SetConsoleOutputCP(CP_UTF8)) return false;
   }
-  /* A headless management process can still have redirected output. */
-  if (_fileno(stdout) >= 0) _setmode(_fileno(stdout), _O_U8TEXT);
-  if (_fileno(stderr) >= 0) _setmode(_fileno(stderr), _O_U8TEXT);
+  // A detached service can have no streams. Redirected CLI streams still need UTF-8.
+  int out = _fileno(stdout), err = _fileno(stderr);
+  bool stdout_ready = out < 0 || _setmode(out, _O_U8TEXT) != -1;
+  bool stderr_ready = err < 0 || _setmode(err, _O_U8TEXT) != -1;
+  return stdout_ready && stderr_ready;
+#else
+  return true;
 #endif
 }
 

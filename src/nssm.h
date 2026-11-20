@@ -46,6 +46,7 @@
 #include <shlwapi.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include "text_buffer.h"
 #include "utf8.h"
 #include "service.h"
 #include "account.h"
@@ -75,6 +76,7 @@ int str_number(const TCHAR *, unsigned long *);
 /* System mask in the API's current/primary group; zero when unavailable. */
 DWORD_PTR cpu_affinity_mask();
 int num_cpus();
+ULONGLONG monotonic_milliseconds();
 int usage(int);
 const TCHAR *nssm_unquoted_imagepath();
 const TCHAR *nssm_imagepath();

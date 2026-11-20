@@ -1,4 +1,5 @@
 #include "nssm.h"
+#include <chrono>
 #include <errno.h>
 
 extern bool is_admin;
@@ -234,6 +235,11 @@ DWORD_PTR cpu_affinity_mask() {
   return system_affinity;
 }
 
+ULONGLONG monotonic_milliseconds() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
 int num_cpus() {
   int count = 0;
   for (DWORD_PTR mask = cpu_affinity_mask(); mask; mask >>= 1) count += (int) (mask & 1);
@@ -253,7 +259,10 @@ const TCHAR *nssm_exe() {
 }
 
 int _tmain(int argc, TCHAR **argv) {
-  setup_utf8(check_console());
+  if (!setup_utf8(check_console())) {
+    _fputts(_T("Unable to configure UTF-8 output.\n"), stderr);
+    nssm_exit(1);
+  }
 
   /* Remember if we are admin */
   check_admin();

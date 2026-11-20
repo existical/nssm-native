@@ -4,6 +4,17 @@
 #include "gui_fixture.h"
 #include "dependency_fixture.h"
 namespace wait_test {
+static bool fail_hook_lock;
+static nssm_service_t *registered;
+static SERVICE_STATUS initial_failure;
+static BOOL WINAPI initialize_lock(LPCRITICAL_SECTION lock, DWORD spin) {
+  return !fail_hook_lock && InitializeCriticalSectionAndSpinCount(lock, spin);
+}
+static SERVICE_STATUS_HANDLE WINAPI register_handler(LPCTSTR name, LPHANDLER_FUNCTION_EX handler, void *context) {
+  if (!fail_hook_lock) return RegisterServiceCtrlHandlerEx(name, handler, context);
+  registered = static_cast<nssm_service_t *>(context);
+  return reinterpret_cast<SERVICE_STATUS_HANDLE>(context);
+}
 static bool active;
 static std::vector<DWORD> requests, results;
 static unsigned statuses;
@@ -14,6 +25,7 @@ static DWORD WINAPI wait(HANDLE h, DWORD timeout) {
   return results[requests.size() - 1];
 }
 static BOOL WINAPI status(SERVICE_STATUS_HANDLE h, LPSERVICE_STATUS value) {
+  if (fail_hook_lock) { initial_failure = *value; return TRUE; }
   if (! active) return launch_test::status(h, value);
   statuses++; return TRUE;
 }
@@ -28,6 +40,25 @@ static DWORD elapsed, clock_origin, query_failure_at, start_error;
 static unsigned queries, closes;
 static bool start_ok, progressing, changing_hint;
 static bool export_access;
+static bool fail_name, test_config;
+static std::wstring description;
+static DWORD config_error;
+static BOOL WINAPI config2(SC_HANDLE h, DWORD level, LPBYTE buffer, DWORD capacity, LPDWORD needed) {
+  if (!test_config) return QueryServiceConfig2(h, level, buffer, capacity, needed);
+  if (config_error) { SetLastError(config_error); return FALSE; }
+  if (level == SERVICE_CONFIG_DELAYED_AUTO_START_INFO) {
+    REQUIRE(capacity == sizeof(SERVICE_DELAYED_AUTO_START_INFO));
+    reinterpret_cast<SERVICE_DELAYED_AUTO_START_INFO *>(buffer)->fDelayedAutostart = TRUE;
+    return TRUE;
+  }
+  REQUIRE(level == SERVICE_CONFIG_DESCRIPTION && capacity >= sizeof(SERVICE_DESCRIPTION));
+  SERVICE_DESCRIPTION *record = reinterpret_cast<SERVICE_DESCRIPTION *>(buffer);
+  *needed = sizeof(*record) + static_cast<DWORD>((description.size() + 1) * sizeof(TCHAR));
+  if (capacity < *needed) { SetLastError(ERROR_INSUFFICIENT_BUFFER); return FALSE; }
+  record->lpDescription = description.empty() ? NULL : reinterpret_cast<TCHAR *>(record + 1);
+  if (record->lpDescription) memcpy(record->lpDescription, description.c_str(), *needed - sizeof(*record));
+  return TRUE;
+}
 static DWORD requested_access;
 static DWORD requested_manager_access;
 static std::vector<void *> export_objects;
@@ -77,6 +108,7 @@ static SC_HANDLE WINAPI open_service(SC_HANDLE, LPCTSTR value, DWORD access) {
 }
 static BOOL WINAPI name(SC_HANDLE, LPCTSTR value, LPTSTR output, LPDWORD length) {
   if (dependency_test::active) return dependency_test::name(value, output, length);
+  if (fail_name) { output[0] = 0; SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
   return _tcscpy_s(output, *length, _T("NSSM-Test-Startup")) == 0;
 }
 static BOOL WINAPI start(SC_HANDLE handle, DWORD, const TCHAR **) {
@@ -123,7 +155,7 @@ static BOOL WINAPI close(SC_HANDLE handle) {
   closes++;
   return TRUE;
 }
-static DWORD WINAPI ticks() { return clock_origin + elapsed; }
+static ULONGLONG ticks() { return (ULONGLONG)clock_origin + elapsed; }
 static void WINAPI sleep(DWORD milliseconds) {
   CHECK(milliseconds > 0 && milliseconds <= 1000);
   elapsed += milliseconds;
@@ -163,8 +195,10 @@ static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
 #define QueryServiceStatus scm::query
 #undef QueryServiceConfig
 #define QueryServiceConfig dependency_test::query
+#undef QueryServiceConfig2
+#define QueryServiceConfig2 scm::config2
 #define CloseServiceHandle scm::close
-#define GetTickCount scm::ticks
+#define monotonic_milliseconds scm::ticks
 #define Sleep scm::sleep
 #define HeapAlloc service_allocate
 #define HeapFree service_release
@@ -181,7 +215,7 @@ static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
 #define CloseHandle launch_test::close
 #define DuplicateHandle launch_test::duplicate
 #define RegisterWaitForSingleObject launch_test::register_wait
-#define UnregisterWait launch_test::unregister_wait
+#define UnregisterWaitEx launch_test::unregister_wait
 #define WaitForMultipleObjects launch_test::wait_multiple
 #define WaitForSingleObject wait_test::wait
 #define ResumeThread launch_test::resume
@@ -189,6 +223,9 @@ static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
 #define GetProcessAffinityMask launch_test::affinity
 #define SetProcessAffinityMask launch_test::set_affinity
 #define SetServiceStatus wait_test::status
+#undef RegisterServiceCtrlHandlerEx
+#define RegisterServiceCtrlHandlerEx wait_test::register_handler
+#define InitializeCriticalSectionAndSpinCount wait_test::initialize_lock
 #define FreeConsole launch_test::free_console
 #define get_exit_action launch_test::exit_action
 #define get_parameters launch_test::parameters
@@ -205,11 +242,13 @@ static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
 #include "../src/service.cpp"
 #undef QueryServiceConfig
 #define QueryServiceConfig QueryServiceConfigW
+#undef QueryServiceConfig2
+#define QueryServiceConfig2 QueryServiceConfig2W
 #undef CreateProcess
 #undef CloseHandle
 #undef DuplicateHandle
 #undef RegisterWaitForSingleObject
-#undef UnregisterWait
+#undef UnregisterWaitEx
 #undef WaitForSingleObject
 #undef WaitForMultipleObjects
 #undef ResumeThread
@@ -217,6 +256,8 @@ static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
 #undef GetProcessAffinityMask
 #undef SetProcessAffinityMask
 #undef SetServiceStatus
+#undef RegisterServiceCtrlHandlerEx
+#undef InitializeCriticalSectionAndSpinCount
 #undef FreeConsole
 #undef get_parameters
 #undef get_exit_action
@@ -245,7 +286,7 @@ static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
 #undef ControlService
 #undef QueryServiceStatus
 #undef CloseServiceHandle
-#undef GetTickCount
+#undef monotonic_milliseconds
 #undef Sleep
 
 #undef EnumServicesStatusEx
@@ -253,6 +294,31 @@ static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
 #include "control_waits_cases.h"
 
 void test_export_access() {
+  TCHAR key[] = _T("Original key"), output[20] = _T("untouched");
+  scm::fail_name = true;
+  CHECK(open_service(scm::manager_handle, key, DELETE, key, _countof(key)) == scm::service_handle);
+  CHECK(!_tcscmp(key, _T("Original key")));
+  CHECK(!open_service(scm::manager_handle, key, DELETE, output, _countof(output)));
+  CHECK(GetLastError() == ERROR_ACCESS_DENIED && !_tcscmp(output, _T("untouched")));
+  scm::fail_name = false;
+  scm::test_config = true;
+  scm::description.clear();
+  CHECK(!get_service_description(key, scm::service_handle, _countof(output), output) && !output[0]);
+  scm::description.assign(4000, L'x');
+  std::vector<TCHAR> description(scm::description.size() + 1);
+  CHECK(!get_service_description(key, scm::service_handle, (DWORD)description.size(), description.data()));
+  CHECK(scm::description == description.data());
+  CHECK(get_service_description(key, scm::service_handle, _countof(output), output) && !output[0]);
+  QUERY_SERVICE_CONFIG config = {};
+  config.dwStartType = SERVICE_AUTO_START;
+  DWORD startup;
+  CHECK(!get_service_startup(key, scm::service_handle, &config, &startup) && startup == NSSM_STARTUP_DELAYED);
+  scm::config_error = ERROR_INVALID_LEVEL;
+  CHECK(!get_service_startup(key, scm::service_handle, &config, &startup) && startup == NSSM_STARTUP_AUTOMATIC);
+  scm::config_error = ERROR_ACCESS_DENIED;
+  CHECK(get_service_startup(key, scm::service_handle, &config, &startup));
+  scm::config_error = 0;
+  scm::test_config = false;
   TCHAR *all[] = {_T("all")};
   for (scm::inventory listing : {scm::inventory::empty, scm::inventory::pages, scm::inventory::stalled, scm::inventory::denied}) {
     scm::listing = listing;
@@ -330,6 +396,15 @@ static int run_start() {
 }
 
 void test_startup() {
+  TCHAR *name[] = {_T("NSSM-Lock-Test")};
+  wait_test::fail_hook_lock = true;
+  service_main(1, name);
+  REQUIRE(wait_test::registered);
+  CHECK(!wait_test::registered->hook_section_initialised && wait_test::initial_failure.dwCurrentState == SERVICE_STOPPED);
+  CHECK(wait_test::initial_failure.dwWin32ExitCode == ERROR_NOT_ENOUGH_MEMORY);
+  cleanup_nssm_service(wait_test::registered);
+  wait_test::registered = NULL;
+  wait_test::fail_hook_lock = false;
   registry_fixture registry;
   // An early CLI poll sees the SCM's initial two-second hint. The wrapper's
   // first report must advance that checkpoint even if no child exists yet.

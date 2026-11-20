@@ -458,7 +458,12 @@ unsigned long kill_process_tree(kill_t *k, unsigned long ppid) {
 }
 
 int print_process(nssm_service_t *service, kill_t *k) {
-  TCHAR exe[EXE_LENGTH];
+  text_buffer<EXE_LENGTH> image;
+  if (!image.get()) {
+    _tprintf(_T("% 8lu ???\n"), k->pid);
+    return 1;
+  }
+  TCHAR *exe = image.get();
   TCHAR *buffer = 0;
   if (k->depth) {
     buffer = (TCHAR *) HeapAlloc(GetProcessHeap(), 0, (k->depth + 1) * sizeof(TCHAR));
@@ -469,15 +474,15 @@ int print_process(nssm_service_t *service, kill_t *k) {
     }
   }
 
-  unsigned long size = _countof(exe);
+  unsigned long size = image.size();
   if (! imports.QueryFullProcessImageName || ! imports.QueryFullProcessImageName(k->process_handle, 0, exe, &size)) {
     /*
       Fall back to GetModuleFileNameEx(), which won't work for WOW64 processes.
     */
-    if (! GetModuleFileNameEx(k->process_handle, NULL, exe, _countof(exe))) {
+    if (! GetModuleFileNameEx(k->process_handle, NULL, exe, image.size())) {
       long error = GetLastError();
-      if (error == ERROR_PARTIAL_COPY) _sntprintf_s(exe, _countof(exe), _TRUNCATE, _T("[WOW64]"));
-      else _sntprintf_s(exe, _countof(exe), _TRUNCATE, _T("???"));
+      if (error == ERROR_PARTIAL_COPY) _sntprintf_s(exe, image.size(), _TRUNCATE, _T("[WOW64]"));
+      else _sntprintf_s(exe, image.size(), _TRUNCATE, _T("???"));
     }
   }
 

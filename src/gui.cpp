@@ -1125,7 +1125,8 @@ void browse(HWND window, TCHAR *current, unsigned long flags, ...) {
     ofn.nMaxFile = DIR_LENGTH;
   }
   else {
-    _sntprintf_s(ofn.lpstrFile, PATH_LENGTH, _TRUNCATE, _T("%s"), current);
+    if (current) _sntprintf_s(ofn.lpstrFile, PATH_LENGTH, _TRUNCATE, _T("%s"), current);
+    else if (!GetWindowText(window, ofn.lpstrFile, PATH_LENGTH)) ofn.lpstrFile[0] = 0;
     ofn.nMaxFile = PATH_LENGTH;
   }
   gui_message title(NSSM_GUI_BROWSE_TITLE);
@@ -1138,6 +1139,14 @@ void browse(HWND window, TCHAR *current, unsigned long flags, ...) {
   HeapFree(GetProcessHeap(), 0, ofn.lpstrFile);
 }
 
+static void fill_browse_default(HWND tab, int source, int destination, bool directory) {
+  if (GetWindowTextLength(GetDlgItem(tab, destination))) return;
+  text_buffer<PATH_LENGTH> path;
+  if (!path.get() || !read_edit_text(tab, source, path.get(), path.size())) return;
+  if (directory) strip_basename(path.get());
+  SetDlgItemText(tab, destination, path.get());
+}
+
 INT_PTR CALLBACK tab_dlg(HWND tab, UINT message, WPARAM w, LPARAM l) {
   switch (message) {
     case WM_INITDIALOG:
@@ -1146,29 +1155,20 @@ INT_PTR CALLBACK tab_dlg(HWND tab, UINT message, WPARAM w, LPARAM l) {
     /* Button was pressed or control was controlled. */
     case WM_COMMAND:
       HWND dlg;
-      TCHAR buffer[PATH_LENGTH];
       unsigned char enabled;
 
       switch (LOWORD(w)) {
         /* Browse for application. */
         case IDC_BROWSE:
           dlg = GetDlgItem(tab, IDC_PATH);
-          GetDlgItemText(tab, IDC_PATH, buffer, _countof(buffer));
-          browse(dlg, buffer, OFN_FILEMUSTEXIST, NSSM_GUI_BROWSE_FILTER_APPLICATIONS, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
-          /* Fill in startup directory if it wasn't already specified. */
-          GetDlgItemText(tab, IDC_DIR, buffer, _countof(buffer));
-          if (! buffer[0]) {
-            GetDlgItemText(tab, IDC_PATH, buffer, _countof(buffer));
-            strip_basename(buffer);
-            SetDlgItemText(tab, IDC_DIR, buffer);
-          }
+          browse(dlg, NULL, OFN_FILEMUSTEXIST, NSSM_GUI_BROWSE_FILTER_APPLICATIONS, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
+          fill_browse_default(tab, IDC_PATH, IDC_DIR, true);
           break;
 
         /* Browse for startup directory. */
         case IDC_BROWSE_DIR:
           dlg = GetDlgItem(tab, IDC_DIR);
-          GetDlgItemText(tab, IDC_DIR, buffer, _countof(buffer));
-          browse(dlg, buffer, OFN_NOVALIDATE, NSSM_GUI_BROWSE_FILTER_DIRECTORIES, 0);
+          browse(dlg, NULL, OFN_NOVALIDATE, NSSM_GUI_BROWSE_FILTER_DIRECTORIES, 0);
           break;
 
         /* Log on. */
@@ -1211,28 +1211,20 @@ INT_PTR CALLBACK tab_dlg(HWND tab, UINT message, WPARAM w, LPARAM l) {
         /* Browse for stdin. */
         case IDC_BROWSE_STDIN:
           dlg = GetDlgItem(tab, IDC_STDIN);
-          GetDlgItemText(tab, IDC_STDIN, buffer, _countof(buffer));
-          browse(dlg, buffer, 0, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
+          browse(dlg, NULL, 0, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
           break;
 
         /* Browse for stdout. */
         case IDC_BROWSE_STDOUT:
           dlg = GetDlgItem(tab, IDC_STDOUT);
-          GetDlgItemText(tab, IDC_STDOUT, buffer, _countof(buffer));
-          browse(dlg, buffer, 0, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
-          /* Fill in stderr if it wasn't already specified. */
-          GetDlgItemText(tab, IDC_STDERR, buffer, _countof(buffer));
-          if (! buffer[0]) {
-            GetDlgItemText(tab, IDC_STDOUT, buffer, _countof(buffer));
-            SetDlgItemText(tab, IDC_STDERR, buffer);
-          }
+          browse(dlg, NULL, 0, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
+          fill_browse_default(tab, IDC_STDOUT, IDC_STDERR, false);
           break;
 
         /* Browse for stderr. */
         case IDC_BROWSE_STDERR:
           dlg = GetDlgItem(tab, IDC_STDERR);
-          GetDlgItemText(tab, IDC_STDERR, buffer, _countof(buffer));
-          browse(dlg, buffer, 0, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
+          browse(dlg, NULL, 0, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
           break;
 
         /* Rotation. */
@@ -1255,7 +1247,6 @@ INT_PTR CALLBACK tab_dlg(HWND tab, UINT message, WPARAM w, LPARAM l) {
         /* Browse for hook. */
         case IDC_BROWSE_HOOK:
           dlg = GetDlgItem(tab, IDC_HOOK);
-          GetDlgItemText(tab, IDC_HOOK, buffer, _countof(buffer));
           browse(dlg, _T(""), OFN_FILEMUSTEXIST, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
           break;
 

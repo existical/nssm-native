@@ -3,6 +3,24 @@
 #include <mutex>
 #include "event_capture.h"
 
+namespace stream_mode_test {
+static bool active;
+static int out_fd, err_fd, failed_fd, attempts;
+static int descriptor(FILE *stream) { return active ? (stream == stdout ? out_fd : err_fd) : _fileno(stream); }
+static int set_mode(int fd, int mode) {
+  if (!active) return _setmode(fd, mode);
+  CHECK(mode == _O_U8TEXT);
+  attempts++;
+  return fd == failed_fd ? -1 : _O_TEXT;
+}
+}
+
+#define _fileno stream_mode_test::descriptor
+#define _setmode stream_mode_test::set_mode
+#include "../src/utf8.cpp"
+#undef _setmode
+#undef _fileno
+
 namespace event_test {
 bool active;
 std::vector<record> records;
@@ -147,7 +165,24 @@ void test_event_insertions() {
   test_launch_events(); test_pipe_events();
 }
 
+static void test_stream_modes() {
+  using namespace stream_mode_test;
+  active = true;
+  out_fd = 1; err_fd = 2;
+  for (failed_fd = 0; failed_fd <= 2; ++failed_fd) {
+    attempts = 0;
+    CHECK(setup_utf8(false) == (failed_fd == 0));
+    CHECK(attempts == 2);
+  }
+  attempts = 0; out_fd = err_fd = -2;
+  CHECK(setup_utf8(false) && !attempts);
+  out_fd = 1;
+  CHECK(setup_utf8(false) && attempts == 1);
+  active = false;
+}
+
 void test_error_messages() {
+  test_stream_modes();
   using namespace message_test;
   error_buffer.clear();
   active = true;
