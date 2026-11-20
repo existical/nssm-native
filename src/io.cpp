@@ -328,21 +328,32 @@ HANDLE write_to_file(TCHAR *path, unsigned long sharing, SECURITY_ATTRIBUTES *at
   return ret;
 }
 
-static void rotated_filename(TCHAR *path, TCHAR *rotated, unsigned long rotated_len, SYSTEMTIME *st) {
+static DWORD rotated_filename(const TCHAR *path, TCHAR *rotated, size_t capacity, const SYSTEMTIME *st) {
   SYSTEMTIME now;
-  if (! st) {
+  if (!st) {
+    GetSystemTime(&now);
     st = &now;
-    GetSystemTime(st);
+  }
+  TCHAR stamp[40];
+  int stamp_length = _sntprintf_s(stamp, _countof(stamp), _TRUNCATE, _T("-%04u%02u%02uT%02u%02u%02u.%03u"),
+      st->wYear, st->wMonth, st->wDay, st->wHour, st->wMinute, st->wSecond, st->wMilliseconds);
+  size_t length = _tcslen(path);
+  if (stamp_length < 0 || length >= capacity || (size_t) stamp_length >= capacity - length) {
+    if (capacity) rotated[0] = 0;
+    return ERROR_FILENAME_EXCED_RANGE;
   }
 
-  TCHAR buffer[PATH_LENGTH];
-  _tcsncpy_s(buffer, path, _TRUNCATE);
-  buffer[_countof(buffer) - 1] = 0;
-  TCHAR *ext = PathFindExtension(buffer);
-  TCHAR extension[PATH_LENGTH];
-  _sntprintf_s(extension, _countof(extension), _TRUNCATE, _T("-%04u%02u%02uT%02u%02u%02u.%03u%s"), st->wYear, st->wMonth, st->wDay, st->wHour, st->wMinute, st->wSecond, st->wMilliseconds, ext);
-  *ext = _T('\0');
-  _sntprintf_s(rotated, rotated_len, _TRUNCATE, _T("%s%s"), buffer, extension);
+  // Match the shell's extension rule for spaces, including on extended paths.
+  size_t extension = length;
+  for (size_t i = length; i; i--) {
+    TCHAR ch = path[i - 1];
+    if (ch == _T(' ') || ch == _T('\\') || ch == _T('/')) break;
+    if (ch == _T('.')) { extension = i - 1; break; }
+  }
+  memcpy(rotated, path, extension * sizeof(TCHAR));
+  memcpy(rotated + extension, stamp, stamp_length * sizeof(TCHAR));
+  memcpy(rotated + extension + stamp_length, path + extension, (length - extension + 1) * sizeof(TCHAR));
+  return ERROR_SUCCESS;
 }
 
 /* Pin the directory entry while copying. The later write reservation also
@@ -485,7 +496,11 @@ rotation_result rotate_file(TCHAR *service_name, TCHAR *path, const rotation_opt
   FileTimeToSystemTime(&info.ftLastWriteTime, &st);
 
   TCHAR rotated[PATH_LENGTH];
-  rotated_filename(path, rotated, _countof(rotated), &st);
+  error = rotated_filename(path, rotated, _countof(rotated), &st);
+  if (error) {
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, service_name, path, _T("rotated_filename()"), rotated, error_string(error));
+    return rotation_result::failed;
+  }
 
   /* Rotate. */
   bool ok = true;
@@ -888,11 +903,10 @@ static bool rotate_logger(logger_t *logger, ULONGLONG *size, bool *size_known, i
   if (logger_stopping(logger)) return false;
   bool requested = InterlockedCompareExchange(&logger->rotate_online, NSSM_ROTATE_ONLINE, NSSM_ROTATE_ONLINE_ASAP) == NSSM_ROTATE_ONLINE_ASAP;
   TCHAR rotated[PATH_LENGTH];
-  rotated_filename(logger->path, rotated, _countof(rotated), NULL);
+  unsigned long error = rotated_filename(logger->path, rotated, _countof(rotated), NULL);
   bool ok = false;
-  const TCHAR *function = _T("MoveFile()");
-  unsigned long error = ERROR_SUCCESS;
-  if (logger->copy_and_truncate) {
+  const TCHAR *function = _T("rotated_filename()");
+  if (!error && logger->copy_and_truncate) {
     rotation_options_t options = {};
     options.delay_ms = logger->rotate_delay;
     options.stop_event = logger->stop_event;
@@ -900,7 +914,8 @@ static bool rotate_logger(logger_t *logger, ULONGLONG *size, bool *size_known, i
     if (error == ERROR_CANCELLED) return false;
     ok = error == ERROR_SUCCESS;
   }
-  else {
+  else if (!error) {
+    function = _T("MoveFile()");
     close_handle(&logger->write_handle);
     ok = MoveFile(logger->path, rotated) != FALSE;
     if (!ok) error = GetLastError();

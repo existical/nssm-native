@@ -845,13 +845,16 @@ int get_parameters(nssm_service_t *service, STARTUPINFO *si) {
   }
 
   int directory_error = get_string(key, NSSM_REG_DIR, service->dir, sizeof(service->dir), expand, expand, false);
-  if (directory_error && !si) {
+  if (directory_error) {
     RegCloseKey(key);
     return 4;
   }
-  if (si && (directory_error || !service->dir[0])) {
-    _sntprintf_s(service->dir, _countof(service->dir), _TRUNCATE, _T("%s"), service->exe);
-    strip_basename(service->dir);
+  if (si && !service->dir[0]) {
+    if (!executable_directory(service->exe, service->dir, _countof(service->dir))) {
+      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_NO_DIR_AND_NO_FALLBACK, NSSM_REG_DIR, service->name);
+      RegCloseKey(key);
+      return 4;
+    }
     if (service->dir[0] == _T('\0')) {
       /* Help! */
       ret = GetWindowsDirectory(service->dir, _countof(service->dir));

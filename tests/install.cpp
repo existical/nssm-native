@@ -76,6 +76,12 @@ void test_install_ownership() {
   install_test::reset(0);
   CHECK(pre_install_service(3, long_args) == 2);
   install_test::finish();
+  for (std::wstring exe : {std::wstring(EXE_LENGTH, L'x'), std::wstring(DIR_LENGTH, L'd') + L"\\tool"}) {
+    TCHAR *invalid[] = {args[0], &exe[0]};
+    install_test::reset(0);
+    CHECK(pre_install_service(2, invalid) == 2);
+    install_test::finish();
+  }
   std::basic_string<TCHAR> oversized(SERVICE_NAME_LENGTH, _T('x'));
   TCHAR *remove_args[] = {&oversized[0], _T("confirm")};
   CHECK(pre_remove_service(2, remove_args) == 2);

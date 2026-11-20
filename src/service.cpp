@@ -893,7 +893,11 @@ int pre_install_service(int argc, TCHAR **argv) {
   /* Show the dialogue box if we didn't give the service name and path */
   if (argc < 2) return nssm_gui(IDD_INSTALL, service);
 
-  _sntprintf_s(service->exe, _countof(service->exe), _TRUNCATE, _T("%s"), argv[1]);
+  if (_sntprintf_s(service->exe, _countof(service->exe), _TRUNCATE, _T("%s"), argv[1]) < 0) {
+    print_message(stderr, NSSM_MESSAGE_PATH_TOO_LONG, NSSM_REG_EXE);
+    cleanup_nssm_service(service);
+    return 2;
+  }
 
   /* Arguments are optional */
   size_t flagslen = 0;
@@ -915,8 +919,11 @@ int pre_install_service(int argc, TCHAR **argv) {
   }
 
   /* Work out directory name */
-  _sntprintf_s(service->dir, _countof(service->dir), _TRUNCATE, _T("%s"), service->exe);
-  strip_basename(service->dir);
+  if (!executable_directory(service->exe, service->dir, _countof(service->dir))) {
+    print_message(stderr, NSSM_MESSAGE_PATH_TOO_LONG, NSSM_REG_DIR);
+    cleanup_nssm_service(service);
+    return 2;
+  }
 
   int ret = install_service(service);
   cleanup_nssm_service(service);
@@ -2412,40 +2419,30 @@ int list_nssm_services(int argc, TCHAR **argv) {
     return 1;
   }
 
-  unsigned long bufsize, required, count, i;
-  unsigned long resume = 0;
-  if (EnumServicesStatusEx(services, SC_ENUM_PROCESS_INFO, SERVICE_WIN32, SERVICE_STATE_ALL, 0, 0, &required, &count, &resume, 0)) {
-    CloseServiceHandle(services);
-    return 0;
-  }
-  unsigned long error = GetLastError();
-  if (error != ERROR_MORE_DATA) {
-    CloseServiceHandle(services);
-    print_message(stderr, NSSM_MESSAGE_ENUMSERVICESSTATUS_FAILED, error_string(error));
-    return 2;
-  }
-
-  ENUM_SERVICE_STATUS_PROCESS *status = (ENUM_SERVICE_STATUS_PROCESS *) HeapAlloc(GetProcessHeap(), 0, required);
+  const DWORD page_bytes = 64 * 1024;
+  ENUM_SERVICE_STATUS_PROCESS *status = (ENUM_SERVICE_STATUS_PROCESS *) HeapAlloc(GetProcessHeap(), 0, page_bytes);
   if (! status) {
     CloseServiceHandle(services);
     print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("ENUM_SERVICE_STATUS_PROCESS"), _T("list_nssm_services()"));
     return 3;
   }
 
-  bufsize = required;
+  DWORD resume = 0;
+  int result = 0;
   while (true) {
-    int ret = EnumServicesStatusEx(services, SC_ENUM_PROCESS_INFO, SERVICE_WIN32, SERVICE_STATE_ALL, (LPBYTE) status, bufsize, &required, &count, &resume, 0);
-    if (! ret) {
-      error = GetLastError();
-      if (error != ERROR_MORE_DATA) {
-        HeapFree(GetProcessHeap(), 0, status);
-        CloseServiceHandle(services);
+    DWORD previous = resume, required = 0, count = 0;
+    BOOL complete = EnumServicesStatusEx(services, SC_ENUM_PROCESS_INFO, SERVICE_WIN32, SERVICE_STATE_ALL,
+        (LPBYTE) status, page_bytes, &required, &count, &resume, NULL);
+    if (!complete) {
+      DWORD error = GetLastError();
+      if (error != ERROR_MORE_DATA || resume == previous) {
         print_message(stderr, NSSM_MESSAGE_ENUMSERVICESSTATUS_FAILED, error_string(error));
-        return 4;
+        result = !previous && error != ERROR_MORE_DATA ? 2 : 4;
+        break;
       }
     }
 
-    for (i = 0; i < count; i++) {
+    for (DWORD i = 0; i < count; i++) {
       const TCHAR *name = status[i].lpServiceName;
       if (!including_native) {
         HKEY key;
@@ -2463,15 +2460,16 @@ int list_nssm_services(int argc, TCHAR **argv) {
         HeapFree(GetProcessHeap(), 0, config);
         if (!managed) continue;
       }
-      _tprintf(_T("%s\n"), name);
+      if (_tprintf(_T("%s\n"), name) < 0) { result = 5; break; }
     }
 
-    if (ret) break;
+    if (complete || result) break;
   }
 
   HeapFree(GetProcessHeap(), 0, status);
   CloseServiceHandle(services);
-  return 0;
+  if (fflush(stdout) || ferror(stdout)) return 5;
+  return result;
 }
 
 int service_process_tree(int argc, TCHAR **argv) {

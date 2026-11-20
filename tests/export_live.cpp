@@ -174,6 +174,7 @@ int wmain(int argc, wchar_t **argv) {
         service_fixture relocated(manager, spaced, L"renamed");
         relocated.configure(argv[1]);
         require(run(argv[1], L"dump " + quoted(relocated.name)).code == 0, "Recognize a separately installed wrapper by version resource");
+        require(run(argv[1], L"list all", true).code != 0, "Report a failed list output write");
         result listed = run(argv[1], L"list");
         require(listed.code == 0 && listed.output.find(relocated.name) != std::wstring::npos &&
                 listed.output.find(native.name) == std::wstring::npos, "List identifies the relocated wrapper and excludes the native service");

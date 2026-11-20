@@ -66,6 +66,7 @@ void nssm_exit(int);
 int str_equiv(const TCHAR *, const TCHAR *);
 /* Non-overlapping strings; capacity in TCHARs including NUL. Failure writes nothing. */
 int quote(const TCHAR *, TCHAR *, size_t);
+bool executable_directory(const TCHAR *, TCHAR *, size_t);
 void strip_basename(TCHAR *);
 /* 0 = complete, 2 = valid prefix with suffix, 1 = invalid/overflow; invalid leaves number unchanged. */
 int str_number(const TCHAR *, unsigned long *, TCHAR **);

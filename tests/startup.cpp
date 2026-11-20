@@ -35,6 +35,29 @@ static int manager_token, service_token;
 static SC_HANDLE manager_handle = reinterpret_cast<SC_HANDLE>(&manager_token);
 static SC_HANDLE service_handle = reinterpret_cast<SC_HANDLE>(&service_token);
 
+enum class inventory { pages, empty, stalled, denied };
+static inventory listing;
+static unsigned pages_read;
+static BOOL WINAPI enumerate(SC_HANDLE manager, SC_ENUM_TYPE, DWORD, DWORD, LPBYTE data, DWORD capacity,
+                             LPDWORD needed, LPDWORD count, LPDWORD resume, LPCTSTR) {
+  REQUIRE(manager == manager_handle && data && capacity <= 64 * 1024);
+  REQUIRE(++pages_read <= 2);
+  *needed = *count = 0;
+  if (listing == inventory::empty) return TRUE;
+  if (listing == inventory::denied) { SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
+  if (listing == inventory::pages) {
+    CHECK(*resume == (pages_read == 1 ? 0U : 71U));
+    *count = 1;
+    reinterpret_cast<ENUM_SERVICE_STATUS_PROCESS *>(data)->lpServiceName =
+        pages_read == 1 ? _T("First service") : _T("Second service");
+    if (pages_read == 2) return TRUE;
+    *resume = 71;
+  }
+  *needed = 300 * 1024;
+  SetLastError(ERROR_MORE_DATA);
+  return FALSE;
+}
+
 static void reset(std::initializer_list<sample> states) {
   samples = states;
   elapsed = clock_origin = queries = closes = start_error = 0;
@@ -129,6 +152,8 @@ static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
 #undef GetServiceDisplayName
 #undef GetServiceKeyName
 #undef StartService
+#undef EnumServicesStatusEx
+#define EnumServicesStatusEx scm::enumerate
 #define OpenSCManager scm::open_manager
 #define OpenService scm::open_service
 #define GetServiceDisplayName scm::name
@@ -223,9 +248,20 @@ static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
 #undef GetTickCount
 #undef Sleep
 
+#undef EnumServicesStatusEx
+
 #include "control_waits_cases.h"
 
 void test_export_access() {
+  TCHAR *all[] = {_T("all")};
+  for (scm::inventory listing : {scm::inventory::empty, scm::inventory::pages, scm::inventory::stalled, scm::inventory::denied}) {
+    scm::listing = listing;
+    scm::pages_read = scm::closes = 0;
+    int result = list_nssm_services(1, all);
+    CHECK((result == 0) == (listing == scm::inventory::empty || listing == scm::inventory::pages));
+    CHECK(scm::pages_read == (listing == scm::inventory::pages ? 2U : 1U));
+    CHECK(scm::closes == 1);
+  }
   scm::export_access = true;
   TCHAR *args[] = {_T("dump"), _T("NSSM-Test-Access"), _T("AppParameters"), _T("value"), NULL};
   const TCHAR *verbs[] = {_T("dump"), _T("get"), _T("set"), _T("reset"), _T("edit")};

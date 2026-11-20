@@ -182,6 +182,8 @@ NSSM requires a nonempty Application. Resetting it fails and retains the executa
 Resetting AppParameters or AppDirectory stores an empty expandable string.
 Resetting AppStdin, AppStdout or AppStderr removes the value. Leaving AppDirectory empty
 in the editor keeps the working directory derived from the expanded application path at startup.
+An unreadable or oversized AppDirectory prevents startup. Check the service event log if
+the configured directory or its expanded value cannot be read.
 
 Use `nssm set MyService AppEnvironment :` to store an explicitly empty replacement
 environment. Resetting AppEnvironment restores inheritance. Dump preserves this distinction

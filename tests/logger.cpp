@@ -107,7 +107,9 @@ static BOOL WINAPI duplicate(HANDLE sp, HANDLE source, HANDLE dp, LPHANDLE dest,
   }
   return DuplicateHandle(sp, source, dp, dest, access, inherit, options);
 }
+static const TCHAR *long_log_alias, *long_log_file;
 static HANDLE WINAPI file(LPCTSTR path, DWORD access, DWORD sharing, LPSECURITY_ATTRIBUTES a, DWORD disposition, DWORD flags, HANDLE template_file) {
+  if (!access && long_log_alias && !_tcscmp(path, long_log_alias)) path = long_log_file;
   if (active && access && ++file_calls >= file_fail && file_fail) { SetLastError(ERROR_ACCESS_DENIED); return INVALID_HANDLE_VALUE; }
   return CreateFile(path, access, sharing, a, disposition, flags, template_file);
 }
@@ -633,7 +635,60 @@ void test_log_bytes() {
   test_stream_bytes();
 }
 
+static void test_archive_names() {
+  using namespace logger_test;
+  const std::wstring stamp = L"-20261102T030405.006";
+  for (auto parts : {std::make_pair(L"C:\\dir.ext\\my.log", L".txt"), std::make_pair(L"path/to/log", L""),
+                     std::make_pair(L"dir/a.b c", L""), std::make_pair(L"dir/", L".hidden")}) {
+    std::wstring path = std::wstring(parts.first) + parts.second;
+    std::wstring expected = parts.first + stamp + parts.second;
+    std::vector<TCHAR> destination(expected.size() + 1);
+    CHECK(rotated_filename(path.c_str(), destination.data(), destination.size(), &fixed_time) == ERROR_SUCCESS);
+    CHECK(expected == destination.data());
+    CHECK(rotated_filename(path.c_str(), destination.data(), destination.size() - 1, &fixed_time) == ERROR_FILENAME_EXCED_RANGE);
+    CHECK(!destination[0]);
+  }
+
+  std::wstring extended = L"\\\\?\\C:\\" + std::wstring(300, L'a');
+  std::vector<TCHAR> archive(extended.size() + stamp.size() + 5);
+  CHECK(rotated_filename((extended + L".log").c_str(), archive.data(), archive.size(), &fixed_time) == ERROR_SUCCESS);
+  CHECK(extended + stamp + L".log" == archive.data());
+
+  fixture f;
+  logger_t *logger = new logger_t();
+  std::wstring long_path(PATH_LENGTH - 5, L'a');
+  _tcscpy_s(logger->path, long_path.c_str());
+  logger->write_handle = CreateFile(f.path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, 0, NULL);
+  REQUIRE(logger->write_handle != INVALID_HANDLE_VALUE);
+  long_log_alias = logger->path; long_log_file = f.path;
+  rotation_options_t options = {};
+  event_test::active = true;
+  for (bool copy : {false, true}) {
+    options.copy_and_truncate = copy;
+    event_test::records.clear();
+    CHECK(rotate_file(f.service->name, logger->path, options) == rotation_result::failed);
+    REQUIRE(event_test::records.size() == 1 && event_test::records[0].strings.size() == 5);
+    CHECK(event_test::records[0].id == NSSM_EVENT_ROTATE_FILE_FAILED &&
+          event_test::records[0].strings.back() == error_string(ERROR_FILENAME_EXCED_RANGE));
+  }
+  event_test::active = false;
+  long_log_alias = long_log_file = NULL;
+  logger->rotation_done = CreateEvent(NULL, TRUE, FALSE, NULL);
+  logger->stop_event = CreateEvent(NULL, TRUE, FALSE, NULL);
+  REQUIRE(logger->rotation_done && logger->stop_event);
+  logger->rotate_online = NSSM_ROTATE_ONLINE_ASAP;
+  ULONGLONG size = 0; bool known = false; int complained = 0;
+  CHECK(rotate_logger(logger, &size, &known, &complained));
+  CHECK(logger->rotation_retry_delay && !logger->rotation_succeeded);
+  CHECK(WaitForSingleObject(logger->rotation_done, 0) == WAIT_OBJECT_0);
+  output(logger->write_handle, "still writable");
+  CloseHandle(logger->write_handle); CloseHandle(logger->rotation_done); CloseHandle(logger->stop_event);
+  delete logger;
+  CHECK(f.contents() == "still writable");
+}
+
 void test_logger_ownership() {
+  test_archive_names();
   logger_test::rotation_completion(false);
   logger_test::rotation_completion(true);
   logger_test::aliased_redirection();

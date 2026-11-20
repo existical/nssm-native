@@ -5,7 +5,12 @@ namespace gui_test {
 bool active;
 struct allocation { void *p; size_t bytes; bool secret; };
 static std::vector<allocation> allocations;
-static unsigned closes, saves;
+static unsigned closes, saves, released_icons;
+static BOOL WINAPI release_icon(HICON icon) {
+  BOOL released = DestroyIcon(icon);
+  if (released) ++released_icons;
+  return released;
+}
 static bool fail_hook_save;
 static int write_hook(const TCHAR *service, const TCHAR *event, const TCHAR *action, TCHAR *command, bool expand) {
   return fail_hook_save ? 1 : set_hook(service, event, action, command, expand);
@@ -85,6 +90,7 @@ static void finish() {
   allocations.clear(); active = false;
 }
 }
+#define DestroyIcon gui_test::release_icon
 #define popup_message install_test::popup
 #define HeapAlloc gui_test::allocate
 #define HeapFree gui_test::release
@@ -104,6 +110,7 @@ static void finish() {
 #undef LocalFree
 #undef GetOpenFileName
 #undef set_hook
+#undef DestroyIcon
 #undef popup_message
 #undef HeapAlloc
 #undef HeapFree
@@ -123,7 +130,7 @@ void test_install_gui() {
   delete defaults;
   REQUIRE(window && ! IsWindowVisible(window));
   CHECK(gui_test::labels == 0);
-  for (unsigned i = 0; i < 10; i++) set_hook_tab(0, 0, false);
+  for (unsigned i = 0; i < 10; i++) set_hook_tab(0, 0);
   CHECK(gui_test::labels == 0);
   for (bool oversized : {false, true}) {
     gui_test::long_filter = oversized;
@@ -146,6 +153,25 @@ void test_install_gui() {
   SetDlgItemText(tablist[NSSM_TAB_DETAILS], IDC_DISPLAYNAME, maximum.c_str());
   CHECK(configure(window, draft, NULL) == 0);
   CHECK(maximum == draft->name && maximum == draft->displayname);
+  HWND exit_tab = tablist[NSSM_TAB_EXIT];
+  for (const TCHAR *invalid : {_T(""), _T("42ms"), _T("-1"), _T("4294967296")}) {
+    SetDlgItemText(exit_tab, IDC_THROTTLE, invalid);
+    CHECK(configure(window, draft, NULL) == 5);
+  }
+  SetDlgItemText(exit_tab, IDC_THROTTLE, _T("000000000004294967295"));
+  REQUIRE(configure(window, draft, NULL) == 0);
+  CHECK(draft->throttle_delay == MAXDWORD);
+  SetDlgItemInt(exit_tab, IDC_THROTTLE, 0, FALSE);
+  REQUIRE(configure(window, draft, NULL) == 0);
+  CHECK(!draft->throttle_delay);
+  HWND rotation = tablist[NSSM_TAB_ROTATION];
+  SendDlgItemMessage(rotation, IDC_ROTATE, BM_SETCHECK, BST_CHECKED, 0);
+  SetDlgItemText(rotation, IDC_ROTATE_BYTES_LOW, _T("200g"));
+  CHECK(configure(window, draft, NULL) == 5);
+  SetDlgItemInt(rotation, IDC_ROTATE_BYTES_LOW, 42, FALSE);
+  REQUIRE(configure(window, draft, NULL) == 0);
+  CHECK(draft->rotate_bytes_low == 42);
+  SendDlgItemMessage(rotation, IDC_ROTATE, BM_SETCHECK, BST_UNCHECKED, 0);
   TCHAR field[5];
   HWND application = tablist[NSSM_TAB_APPLICATION];
   SetDlgItemText(application, IDC_DIR, _T("1234"));
@@ -169,6 +195,7 @@ void test_install_gui() {
     CHECK(install(window) == expected[scenario]);
     install_test::finish();
   }
+  SetDlgItemText(tablist[NSSM_TAB_HOOKS], IDC_HOOK, _T("test-hook"));
   install_test::reset(5);
   gui_test::fail_hook_save = true;
   CHECK(install(window) == 6);
@@ -246,6 +273,7 @@ void test_gui_retry() {
   gui_test::save_result = 0;
   CHECK(edit(window, &original) == 0); CHECK(gui_test::closes == 0); CHECK(gui_test::allocations.empty());
   CHECK(gui_test::saves == 2);
+  SetDlgItemText(tablist[NSSM_TAB_HOOKS], IDC_HOOK, _T("test-hook"));
   gui_test::fail_hook_save = true;
   CHECK(edit(window, &original) == 6 && ! gui_test::closes && gui_test::allocations.empty());
   gui_test::fail_hook_save = false;
@@ -259,7 +287,9 @@ void test_gui_retry() {
   for (int resource : {IDD_EDIT, 9999}) {
     gui_test::reset(); nssm_service_t *owned = alloc_nssm_service(); REQUIRE(owned);
     owned->handle = gui_test::borrowed; _tcscpy_s(owned->name, _T("NSSM-Test-GUI"));
+    gui_test::released_icons = 0;
     CHECK(nssm_gui(resource, owned) == (resource == IDD_EDIT ? 0 : 1));
+    CHECK(gui_test::released_icons == (resource == IDD_EDIT ? 2U : 0U));
     CHECK(gui_test::closes == 1); gui_test::finish();
     while (PeekMessage(&message, NULL, WM_QUIT, WM_QUIT, PM_REMOVE)) {}
   }
@@ -301,7 +331,11 @@ void test_gui_hooks() {
   TCHAR command[] = _T("\"%NSSM_GUI_HOOK_PATH%\\hook.exe\" \"final quoted argument\"");
   REQUIRE(SetEnvironmentVariable(_T("NSSM_GUI_HOOK_PATH"), _T("C:\\Original Path")));
   REQUIRE(set_hook(original.name, NSSM_HOOK_EVENT_START, NSSM_HOOK_ACTION_PRE, command) == 0);
+  REQUIRE(SetEnvironmentVariable(_T("NSSM_HOOK_Start_Pre"), _T("inherited")));
   HWND window = gui_window(&original);
+  TCHAR inherited[32];
+  CHECK(GetEnvironmentVariable(_T("NSSM_HOOK_Start_Pre"), inherited, _countof(inherited)) == 9 &&
+        !_tcscmp(inherited, _T("inherited")));
   TCHAR displayed[CMD_LENGTH]; GetDlgItemText(tablist[NSSM_TAB_HOOKS], IDC_HOOK, displayed, _countof(displayed));
   CHECK(! _tcscmp(displayed, command));
   CHECK(update_hooks(original.name) == 0);
@@ -325,6 +359,36 @@ void test_gui_hooks() {
     CHECK(RegQueryValueEx(key, _T("Pre"), NULL, &stored_type, reinterpret_cast<BYTE *>(displayed), &bytes) == 0);
     CHECK(stored_type == type && ! _tcscmp(displayed, changed)); RegCloseKey(key); DestroyWindow(window);
   }
+  window = gui_window(&original);
+  TCHAR external[] = _T("cli-changed");
+  REQUIRE(!set_hook(original.name, NSSM_HOOK_EVENT_START, NSSM_HOOK_ACTION_PRE, external));
+  REQUIRE(!set_hook(original.name, NSSM_HOOK_EVENT_START, NSSM_HOOK_ACTION_POST, external));
+  set_hook_tab(CB_ERR, 0);
+  set_hook_tab(0, 1);
+  CHECK(!update_hooks(original.name));
+  for (const TCHAR *action : {NSSM_HOOK_ACTION_PRE, NSSM_HOOK_ACTION_POST}) {
+    REQUIRE(!get_hook(original.name, NSSM_HOOK_EVENT_START, action, displayed, sizeof(displayed), false));
+    CHECK(!_tcscmp(displayed, external));
+  }
+  SetDlgItemText(tablist[NSSM_TAB_HOOKS], IDC_HOOK, _T("replacement"));
+  SetDlgItemText(tablist[NSSM_TAB_HOOKS], IDC_HOOK, _T(""));
+  REQUIRE(!update_hooks(original.name));
+  REQUIRE(!get_hook(original.name, NSSM_HOOK_EVENT_START, NSSM_HOOK_ACTION_POST, displayed, sizeof(displayed), false));
+  CHECK(!displayed[0]);
+  DestroyWindow(window);
+  CHECK(GetEnvironmentVariable(_T("NSSM_HOOK_Start_Pre"), inherited, _countof(inherited)) == 9 &&
+        !_tcscmp(inherited, _T("inherited")));
+  SetEnvironmentVariable(_T("NSSM_HOOK_Start_Pre"), NULL);
+  window = gui_window(&original);
+  gui_test::reset(); gui_test::read_failure = IDC_HOOK;
+  SetDlgItemText(tablist[NSSM_TAB_HOOKS], IDC_HOOK, _T("read failed"));
+  CHECK(update_hooks(original.name) != 0);
+  nssm_service_t *draft = alloc_nssm_service(); REQUIRE(draft);
+  CHECK(configure(window, draft, &original) == 4);
+  gui_test::read_failure = 0;
+  SetDlgItemText(tablist[NSSM_TAB_HOOKS], IDC_HOOK, _T("corrected"));
+  CHECK(!update_hooks(original.name));
+  cleanup_nssm_service(draft); gui_test::finish(); DestroyWindow(window);
   // A malformed entry cannot be loaded: an unrelated save must leave it alone.
   key = open_registry(original.name, _T("AppEvents\\Start"), KEY_WRITE); REQUIRE(key);
   DWORD number = 42; REQUIRE(RegSetValueEx(key, _T("Pre"), 0, REG_DWORD, reinterpret_cast<BYTE *>(&number), sizeof(number)) == 0); RegCloseKey(key);

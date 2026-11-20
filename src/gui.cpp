@@ -121,10 +121,10 @@ int nssm_gui(int resource, nssm_service_t *service) {
   }
 
   /* Load the icon. */
-  HANDLE icon = LoadImage(GetModuleHandle(0), MAKEINTRESOURCE(IDI_NSSM), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), 0);
-  if (icon) SendMessage(dlg, WM_SETICON, ICON_SMALL, (LPARAM) icon);
-  icon = LoadImage(GetModuleHandle(0), MAKEINTRESOURCE(IDI_NSSM), IMAGE_ICON, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), 0);
-  if (icon) SendMessage(dlg, WM_SETICON, ICON_BIG, (LPARAM) icon);
+  HICON small_icon = (HICON) LoadImage(GetModuleHandle(0), MAKEINTRESOURCE(IDI_NSSM), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), 0);
+  if (small_icon) SendMessage(dlg, WM_SETICON, ICON_SMALL, (LPARAM) small_icon);
+  HICON large_icon = (HICON) LoadImage(GetModuleHandle(0), MAKEINTRESOURCE(IDI_NSSM), IMAGE_ICON, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), 0);
+  if (large_icon) SendMessage(dlg, WM_SETICON, ICON_BIG, (LPARAM) large_icon);
 
   /* Remember what the window is for. */
   SetWindowLongPtr(dlg, GWLP_USERDATA, (LONG_PTR) resource);
@@ -316,6 +316,8 @@ int nssm_gui(int resource, nssm_service_t *service) {
   }
 
   if (IsWindow(dlg)) DestroyWindow(dlg);
+  if (large_icon) DestroyIcon(large_icon);
+  if (small_icon) DestroyIcon(small_icon);
   return received < 0 ? 1 : (int) message.wParam;
 }
 
@@ -347,10 +349,27 @@ static inline void check_stop_method(nssm_service_t *service, unsigned long meth
   service->stop_method &= ~method;
 }
 
-static inline void check_number(HWND tab, unsigned long control, unsigned long *timeout) {
-  BOOL translated;
-  unsigned long configured = GetDlgItemInt(tab, control, &translated, 0);
-  if (translated) *timeout = configured;
+static bool read_number(HWND tab, int control, const TCHAR *setting, DWORD *value) {
+  int length = GetWindowTextLength(GetDlgItem(tab, control));
+  if (length > 0 && length < INT_MAX) {
+    size_t bytes = (size_t)(length + 1) * sizeof(TCHAR);
+    TCHAR *digits = (TCHAR *) HeapAlloc(GetProcessHeap(), 0, bytes);
+    if (!digits) {
+      popup_message(GetParent(tab), MB_OK | MB_ICONEXCLAMATION, NSSM_MESSAGE_OUT_OF_MEMORY, setting, _T("read_number()"));
+      return false;
+    }
+    DWORD number = 0;
+    bool valid = read_edit_text(tab, control, digits, length + 1);
+    for (int i = 0; valid && i < length; i++) {
+      DWORD digit = digits[i] - _T('0');
+      valid = digit <= 9 && number <= (MAXDWORD - digit) / 10;
+      if (valid) number = number * 10 + digit;
+    }
+    HeapFree(GetProcessHeap(), 0, digits);
+    if (valid) { *value = number; return true; }
+  }
+  popup_message(GetParent(tab), MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_INVALID_NUMBER, setting);
+  return false;
 }
 
 static inline void set_timeout_enabled(unsigned long control, unsigned long dependent) {
@@ -370,13 +389,11 @@ static inline void set_rotation_enabled(unsigned char enabled) {
   EnableWindow(GetDlgItem(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW), enabled);
 }
 
-struct gui_hook_t {
+struct hook_name_t {
   const TCHAR *event;
   const TCHAR *action;
-  DWORD type;
-  bool loaded;
 };
-static gui_hook_t gui_hooks[] = {
+static const hook_name_t hook_names[] = {
   { NSSM_HOOK_EVENT_START, NSSM_HOOK_ACTION_PRE },
   { NSSM_HOOK_EVENT_START, NSSM_HOOK_ACTION_POST },
   { NSSM_HOOK_EVENT_STOP, NSSM_HOOK_ACTION_PRE },
@@ -386,18 +403,18 @@ static gui_hook_t gui_hooks[] = {
   { NSSM_HOOK_EVENT_ROTATE, NSSM_HOOK_ACTION_PRE },
   { NSSM_HOOK_EVENT_ROTATE, NSSM_HOOK_ACTION_POST }
 };
-static bool displaying_hook;
-static gui_hook_t *gui_hook(const TCHAR *event, const TCHAR *action) {
-  for (size_t i = 0; i < _countof(gui_hooks); i++)
-    if (str_equiv(event, gui_hooks[i].event) && str_equiv(action, gui_hooks[i].action)) return &gui_hooks[i];
-  return 0;
-}
+struct hook_draft_t {
+  TCHAR command[CMD_LENGTH];
+  DWORD type;
+  bool edited;
+  bool read_failed;
+};
+static hook_draft_t hook_drafts[_countof(hook_names)];
+static hook_draft_t *selected_hook;
 
-static inline int hook_env(const TCHAR *hook_event, const TCHAR *hook_action, TCHAR *buffer, unsigned long buflen) {
-  return _sntprintf_s(buffer, buflen, _TRUNCATE, _T("NSSM_HOOK_%s_%s"), hook_event, hook_action);
-}
-
-static inline void set_hook_tab(int event_index, int action_index, bool changed) {
+static void set_hook_tab(int event_index, int action_index) {
+  selected_hook = NULL;
+  if (event_index < 0 || event_index > NSSM_GUI_HOOK_EVENT_ROTATE - NSSM_GUI_HOOK_EVENT_START) return;
   int first_event = NSSM_GUI_HOOK_EVENT_START;
   HWND combo;
   combo = GetDlgItem(tablist[NSSM_TAB_HOOKS], IDC_HOOK_EVENT);
@@ -449,50 +466,23 @@ static inline void set_hook_tab(int event_index, int action_index, bool changed)
   SendMessage(combo, CB_SETCURSEL, action_index, 0);
 
   if (! hook_action) return;
-  TCHAR hook_name[HOOK_NAME_LENGTH];
-  hook_env(hook_event, hook_action, hook_name, _countof(hook_name));
-
-  if (! *hook_name) return;
-
-  TCHAR cmd[CMD_LENGTH];
-  if (changed) {
-    GetDlgItemText(tablist[NSSM_TAB_HOOKS], IDC_HOOK, cmd, _countof(cmd));
-    if (SetEnvironmentVariable(hook_name, cmd)) {
-      gui_hook_t *hook = gui_hook(hook_event, hook_action);
-      if (hook) hook->loaded = true;
+  for (size_t i = 0; i < _countof(hook_names); i++) {
+    if (str_equiv(hook_event, hook_names[i].event) && str_equiv(hook_action, hook_names[i].action)) {
+      // WM_SETTEXT can synchronously notify EN_CHANGE.
+      SetDlgItemText(tablist[NSSM_TAB_HOOKS], IDC_HOOK, hook_drafts[i].command);
+      selected_hook = &hook_drafts[i];
+      break;
     }
   }
-  else {
-    if (! GetEnvironmentVariable(hook_name, cmd, _countof(cmd))) cmd[0] = _T('\0');
-    displaying_hook = true;
-    SetDlgItemText(tablist[NSSM_TAB_HOOKS], IDC_HOOK, cmd);
-    displaying_hook = false;
+}
+
+static int update_hooks(TCHAR *service_name) {
+  for (size_t i = 0; i < _countof(hook_names); i++) {
+    hook_draft_t &draft = hook_drafts[i];
+    if (draft.edited && (draft.read_failed ||
+        set_hook(service_name, hook_names[i].event, hook_names[i].action, draft.command, draft.type != REG_SZ))) return 1;
   }
-}
-
-static inline int update_hook(TCHAR *service_name, const TCHAR *hook_event, const TCHAR *hook_action) {
-  TCHAR hook_name[HOOK_NAME_LENGTH];
-  if (hook_env(hook_event, hook_action, hook_name, _countof(hook_name)) < 0) return 1;
-  TCHAR cmd[CMD_LENGTH];
-  ZeroMemory(cmd, sizeof(cmd));
-  if (GetEnvironmentVariable(hook_name, cmd, _countof(cmd)) >= _countof(cmd)) return 2;
-  gui_hook_t *hook = gui_hook(hook_event, hook_action);
-  if (! hook || ! hook->loaded) return 0;
-  if (set_hook(service_name, hook_event, hook_action, cmd, hook->type != REG_SZ)) return 2;
   return 0;
-}
-
-static inline int update_hooks(TCHAR *service_name) {
-  int ret = 0;
-  ret += update_hook(service_name, NSSM_HOOK_EVENT_START, NSSM_HOOK_ACTION_PRE);
-  ret += update_hook(service_name, NSSM_HOOK_EVENT_START, NSSM_HOOK_ACTION_POST);
-  ret += update_hook(service_name, NSSM_HOOK_EVENT_STOP, NSSM_HOOK_ACTION_PRE);
-  ret += update_hook(service_name, NSSM_HOOK_EVENT_EXIT, NSSM_HOOK_ACTION_POST);
-  ret += update_hook(service_name, NSSM_HOOK_EVENT_POWER, NSSM_HOOK_ACTION_CHANGE);
-  ret += update_hook(service_name, NSSM_HOOK_EVENT_POWER, NSSM_HOOK_ACTION_RESUME);
-  ret += update_hook(service_name, NSSM_HOOK_EVENT_ROTATE, NSSM_HOOK_ACTION_PRE);
-  ret += update_hook(service_name, NSSM_HOOK_EVENT_ROTATE, NSSM_HOOK_ACTION_POST);
-  return ret;
 }
 
 static bool check_io(HWND owner, TCHAR *name, TCHAR *buffer, unsigned long len, unsigned long control) {
@@ -567,9 +557,16 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
       popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_MESSAGE_PATH_TOO_LONG, NSSM_REG_DIR);
       return 3;
     }
-    if (!service->dir[0] && !orig_service) {
-      _sntprintf_s(service->dir, _countof(service->dir), _TRUNCATE, _T("%s"), service->exe);
-      strip_basename(service->dir);
+    if (!service->dir[0] && !orig_service && !executable_directory(service->exe, service->dir, _countof(service->dir))) {
+      popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_MESSAGE_PATH_TOO_LONG, NSSM_REG_DIR);
+      return 3;
+    }
+
+    for (size_t i = 0; i < _countof(hook_drafts); i++) {
+      if (hook_drafts[i].read_failed) {
+        popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_INVALID_HOOK_COMMAND, hook_names[i].event, hook_names[i].action);
+        return 4;
+      }
     }
 
     /* Get flags. */
@@ -805,18 +802,19 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
   check_stop_method(service, NSSM_STOP_METHOD_WINDOW, IDC_METHOD_WINDOW);
   check_stop_method(service, NSSM_STOP_METHOD_THREADS, IDC_METHOD_THREADS);
   check_stop_method(service, NSSM_STOP_METHOD_TERMINATE, IDC_METHOD_TERMINATE);
-  check_number(tablist[NSSM_TAB_SHUTDOWN], IDC_KILL_CONSOLE, &service->kill_console_delay);
-  check_number(tablist[NSSM_TAB_SHUTDOWN], IDC_KILL_WINDOW, &service->kill_window_delay);
-  check_number(tablist[NSSM_TAB_SHUTDOWN], IDC_KILL_THREADS, &service->kill_threads_delay);
+  HWND shutdown = tablist[NSSM_TAB_SHUTDOWN];
+  if (!read_number(shutdown, IDC_KILL_CONSOLE, NSSM_REG_KILL_CONSOLE_GRACE_PERIOD, &service->kill_console_delay) ||
+      !read_number(shutdown, IDC_KILL_WINDOW, NSSM_REG_KILL_WINDOW_GRACE_PERIOD, &service->kill_window_delay) ||
+      !read_number(shutdown, IDC_KILL_THREADS, NSSM_REG_KILL_THREADS_GRACE_PERIOD, &service->kill_threads_delay)) return 5;
   if (SendDlgItemMessage(tablist[NSSM_TAB_SHUTDOWN], IDC_KILL_PROCESS_TREE, BM_GETCHECK, 0, 0) & BST_CHECKED) service->kill_process_tree = 1;
   else service->kill_process_tree = 0;
 
   /* Get exit action stuff. */
-  check_number(tablist[NSSM_TAB_EXIT], IDC_THROTTLE, &service->throttle_delay);
+  if (!read_number(tablist[NSSM_TAB_EXIT], IDC_THROTTLE, NSSM_REG_THROTTLE, &service->throttle_delay) ||
+      !read_number(tablist[NSSM_TAB_EXIT], IDC_RESTART_DELAY, NSSM_REG_RESTART_DELAY, &service->restart_delay)) return 5;
   combo = GetDlgItem(tablist[NSSM_TAB_EXIT], IDC_APPEXIT);
   service->default_exit_action = (unsigned long) SendMessage(combo, CB_GETCURSEL, 0, 0);
   if (service->default_exit_action == CB_ERR) service->default_exit_action = 0;
-  check_number(tablist[NSSM_TAB_EXIT], IDC_RESTART_DELAY, &service->restart_delay);
 
   /* Get I/O stuff. */
   if (! check_io(window, _T("stdin"), service->stdin_path, _countof(service->stdin_path), IDC_STDIN) ||
@@ -841,15 +839,11 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
   if (SendDlgItemMessage(tablist[NSSM_TAB_ROTATION], IDC_ROTATE, BM_GETCHECK, 0, 0) & BST_CHECKED) {
     service->rotate_files = true;
     service->rotate_stdout_online = service->rotate_stderr_online = (SendDlgItemMessage(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_ONLINE, BM_GETCHECK, 0, 0) & BST_CHECKED) != 0;
-    check_number(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_SECONDS, &service->rotate_seconds);
+    if (!read_number(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_SECONDS, NSSM_REG_ROTATE_SECONDS, &service->rotate_seconds)) return 5;
     HWND size_field = GetDlgItem(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW);
     if (! service->rotate_bytes_high || SendMessage(size_field, EM_GETMODIFY, 0, 0)) {
-      BOOL valid = FALSE;
-      UINT size = GetDlgItemInt(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW, &valid, FALSE);
-      if (valid) {
-        service->rotate_bytes_low = size;
-        service->rotate_bytes_high = 0;
-      }
+      if (!read_number(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW, NSSM_REG_ROTATE_BYTES_LOW, &service->rotate_bytes_low)) return 5;
+      service->rotate_bytes_high = 0;
     }
   }
 
@@ -1252,12 +1246,12 @@ INT_PTR CALLBACK tab_dlg(HWND tab, UINT message, WPARAM w, LPARAM l) {
 
         /* Hook event. */
         case IDC_HOOK_EVENT:
-          if (HIWORD(w) == CBN_SELCHANGE) set_hook_tab((int) SendMessage(GetDlgItem(tab, IDC_HOOK_EVENT), CB_GETCURSEL, 0, 0), 0, false);
+          if (HIWORD(w) == CBN_SELCHANGE) set_hook_tab((int) SendMessage(GetDlgItem(tab, IDC_HOOK_EVENT), CB_GETCURSEL, 0, 0), 0);
           break;
 
         /* Hook action. */
         case IDC_HOOK_ACTION:
-          if (HIWORD(w) == CBN_SELCHANGE) set_hook_tab((int) SendMessage(GetDlgItem(tab, IDC_HOOK_EVENT), CB_GETCURSEL, 0, 0), (int) SendMessage(GetDlgItem(tab, IDC_HOOK_ACTION), CB_GETCURSEL, 0, 0), false);
+          if (HIWORD(w) == CBN_SELCHANGE) set_hook_tab((int) SendMessage(GetDlgItem(tab, IDC_HOOK_EVENT), CB_GETCURSEL, 0, 0), (int) SendMessage(GetDlgItem(tab, IDC_HOOK_ACTION), CB_GETCURSEL, 0, 0));
           break;
 
         /* Browse for hook. */
@@ -1269,8 +1263,10 @@ INT_PTR CALLBACK tab_dlg(HWND tab, UINT message, WPARAM w, LPARAM l) {
 
         /* Hook. */
         case IDC_HOOK:
-          if (HIWORD(w) == EN_CHANGE && ! displaying_hook)
-            set_hook_tab((int) SendMessage(GetDlgItem(tab, IDC_HOOK_EVENT), CB_GETCURSEL, 0, 0), (int) SendMessage(GetDlgItem(tab, IDC_HOOK_ACTION), CB_GETCURSEL, 0, 0), true);
+          if (HIWORD(w) == EN_CHANGE && selected_hook) {
+            selected_hook->edited = true;
+            selected_hook->read_failed = !read_edit_text(tab, IDC_HOOK, selected_hook->command, _countof(selected_hook->command));
+          }
           break;
       }
       return 1;
@@ -1450,18 +1446,17 @@ INT_PTR CALLBACK nssm_dlg(HWND window, UINT message, WPARAM w, LPARAM l) {
       SendMessage(combo, CB_INSERTSTRING, -1, (LPARAM) gui_message(NSSM_GUI_HOOK_EVENT_POWER).get());
       SendMessage(combo, CB_INSERTSTRING, -1, (LPARAM) gui_message(NSSM_GUI_HOOK_EVENT_ROTATE).get());
       SendDlgItemMessage(tablist[NSSM_TAB_HOOKS], IDC_REDIRECT_HOOK, BM_SETCHECK, BST_UNCHECKED, 0);
-      for (size_t index = 0; index < _countof(gui_hooks); index++) {
-        gui_hook_t &hook = gui_hooks[index];
-        hook.type = REG_EXPAND_SZ;
-        hook.loaded = false;
-        TCHAR hook_name[HOOK_NAME_LENGTH];
-        TCHAR cmd[CMD_LENGTH] = {};
-        if (hook_env(hook.event, hook.action, hook_name, _countof(hook_name)) < 0) continue;
-        SetEnvironmentVariable(hook_name, 0);
-        if (service->name[0] && get_hook(service->name, hook.event, hook.action, cmd, sizeof(cmd), false, &hook.type)) continue;
-        hook.loaded = SetEnvironmentVariable(hook_name, cmd) != 0;
+      selected_hook = NULL;
+      SendDlgItemMessage(tablist[NSSM_TAB_HOOKS], IDC_HOOK, EM_SETLIMITTEXT, CMD_LENGTH - 1, 0);
+      for (size_t i = 0; i < _countof(hook_names); i++) {
+        hook_draft_t &draft = hook_drafts[i];
+        draft.edited = draft.read_failed = false;
+        draft.type = REG_EXPAND_SZ;
+        draft.command[0] = 0;
+        if (service->name[0] && get_hook(service->name, hook_names[i].event, hook_names[i].action,
+            draft.command, sizeof(draft.command), false, &draft.type)) draft.command[0] = 0;
       }
-      set_hook_tab(0, 0, false);
+      set_hook_tab(0, 0);
 
       return 1;
 

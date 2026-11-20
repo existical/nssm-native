@@ -157,14 +157,22 @@ int quote(const TCHAR *unquoted, TCHAR *buffer, size_t buflen) {
   return quote_emit(unquoted, len, escape, output) ? 0 : 1;
 }
 
-/* Remove basename of a path. */
+/* Extract the directory before checking its size. Source and output may alias. */
+bool executable_directory(const TCHAR *path, TCHAR *directory, size_t capacity) {
+  size_t length = _tcslen(path);
+  while (length && path[length - 1] != _T('\\') && path[length - 1] != _T('/')) length--;
+  if (length > 1 && path[length - 2] != _T(':')) length--;
+  if (length >= capacity) {
+    if (capacity) directory[0] = 0;
+    return false;
+  }
+  memmove(directory, path, length * sizeof(TCHAR));
+  directory[length] = 0;
+  return true;
+}
+
 void strip_basename(TCHAR *buffer) {
-  size_t len = _tcslen(buffer);
-  size_t i;
-  for (i = len; i && buffer[i] != _T('\\') && buffer[i] != _T('/'); i--);
-  /* X:\ is OK. */
-  if (i && buffer[i - 1] == _T(':')) i++;
-  buffer[i] = _T('\0');
+  executable_directory(buffer, buffer, _tcslen(buffer) + 1);
 }
 
 /* How to use me correctly */
