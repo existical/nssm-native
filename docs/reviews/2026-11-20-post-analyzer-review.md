@@ -14,10 +14,10 @@ Reviewed baseline `fede1ec` on `review/beta4-followup`. The review covered servi
 
 ## Implementation plan
 
-- [ ] Stop offline rotation on metadata errors. Retain the append fallback and protect destructive dispositions. Test both archive modes and exact source bytes.
-- [ ] Read GUI lists and credential fields using checked lengths and complete copies. Preserve deliberately empty input. Exercise short reads and missing controls through the editor.
-- [ ] Validate every configured environment entry directly before saving. Preserve empty blocks, empty values, embedded equals in values and existing runtime handling of older configurations. Replace process-based validation tests with input and persistence checks.
-- [ ] Read the wrapper image once, check bounds and construct the SCM image string with explicit capacity. Verify ordinary, spaced, long and unrepresentable paths. [Windows module path contract](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getmodulefilenamew)
+- [x] Stop offline rotation on metadata errors. Retain the append fallback and protect destructive dispositions. Test both archive modes and exact source bytes.
+- [x] Read GUI lists and credential fields using checked lengths and complete copies. Preserve deliberately empty input. Exercise short reads and missing controls through the editor.
+- [x] Validate every configured environment entry directly before saving. Preserve empty blocks, empty values, embedded equals in values and existing runtime handling of older configurations. Replace process-based validation tests with input and persistence checks.
+- [x] Read the wrapper image once, check bounds and construct the SCM image string with explicit capacity. Verify ordinary, spaced, long and unrepresentable paths. [Windows module path contract](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getmodulefilenamew)
 - [ ] Verify argument forwarding using a native service fixture. Pass only caller-supplied startup arguments, including on restart, if the guest confirms the extra name.
 - [ ] Make version, get, status and processes report stdout write or flush errors. Preserve the numeric contract of statuscode. Exercise a failing redirected destination.
 - [ ] Compare the package's source identity across the top-level manifest, outer build records, inner manifests and source archive. Exercise inconsistent records and verify a real clean-source package.

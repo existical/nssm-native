@@ -2,7 +2,7 @@
 
 namespace rotation_test {
 bool active;
-static bool fail_copy, fail_move, override_size, append_after_copy;
+static bool fail_copy, fail_move, fail_information, override_size, append_after_copy;
 static ULONGLONG reported_size;
 static unsigned copies, moves, rotated_events, failed_events;
 static std::vector<DWORD> sleeps;
@@ -31,6 +31,7 @@ BOOL WINAPI move(LPCTSTR from, LPCTSTR to) {
   return MoveFile(from, to);
 }
 BOOL WINAPI information(HANDLE h, LPBY_HANDLE_FILE_INFORMATION info) {
+  if (active && fail_information) { SetLastError(ERROR_READ_FAULT); return FALSE; }
   BOOL result = GetFileInformationByHandle(h, info);
   if (active && result && override_size) {
     info->nFileSizeHigh = static_cast<DWORD>(reported_size >> 32);
@@ -60,7 +61,7 @@ struct fixture {
   fixture() : service(alloc_nssm_service()), si() {
     REQUIRE(service);
     active = true;
-    fail_copy = fail_move = override_size = append_after_copy = false;
+    fail_copy = fail_move = fail_information = override_size = append_after_copy = false;
     copies = moves = rotated_events = failed_events = 0; sleeps.clear();
     TCHAR temp[MAX_PATH];
     REQUIRE(GetTempPath(_countof(temp), temp));
@@ -310,6 +311,20 @@ static void disabled_or_missing(bool stderr_stream, bool missing, bool copy_mode
 }
 
 void test_offline_rotation() {
+  for (bool copy : {false, true}) {
+    for (DWORD disposition : {OPEN_ALWAYS, CREATE_ALWAYS}) {
+      rotation_test::fixture f;
+      auto archive = f.prepare(false, "original");
+      f.service->rotate_bytes_low = 100;
+      f.service->stdout_copy_and_truncate = copy;
+      f.service->stdout_disposition = disposition;
+      rotation_test::fail_information = true;
+      CHECK((get_output_handles(f.service, &f.si) == 0) == (disposition == OPEN_ALWAYS));
+      f.stop();
+      CHECK(rotation_test::failed_events == 1 && !rotation_test::copies && !rotation_test::moves);
+      CHECK(f.contents(f.service->stdout_path) == "original" && !rotation_test::exists(archive));
+    }
+  }
   for (bool err : {false, true}) {
     rotation_test::fixture f;
     auto archive = f.prepare(err, "original");

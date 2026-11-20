@@ -451,25 +451,18 @@ rotation_result rotate_file(TCHAR *service_name, TCHAR *path, const rotation_opt
 
   /* Try to open the file to check if it exists and to get attributes. */
   HANDLE file = CreateFile(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
-  if (file != INVALID_HANDLE_VALUE) {
-    /* Get file attributes. */
-    if (! GetFileInformationByHandle(file, &info)) {
-      /* Reuse current time for rotation timestamp. */
-      seconds = 0;
-      minimum_bytes = 0;
-      SystemTimeToFileTime(&st, &info.ftLastWriteTime);
-    }
-
-    CloseHandle(file);
-  }
-  else {
+  if (file == INVALID_HANDLE_VALUE) {
     error = GetLastError();
     if (error == ERROR_FILE_NOT_FOUND) return rotation_result::skipped;
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, service_name, path, _T("CreateFile()"), path, error_string(error));
-    /* Reuse current time for rotation timestamp. */
-    seconds = 0;
-    minimum_bytes = 0;
-    SystemTimeToFileTime(&st, &info.ftLastWriteTime);
+    return rotation_result::failed;
+  }
+  BOOL inspected = GetFileInformationByHandle(file, &info);
+  error = inspected ? ERROR_SUCCESS : GetLastError();
+  CloseHandle(file);
+  if (!inspected) {
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_ROTATE_FILE_FAILED, service_name, path, _T("GetFileInformationByHandle()"), path, error_string(error));
+    return rotation_result::failed;
   }
 
   /* Check file age. */

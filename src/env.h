@@ -8,7 +8,7 @@ TCHAR *expand_environment_string(TCHAR *);
 int set_environment_block(TCHAR *);
 int clear_environment();
 int duplicate_environment(TCHAR *);
-int test_environment(TCHAR *);
+bool valid_environment(const TCHAR *, DWORD);
 int duplicate_environment_strings(TCHAR *);
 TCHAR *copy_environment();
 int append_to_environment_block(TCHAR *, unsigned long, TCHAR *, TCHAR **, unsigned long *);

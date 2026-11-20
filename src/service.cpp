@@ -1194,7 +1194,7 @@ int pre_edit_service(int argc, TCHAR **argv) {
       if (str_equiv(setting->name, NSSM_NATIVE_DISPLAYNAME) && ! str_equiv(service_name, service->name)) continue;
       if (dump_setting(service_name, key, service->handle, setting, service->name)) ret++;
     }
-    return (fflush(stdout) == EOF || ferror(stdout) || ret) ? 1 : 0;
+    return stdout_ok() && !ret ? 0 : 1;
   }
 
   /* Trying to manage App* parameters for a non-NSSM service. */
@@ -1220,17 +1220,17 @@ int pre_edit_service(int argc, TCHAR **argv) {
       case REG_EXPAND_SZ:
       case REG_MULTI_SZ:
       case REG_SZ:
-        _tprintf(_T("%s\n"), value.string ? value.string : _T(""));
-        HeapFree(GetProcessHeap(), 0, value.string);
+        ret = _tprintf(_T("%s\n"), value.string ? value.string : _T(""));
+        if (value.string) HeapFree(GetProcessHeap(), 0, value.string);
         break;
 
       case REG_DWORD:
-        _tprintf(_T("%lu\n"), value.numeric);
+        ret = _tprintf(_T("%lu\n"), value.numeric);
         break;
     }
 
     if (! setting->native) RegCloseKey(key);
-    return 0;
+    return ret >= 0 && stdout_ok() ? 0 : 5;
   }
 
   /* Build the value. */
@@ -1311,6 +1311,13 @@ int pre_remove_service(int argc, TCHAR **argv) {
   return 100;
 }
 
+/* SCM stores a command line. Shell metacharacters in file names are literal here. */
+static bool service_image_path(const TCHAR *path, TCHAR *image, size_t capacity) {
+  if (!*path) return false;
+  const TCHAR *format = _tcspbrk(path, _T(" \t")) ? _T("\"%s\"") : _T("%s");
+  return _sntprintf_s(image, capacity, _TRUNCATE, format, path) >= 0;
+}
+
 /* Install the service */
 int install_service(nssm_service_t *service, int (*save_hooks)(TCHAR *)) {
   if (! service) return 1;
@@ -1322,8 +1329,11 @@ int install_service(nssm_service_t *service, int (*save_hooks)(TCHAR *)) {
     return 2;
   }
 
-  /* Get path of this program */
-  _sntprintf_s(service->image, _countof(service->image), _TRUNCATE, _T("%s"), nssm_imagepath());
+  if (!service_image_path(nssm_unquoted_imagepath(), service->image, _countof(service->image))) {
+    print_message(stderr, NSSM_MESSAGE_PATH_TOO_LONG, NSSM);
+    CloseServiceHandle(services);
+    return 3;
+  }
 
   /* Create the service - settings will be changed in edit_service() */
   service->handle = CreateService(services, service->name, service->name, SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS, SERVICE_AUTO_START, SERVICE_ERROR_NORMAL, service->image, 0, 0, 0, 0, 0);
@@ -1496,7 +1506,8 @@ int control_service(unsigned long control, int argc, TCHAR **argv, bool return_s
   SERVICE_STATUS service_status;
   ZeroMemory(&service_status, sizeof(service_status));
   if (control == NSSM_SERVICE_CONTROL_START) {
-    ret = StartService(service_handle, (unsigned long) argc, (const TCHAR **) argv);
+    // ServiceMain receives the key name from the SCM ahead of these arguments.
+    ret = StartService(service_handle, argc - 1, argc > 1 ? (const TCHAR **) (argv + 1) : NULL);
     error = ret ? ERROR_SUCCESS : GetLastError();
     CloseServiceHandle(services);
 
@@ -1543,9 +1554,9 @@ int control_service(unsigned long control, int argc, TCHAR **argv, bool return_s
     CloseServiceHandle(services);
 
     if (ret) {
-      _tprintf(_T("%s\n"), service_status_text(service_status.dwCurrentState));
+      int written = _tprintf(_T("%s\n"), service_status_text(service_status.dwCurrentState));
       if (return_status) return service_status.dwCurrentState;
-      return 0;
+      return written >= 0 && stdout_ok() ? 0 : 1;
     }
     else {
       _ftprintf(stderr, _T("%s: %s\n"), canonical_name, error_string(error));
@@ -2485,7 +2496,7 @@ int list_nssm_services(int argc, TCHAR **argv) {
 
   HeapFree(GetProcessHeap(), 0, status);
   CloseServiceHandle(services);
-  if (fflush(stdout) || ferror(stdout)) return 5;
+  if (!stdout_ok()) return 5;
   return result;
 }
 
@@ -2567,6 +2578,5 @@ int service_process_tree(int argc, TCHAR **argv) {
 
   CloseServiceHandle(services);
   release_debug_token(&token);
-
-  return errors;
+  return stdout_ok() ? errors : 1;
 }

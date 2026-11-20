@@ -25,14 +25,32 @@ static void insert_tab(HWND tabs, int index, DWORD id) {
   SendMessage(tabs, TCM_INSERTITEM, index, (LPARAM) &tab);
 }
 
-static bool read_edit_text(HWND parent, int id, TCHAR *buffer, int capacity) {
+static int edit_text_length(HWND parent, int id) {
   HWND control = GetDlgItem(parent, id);
-  if (!control) return false;
+  if (!control) return -1;
   SetLastError(ERROR_SUCCESS);
   int length = GetWindowTextLength(control);
-  if ((!length && GetLastError()) || length >= capacity) return false;
+  return (!length && GetLastError()) || length == INT_MAX ? -1 : length;
+}
+
+static bool read_edit_text(HWND parent, int id, TCHAR *buffer, int capacity) {
+  int length = edit_text_length(parent, id);
+  if (length < 0 || length >= capacity) return false;
   buffer[0] = 0;
   return !length || GetDlgItemText(parent, id, buffer, capacity) == length;
+}
+
+static bool read_edit_list(HWND tab, int id, TCHAR **block, DWORD *count) {
+  int length = edit_text_length(tab, id);
+  if (length < 0) return false;
+  if (!length) return true;
+  size_t bytes = (static_cast<size_t>(length) + 1) * sizeof(TCHAR);
+  TCHAR *text = static_cast<TCHAR *>(HeapAlloc(GetProcessHeap(), 0, bytes));
+  if (!text) return false;
+  bool ok = GetDlgItemText(tab, id, text, length + 1) == length &&
+            !unformat_double_null(text, length, block, count);
+  HeapFree(GetProcessHeap(), 0, text);
+  return ok;
 }
 
 /* Store the CPU identifier separately: list rows need not be dense CPU IDs. */
@@ -575,13 +593,9 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
   }
 
   /* Get details. */
-  int display_length = GetWindowTextLength(GetDlgItem(tablist[NSSM_TAB_DETAILS], IDC_DISPLAYNAME));
-  if (display_length) {
-    if (display_length >= SERVICE_NAME_LENGTH ||
-        GetDlgItemText(tablist[NSSM_TAB_DETAILS], IDC_DISPLAYNAME, service->displayname, _countof(service->displayname)) != display_length) {
-      popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_INVALID_DISPLAYNAME);
-      return 5;
-    }
+  if (!read_edit_text(tablist[NSSM_TAB_DETAILS], IDC_DISPLAYNAME, service->displayname, _countof(service->displayname))) {
+    popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_INVALID_DISPLAYNAME);
+    return 5;
   }
 
   if (!read_edit_text(tablist[NSSM_TAB_DETAILS], IDC_DESCRIPTION, service->description, _countof(service->description))) {
@@ -621,19 +635,19 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
   }
   else {
     /* Username. */
-    service->usernamelen = SendMessage(GetDlgItem(tablist[NSSM_TAB_LOGON], IDC_USERNAME), WM_GETTEXTLENGTH, 0, 0);
-    if (! service->usernamelen) {
+    int username_length = edit_text_length(tablist[NSSM_TAB_LOGON], IDC_USERNAME);
+    if (username_length <= 0) {
       popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_MISSING_USERNAME);
       return 6;
     }
-    service->usernamelen++;
+    service->usernamelen = static_cast<size_t>(username_length) + 1;
 
     service->username = (TCHAR *) HeapAlloc(GetProcessHeap(), 0, service->usernamelen * sizeof(TCHAR));
     if (! service->username) {
       popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_EVENT_OUT_OF_MEMORY, _T("account name"), _T("install()"));
       return 6;
     }
-    if (! GetDlgItemText(tablist[NSSM_TAB_LOGON], IDC_USERNAME, service->username, (int) service->usernamelen)) {
+    if (GetDlgItemText(tablist[NSSM_TAB_LOGON], IDC_USERNAME, service->username, (int) service->usernamelen) != username_length) {
       HeapFree(GetProcessHeap(), 0, service->username);
       service->username = 0;
       service->usernamelen = 0;
@@ -666,19 +680,19 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
     }
     else {
       /* Password. */
-      service->passwordlen = SendMessage(GetDlgItem(tablist[NSSM_TAB_LOGON], IDC_PASSWORD1), WM_GETTEXTLENGTH, 0, 0);
-      size_t passwordlen = SendMessage(GetDlgItem(tablist[NSSM_TAB_LOGON], IDC_PASSWORD2), WM_GETTEXTLENGTH, 0, 0);
+      int length = edit_text_length(tablist[NSSM_TAB_LOGON], IDC_PASSWORD1);
+      int confirmation_length = edit_text_length(tablist[NSSM_TAB_LOGON], IDC_PASSWORD2);
+      if (length < 0 || confirmation_length != length) {
+        popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_INVALID_PASSWORD);
+        return 6;
+      }
 
-      if (! orig_service || ! orig_service->username || ! str_equiv(service->username, orig_service->username) || service->passwordlen || passwordlen) {
-        if (! service->passwordlen) {
+      if (! orig_service || ! orig_service->username || ! str_equiv(service->username, orig_service->username) || length) {
+        if (!length) {
           popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_MISSING_PASSWORD);
           return 6;
         }
-        if (passwordlen != service->passwordlen) {
-          popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_MISSING_PASSWORD);
-          return 6;
-        }
-        service->passwordlen++;
+        service->passwordlen = static_cast<size_t>(length) + 1;
 
         /* Temporary buffer for password validation. */
         struct confirmation_t {
@@ -708,7 +722,7 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
         }
 
         /* Get first password. */
-        if (! GetDlgItemText(tablist[NSSM_TAB_LOGON], IDC_PASSWORD1, service->password, (int) service->passwordlen)) {
+        if (GetDlgItemText(tablist[NSSM_TAB_LOGON], IDC_PASSWORD1, service->password, (int) service->passwordlen) != length) {
           SecureZeroMemory(service->password, service->passwordlen * sizeof(TCHAR));
           HeapFree(GetProcessHeap(), 0, service->password);
           service->password = 0;
@@ -721,7 +735,7 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
         }
 
         /* Get confirmation. */
-        if (! GetDlgItemText(tablist[NSSM_TAB_LOGON], IDC_PASSWORD2, password, (int) service->passwordlen)) {
+        if (GetDlgItemText(tablist[NSSM_TAB_LOGON], IDC_PASSWORD2, password, (int) service->passwordlen) != length) {
 
           SecureZeroMemory(service->password, service->passwordlen * sizeof(TCHAR));
           HeapFree(GetProcessHeap(), 0, service->password);
@@ -751,27 +765,9 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
   }
 
   /* Get dependencies. */
-  unsigned long dependencieslen = (unsigned long) SendMessage(GetDlgItem(tablist[NSSM_TAB_DEPENDENCIES], IDC_DEPENDENCIES), WM_GETTEXTLENGTH, 0, 0);
-  if (dependencieslen) {
-    TCHAR *dependencies = (TCHAR *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (dependencieslen + 2) * sizeof(TCHAR));
-    if (! dependencies) {
-      popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_EVENT_OUT_OF_MEMORY, _T("dependencies"), _T("install()"));
-      return 6;
-    }
-
-    if (! GetDlgItemText(tablist[NSSM_TAB_DEPENDENCIES], IDC_DEPENDENCIES, dependencies, dependencieslen + 1)) {
-      popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_INVALID_DEPENDENCIES);
-      HeapFree(GetProcessHeap(), 0, dependencies);
-      return 6;
-    }
-
-    if (unformat_double_null(dependencies, dependencieslen, &service->dependencies, &service->dependencieslen)) {
-      HeapFree(GetProcessHeap(), 0, dependencies);
-      popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_EVENT_OUT_OF_MEMORY, _T("dependencies"), _T("install()"));
-      return 6;
-    }
-
-    HeapFree(GetProcessHeap(), 0, dependencies);
+  if (!read_edit_list(tablist[NSSM_TAB_DEPENDENCIES], IDC_DEPENDENCIES, &service->dependencies, &service->dependencieslen)) {
+    popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_INVALID_DEPENDENCIES);
+    return 6;
   }
 
   /* Remaining tabs are only for services we manage. */
@@ -851,57 +847,27 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
   if (SendDlgItemMessage(tablist[NSSM_TAB_HOOKS], IDC_REDIRECT_HOOK, BM_GETCHECK, 0, 0) & BST_CHECKED) service->hook_share_output_handles = true;
 
   /* Get environment. */
-  unsigned long envlen = (unsigned long) SendMessage(GetDlgItem(tablist[NSSM_TAB_ENVIRONMENT], IDC_ENVIRONMENT), WM_GETTEXTLENGTH, 0, 0);
-  if (envlen) {
-    TCHAR *env = (TCHAR *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (envlen + 2) * sizeof(TCHAR));
-    if (! env) {
-      popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_EVENT_OUT_OF_MEMORY, _T("environment"), _T("install()"));
-      return 5;
-    }
-
-    if (! GetDlgItemText(tablist[NSSM_TAB_ENVIRONMENT], IDC_ENVIRONMENT, env, envlen + 1)) {
-      popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_INVALID_ENVIRONMENT);
-      HeapFree(GetProcessHeap(), 0, env);
-      return 5;
-    }
-
-    TCHAR *newenv;
-    unsigned long newlen;
-    if (unformat_double_null(env, envlen, &newenv, &newlen)) {
-      HeapFree(GetProcessHeap(), 0, env);
-      popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_EVENT_OUT_OF_MEMORY, _T("environment"), _T("install()"));
-      return 5;
-    }
-
-    HeapFree(GetProcessHeap(), 0, env);
-    env = newenv;
-    envlen = newlen;
-
-    /* Test the environment is valid. */
-    if (test_environment(env)) {
-      popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_INVALID_ENVIRONMENT);
-      HeapFree(GetProcessHeap(), 0, env);
-      return 5;
-    }
-
-    if (SendDlgItemMessage(tablist[NSSM_TAB_ENVIRONMENT], IDC_ENVIRONMENT_REPLACE, BM_GETCHECK, 0, 0) & BST_CHECKED) {
-      service->env = env;
-      service->envlen = envlen;
-    }
-    else {
-      service->env_extra = env;
-      service->env_extralen = envlen;
-    }
+  HWND replace_control = GetDlgItem(tablist[NSSM_TAB_ENVIRONMENT], IDC_ENVIRONMENT_REPLACE);
+  if (!replace_control) {
+    popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_INVALID_ENVIRONMENT);
+    return 5;
   }
-  else if (SendDlgItemMessage(tablist[NSSM_TAB_ENVIRONMENT], IDC_ENVIRONMENT_REPLACE, BM_GETCHECK, 0, 0) & BST_CHECKED) {
+  bool replace = SendMessage(replace_control, BM_GETCHECK, 0, 0) == BST_CHECKED;
+  TCHAR **env = replace ? &service->env : &service->env_extra;
+  DWORD *count = replace ? &service->envlen : &service->env_extralen;
+  if (!read_edit_list(tablist[NSSM_TAB_ENVIRONMENT], IDC_ENVIRONMENT, env, count) ||
+      (*env && !valid_environment(*env, *count))) {
+    popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_INVALID_ENVIRONMENT);
+    return 5;
+  }
+  if (replace && !*env) {
     service->envlen = 2;
     service->env = (TCHAR *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, service->envlen * sizeof(TCHAR));
     if (!service->env) return 5;
   }
 
   /* When both blocks exist, the editor shows AppEnvironmentExtra. */
-  if (orig_service && orig_service->env && orig_service->env_extra && ! service->env &&
-      ! (SendDlgItemMessage(tablist[NSSM_TAB_ENVIRONMENT], IDC_ENVIRONMENT_REPLACE, BM_GETCHECK, 0, 0) & BST_CHECKED)) {
+  if (orig_service && orig_service->env && orig_service->env_extra && !replace) {
     service->env = copy_environment_block(orig_service->env);
     if (! service->env) return 5;
     service->envlen = orig_service->envlen;

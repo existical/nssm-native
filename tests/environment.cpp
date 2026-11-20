@@ -1,12 +1,5 @@
 #include "test.h"
-#include "launch_fixture.h"
 // Include the implementation to exercise both set and private unset paths.
-#undef CreateProcess
-#define CreateProcess launch_test::create
-#define TerminateProcess launch_test::terminate
-#define WaitForSingleObject launch_test::wait
-#define CloseHandle launch_test::close
-#define nssm_imagepath launch_test::imagepath
 static bool reject_expansion;
 static DWORD WINAPI expand_for_test(LPCTSTR source, LPTSTR output, DWORD capacity) {
   if (reject_expansion && !_tcscmp(source, _T("%NSSM_TEST_LITERAL%"))) {
@@ -19,11 +12,6 @@ static DWORD WINAPI expand_for_test(LPCTSTR source, LPTSTR output, DWORD capacit
 #define ExpandEnvironmentStrings expand_for_test
 #include "../src/env.cpp"
 #undef ExpandEnvironmentStrings
-#undef nssm_imagepath
-#undef CreateProcess
-#undef TerminateProcess
-#undef WaitForSingleObject
-#undef CloseHandle
 
 static void expect_variable(const TCHAR *name, const TCHAR *expected) {
   TCHAR value[256] = {};
@@ -39,6 +27,15 @@ static void expect_variable(const TCHAR *name, const TCHAR *expected) {
 }
 
 void test_environment_entries() {
+  const TCHAR valid[] = _T("EMPTY=\0MIXED=a=b\0");
+  const TCHAR empty_block[] = {0, 0};
+  const TCHAR missing[] = _T("GOOD=1\0INVALID\0");
+  const TCHAR unnamed[] = _T("=value\0");
+  CHECK(valid_environment(valid, _countof(valid)));
+  CHECK(valid_environment(empty_block, _countof(empty_block)));
+  CHECK(!valid_environment(valid, _countof(valid) - 1));
+  CHECK(!valid_environment(missing, _countof(missing)));
+  CHECK(!valid_environment(unnamed, _countof(unnamed)));
   const TCHAR *names[] = { _T("NSSM_TEST_A"), _T("NSSM_TEST_B"), _T("NSSM_TEST_C"), _T("NSSM_TEST_D") };
   // Exercise all empty/nonempty combinations, covering first, middle, last,
   // consecutive and all-empty entries, in both set and unset mode.

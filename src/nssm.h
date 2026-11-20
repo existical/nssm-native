@@ -79,7 +79,8 @@ int num_cpus();
 ULONGLONG monotonic_milliseconds();
 int usage(int);
 const TCHAR *nssm_unquoted_imagepath();
-const TCHAR *nssm_imagepath();
+DWORD initialize_image_paths(const TCHAR *);
+bool stdout_ok();
 const TCHAR *nssm_exe();
 
 #define NSSM _T("NSSM")

@@ -16,7 +16,7 @@ static int write_hook(const TCHAR *service, const TCHAR *event, const TCHAR *act
   return fail_hook_save ? 1 : set_hook(service, event, action, command, expand);
 }
 static int token, save_result, fail_after = -1, read_failure;
-static int display_failure;
+static int display_failure, short_read;
 static bool short_display;
 static BOOL WINAPI display(HWND field, LPCTSTR value) {
   if (display_failure && GetDlgCtrlID(field) == display_failure) {
@@ -47,9 +47,9 @@ static int save(nssm_service_t *s, bool editing) {
   CHECK(s && s->handle == borrowed); CHECK(! closes); saves++; return save_result;
 }
 static const TCHAR *well_known(const TCHAR *s) { return active ? known_account : well_known_username(s); }
-static int environment(TCHAR *s) { return active ? (_tcscmp(s, _T("invalid")) ? 0 : 1) : test_environment(s); }
 static UINT WINAPI text(HWND h, int id, LPTSTR s, int n) {
   if (active && id == read_failure) { if (n) s[0] = 0; return 0; }
+  if (active && id == short_read && n > 2) return GetDlgItemText(h, id, s, n - 1);
   return GetDlgItemText(h, id, s, n);
 }
 static BOOL WINAPI show(HWND h, int mode) {
@@ -91,7 +91,7 @@ static BOOL WINAPI browse_file(LPOPENFILENAME info) {
   }
   return FALSE;
 }
-static void reset() { REQUIRE(allocations.empty()); active = true; closes = saves = 0; save_result = read_failure = 0; fail_after = -1; known_account = NULL; }
+static void reset() { REQUIRE(allocations.empty()); active = true; closes = saves = 0; save_result = read_failure = short_read = 0; fail_after = -1; known_account = NULL; }
 static void finish() {
   CHECK(allocations.empty());
   for (auto a : allocations) { SecureZeroMemory(a.p, a.bytes); HeapFree(GetProcessHeap(), 0, a.p); }
@@ -106,7 +106,6 @@ static void finish() {
 #define HeapFree gui_test::release
 #define edit_service gui_test::save
 #define well_known_username gui_test::well_known
-#define test_environment gui_test::environment
 #define ShowWindow gui_test::show
 #undef GetDlgItemText
 #define GetDlgItemText gui_test::text
@@ -128,7 +127,6 @@ static void finish() {
 #undef HeapFree
 #undef edit_service
 #undef well_known_username
-#undef test_environment
 #undef ShowWindow
 #undef GetDlgItemText
 #define GetDlgItemText GetDlgItemTextW
@@ -246,6 +244,24 @@ static void test_edit_list_load() {
   GetDlgItemText(tablist[NSSM_TAB_ENVIRONMENT], IDC_ENVIRONMENT, text, _countof(text));
   CHECK(!_tcscmp(text, _T("ONE=1\r\nTWO=2")));
   CHECK(IsDlgButtonChecked(tablist[NSSM_TAB_ENVIRONMENT], IDC_ENVIRONMENT_REPLACE) == BST_CHECKED);
+  service->handle = gui_test::borrowed;
+  for (int id : {IDC_DEPENDENCIES, IDC_ENVIRONMENT}) {
+    HWND tab = tablist[id == IDC_DEPENDENCIES ? NSSM_TAB_DEPENDENCIES : NSSM_TAB_ENVIRONMENT];
+    HWND field = GetDlgItem(tab, id);
+    gui_test::reset();
+    gui_test::short_read = id;
+    CHECK(edit(window, service) != 0 && !gui_test::saves);
+    gui_test::short_read = 0;
+    SetWindowLongPtr(field, GWLP_ID, 0);
+    CHECK(edit(window, service) != 0 && !gui_test::saves);
+    SetWindowLongPtr(field, GWLP_ID, id);
+    gui_test::finish();
+  }
+  HWND selector = GetDlgItem(tablist[NSSM_TAB_ENVIRONMENT], IDC_ENVIRONMENT_REPLACE);
+  SetWindowLongPtr(selector, GWLP_ID, 0);
+  gui_test::reset();
+  CHECK(edit(window, service) != 0 && !gui_test::saves);
+  gui_test::finish();
   DestroyWindow(window);
   delete service;
   MSG message;
@@ -352,10 +368,12 @@ void test_gui_password() {
   SetDlgItemText(tablist[NSSM_TAB_LOGON], IDC_USERNAME, _T("Example"));
   SetDlgItemText(tablist[NSSM_TAB_LOGON], IDC_PASSWORD1, _T("ExampleSecret42"));
   SetDlgItemText(tablist[NSSM_TAB_LOGON], IDC_PASSWORD2, _T("ExampleSecret42"));
-  for (int scenario = 0; scenario < 9; scenario++) {
+  for (int scenario = 0; scenario < 12; scenario++) {
     gui_test::reset();
     nssm_service_t *attempt = alloc_nssm_service(); REQUIRE(attempt);
     SetDlgItemText(tablist[NSSM_TAB_LOGON], IDC_PASSWORD2, scenario == 1 ? _T("MismatchSecret!") : _T("ExampleSecret42"));
+    SetDlgItemText(tablist[NSSM_TAB_LOGON], IDC_PASSWORD1, _T("ExampleSecret42"));
+    if (scenario >= 9) gui_test::short_read = scenario == 9 ? IDC_USERNAME : scenario == 10 ? IDC_PASSWORD1 : IDC_PASSWORD2;
     if (scenario == 2) gui_test::read_failure = IDC_PASSWORD1;
     if (scenario == 3) gui_test::read_failure = IDC_PASSWORD2;
     if (scenario >= 4 && scenario <= 6) gui_test::fail_after = scenario - 4;

@@ -37,7 +37,8 @@ Remove-Item -LiteralPath $gitDirectory -Recurse -Force
 $pkg = Join-Path $repo 'incomplete-package'
 New-Item -ItemType Directory -Path (Join-Path $pkg 'evidence') | Out-Null
 $report = 'x64-Release-tests.xml'
-$record = @{archive='fixture.zip'; build=@{architecture='x64'; configuration='Release'; validation=@{tests=37; failures=0; report=$report}}}
+$identity = @{commit=$commit; clean=$true}
+$record = @{archive='fixture.zip'; build=@{source=$identity; architecture='x64'; configuration='Release'; validation=@{tests=37; failures=0; report=$report}}}
 @{schema=1; builds=@($record)*4; source_archive=@{name='fixture.zip'}; source=@{commit=$commit; clean=$true}} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $pkg 'build-info.json')
 $sums = Join-Path $pkg 'SHA256SUMS.txt'
 [IO.File]::WriteAllText($sums, '')
@@ -58,6 +59,13 @@ function Update-Checksums {
 }
 Reject-Evidence 'Missing checksum entry for build-info.json'
 [IO.File]::WriteAllText((Join-Path $pkg 'fixture.zip'), 'fixture')
+$record.build.source = @{commit=('0' * 40); clean=$true}
+$fixtureManifest = @{schema=1; builds=@($record)*4; source_archive=@{name='fixture.zip'}; source=$identity}
+$fixtureManifest | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $manifestPath
+Update-Checksums
+Reject-Evidence 'Source identity mismatch'
+$record.build.source = $identity
+$fixtureManifest | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $manifestPath
 Update-Checksums
 Reject-Evidence 'Missing checksum-covered test report'
 $xml = Join-Path $pkg "evidence/$report"

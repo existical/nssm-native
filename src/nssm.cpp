@@ -6,8 +6,7 @@ extern bool is_admin;
 extern imports_t imports;
 
 static TCHAR unquoted_imagepath[PATH_LENGTH];
-static TCHAR imagepath[PATH_LENGTH];
-static TCHAR imageargv0[PATH_LENGTH];
+static const TCHAR *imageargv0 = _T("");
 
 void nssm_exit(int status) {
   free_imports();
@@ -250,8 +249,16 @@ const TCHAR *nssm_unquoted_imagepath() {
   return unquoted_imagepath;
 }
 
-const TCHAR *nssm_imagepath() {
-  return imagepath;
+DWORD initialize_image_paths(const TCHAR *invocation) {
+  DWORD length = GetModuleFileName(NULL, unquoted_imagepath, _countof(unquoted_imagepath));
+  if (!length) return GetLastError();
+  if (length >= _countof(unquoted_imagepath)) return ERROR_INSUFFICIENT_BUFFER;
+  imageargv0 = invocation && *invocation ? invocation : unquoted_imagepath;
+  return ERROR_SUCCESS;
+}
+
+bool stdout_ok() {
+  return fflush(stdout) != EOF && !ferror(stdout);
 }
 
 const TCHAR *nssm_exe() {
@@ -271,10 +278,11 @@ int _tmain(int argc, TCHAR **argv) {
   if (get_imports()) nssm_exit(111);
 
   /* Remember our path for later. */
-  _sntprintf_s(imageargv0, _countof(imageargv0), _TRUNCATE, _T("%s"), argv[0]);
-  GetModuleFileName(0, unquoted_imagepath, _countof(unquoted_imagepath));
-  GetModuleFileName(0, imagepath, _countof(imagepath));
-  PathQuoteSpaces(imagepath);
+  DWORD path_error = initialize_image_paths(argv[0]);
+  if (path_error) {
+    _ftprintf(stderr, _T("GetModuleFileName(): %s\n"), error_string(path_error));
+    nssm_exit(1);
+  }
 
   /* Elevate */
   if (argc > 1) {
@@ -284,8 +292,8 @@ int _tmain(int argc, TCHAR **argv) {
       status, statuscode, rotate, list, processes, version
     */
     if (is_version(argv[1])) {
-      _tprintf(_T("%s %s %s %s\n"), NSSM, NSSM_VERSION, NSSM_CONFIGURATION, NSSM_DATE);
-      nssm_exit(0);
+      int written = _tprintf(_T("%s %s %s %s\n"), NSSM, NSSM_VERSION, NSSM_CONFIGURATION, NSSM_DATE);
+      nssm_exit(written >= 0 && stdout_ok() ? 0 : 1);
     }
     if (str_equiv(argv[1], _T("start"))) nssm_exit(control_service(NSSM_SERVICE_CONTROL_START, argc - 2, argv + 2));
     if (str_equiv(argv[1], _T("stop"))) nssm_exit(control_service(SERVICE_CONTROL_STOP, argc - 2, argv + 2));

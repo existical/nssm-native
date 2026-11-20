@@ -137,44 +137,15 @@ int duplicate_environment(TCHAR *rawenv) {
   return set_environment_block(useful_environment(rawenv), true, false);
 }
 
-/*
-  Verify an environment block.
-  Returns:  1 if environment is invalid.
-            0 if environment is OK.
-           -1 on error.
-*/
-int test_environment(TCHAR *env) {
-  TCHAR *path = (TCHAR *) nssm_imagepath();
-  STARTUPINFO si;
-  ZeroMemory(&si, sizeof(si));
-  si.cb = sizeof(si);
-  PROCESS_INFORMATION pi;
-  ZeroMemory(&pi, sizeof(pi));
-  unsigned long flags = CREATE_SUSPENDED;
-#ifdef UNICODE
-  flags |= CREATE_UNICODE_ENVIRONMENT;
-#endif
-
-  /*
-    Try to relaunch ourselves but with the candidate environment set.
-    Assuming no solar flare activity, the only reason this would fail is if
-    the environment were invalid.
-  */
-  if (CreateProcess(0, path, 0, 0, 0, flags, env, 0, &si, &pi)) {
-    TerminateProcess(pi.hProcess, 0);
-    /* Termination is asynchronous; never report success without observing exit. */
-    DWORD waited = WaitForSingleObject(pi.hProcess, 5000);
-    CloseHandle(pi.hThread);
-    CloseHandle(pi.hProcess);
-    if (waited != WAIT_OBJECT_0) return -1;
+/* Configuration entries must be assignments. Values can be empty or contain '='. */
+bool valid_environment(const TCHAR *env, DWORD count) {
+  DWORD length;
+  if (!env || !double_null_length(env, count, &length) || length != count) return false;
+  for (const TCHAR *entry = env; *entry; entry += _tcslen(entry) + 1) {
+    const TCHAR *equals = _tcschr(entry, _T('='));
+    if (!equals || equals == entry) return false;
   }
-  else {
-    unsigned long error = GetLastError();
-    if (error == ERROR_INVALID_PARAMETER) return 1;
-    else return -1;
-  }
-
-  return 0;
+  return true;
 }
 
 /*

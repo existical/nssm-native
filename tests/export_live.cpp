@@ -136,6 +136,13 @@ int wmain(int argc, wchar_t **argv) {
       require(run(argv[1], L"reset " + quoted(imported.name) + L" Application").code != 0, "Reject removal of required Application");
       require(run(argv[1], L"get " + quoted(imported.name) + L" Application").output.find(argv[1]) != std::wstring::npos, "Preserve repaired application");
       source.configure(argv[1]); imported.configure(argv[1]);
+      require(run(argv[1], L"version", true).code != 0, "Version detects an output error");
+      require(run(argv[1], L"get " + quoted(imported.name) + L" Application", true).code != 0, "Get detects an output error");
+      require(run(argv[1], L"status " + quoted(source.name), true).code != 0, "Status detects an output error");
+      require(run(argv[1], L"statuscode " + quoted(source.name), true).code == SERVICE_STOPPED, "Statuscode preserves the service state");
+      require(run(argv[1], L"set " + quoted(source.name) + L" AppEnvironment KEEP=one").code == 0, "Set baseline environment");
+      require(run(argv[1], L"set " + quoted(source.name) + L" AppEnvironment KEY=two MISSING_EQUALS").code != 0, "Reject a malformed replacement");
+      require(run(argv[1], L"get " + quoted(source.name) + L" AppEnvironment KEEP").output.find(L"one") != std::wstring::npos, "Invalid replacement preserves the original environment");
       require(run(argv[1], L"set " + quoted(source.name) + L" DisplayName " + quoted(source.name + L" custom")).code == 0, "Give source a custom display name");
       wchar_t native_image[MAX_PATH];
       require(GetModuleFileNameW(NULL, native_image, _countof(native_image)) > 0, "Locate native fixture image");

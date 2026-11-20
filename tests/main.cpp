@@ -12,6 +12,7 @@ int wmain(int argc, TCHAR **argv) {
   }
   try {
     REQUIRE(argc == 2);
+    REQUIRE(initialize_image_paths(argv[0]) == ERROR_SUCCESS);
     if (! _tcscmp(argv[1], _T("environment"))) test_environment_entries();
     else if (! _tcscmp(argv[1], _T("admin"))) test_admin_check();
     else if (! _tcscmp(argv[1], _T("waits"))) test_handle_waits();

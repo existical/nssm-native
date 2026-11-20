@@ -4,14 +4,14 @@ static SERVICE_STATUS_HANDLE status_handle;
 static HANDLE request_event;
 static volatile LONG requested;
 static std::wstring mode;
-static void publish(DWORD state, DWORD checkpoint = 0, DWORD hint = 0, DWORD error = 0) {
+static void publish(DWORD state, DWORD checkpoint = 0, DWORD hint = 0, DWORD error = 0, DWORD specific = 42) {
   SERVICE_STATUS status = {};
   status.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
   status.dwCurrentState = state;
   status.dwControlsAccepted = state == SERVICE_RUNNING || state == SERVICE_PAUSED ? SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_PAUSE_CONTINUE : 0;
   status.dwCheckPoint = checkpoint; status.dwWaitHint = hint;
   status.dwWin32ExitCode = error;
-  if (error == ERROR_SERVICE_SPECIFIC_ERROR) status.dwServiceSpecificExitCode = 42;
+  if (error == ERROR_SERVICE_SPECIFIC_ERROR) status.dwServiceSpecificExitCode = specific;
   SetServiceStatus(status_handle, &status);
 }
 static void WINAPI handler(DWORD control) {
@@ -25,6 +25,12 @@ static void WINAPI service_main(DWORD argc, LPWSTR *argv) {
   if (! request_event) return;
   status_handle = RegisterServiceCtrlHandlerW(argv[0], handler);
   if (! status_handle) { CloseHandle(request_event); return; }
+  bool expected = mode == L"args" ? argc == 3 && !wcscmp(argv[1], L"first option") && !wcscmp(argv[2], L"second") : argc == 1;
+  if (!expected) {
+    publish(SERVICE_STOPPED, 0, 0, ERROR_SERVICE_SPECIFIC_ERROR, argc);
+    CloseHandle(request_event);
+    return;
+  }
   publish(SERVICE_RUNNING);
   ULONGLONG started = GetTickCount64();
   while (GetTickCount64() - started < 30000) { // Independent fixture watchdog.
@@ -85,10 +91,17 @@ static int test(const std::wstring &nssm) {
     require(length && length < _countof(self), "Resolve fixture executable");
     manager = OpenSCManagerW(NULL, NULL, SC_MANAGER_CONNECT | SC_MANAGER_CREATE_SERVICE);
     require(manager != NULL, "Control test requires an elevated disposable runner");
-    const wchar_t *modes[] = {L"normal", L"stall", L"failure"};
+    const wchar_t *modes[] = {L"normal", L"stall", L"failure", L"args"};
     for (const wchar_t *test_mode : modes) {
       fixture owned(manager, self, test_mode);
-      require(run(nssm, L"start " + quoted(owned.name)).code == 0, "Start owned control fixture");
+      std::wstring target = quoted(owned.name);
+      bool arguments = !wcscmp(test_mode, L"args");
+      if (arguments) target += L" \"first option\" second";
+      result started = run(nssm, L"start " + target);
+      if (started.code) fwprintf(stderr, L"Startup argument check: %ls\n", started.output.c_str());
+      require(started.code == 0, "Start fixture with exact service arguments");
+      if (arguments) require(run(nssm, L"restart " + target).code == 0, "Restart forwards the same service arguments");
+      require(run(nssm, L"processes " + quoted(owned.name), true).code != 0, "Process listing detects an output error");
       require(wait_state(owned.service, SERVICE_RUNNING, 3000), "Fixture running");
       result paused = run(nssm, L"pause " + quoted(owned.name));
       if (std::wstring(test_mode) == L"stall") {

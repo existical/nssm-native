@@ -519,7 +519,7 @@ static int setting_set_environment(const TCHAR *service_name, void *param, const
     if (unformat_double_null(string, (unsigned long) _tcslen(string), &unformatted, &newlen)) return -1;
   }
 
-  if (test_environment(unformatted)) {
+  if (!valid_environment(unformatted, newlen)) {
     HeapFree(GetProcessHeap(), 0, unformatted);
     print_message(stderr, NSSM_GUI_INVALID_ENVIRONMENT);
     return -1;

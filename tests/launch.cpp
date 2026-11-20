@@ -4,7 +4,7 @@ namespace launch_test {
 static bool cleanup_race;
 static volatile LONG cleanup_calls;
 static HANDLE cleanup_entered, cleanup_release, stop_entered, cleanup_stopped;
-static bool active, create_ok, terminate_ok, resume_ok, abort_hook, stopped;
+static bool active, create_ok, resume_ok, abort_hook, stopped;
 static bool process_closed, thread_closed, resumed, affinity_ok = true;
 static unsigned closes, output_closes, creates, resumes, waits, tree_calls;
 static DWORD wait_result, create_error, launch_flags;
@@ -28,11 +28,9 @@ static DWORD observed_delay;
 static unsigned stopped_statuses, running_statuses;
 static unsigned registrations, invalid_registrations, unregistrations;
 static const TCHAR *cancel_hook_action;
-static std::basic_string<TCHAR> live_image;
-const TCHAR *imagepath() { return live_image.empty() ? nssm_imagepath() : &live_image[0]; }
 
 static void reset() {
-  active = create_ok = terminate_ok = resume_ok = true;
+  active = create_ok = resume_ok = true;
   abort_hook = stopped = process_closed = thread_closed = resumed = false;
   closes = output_closes = creates = resumes = waits = tree_calls = 0;
   wait_result = WAIT_OBJECT_0;
@@ -46,7 +44,7 @@ static void reset() {
 }
 BOOL WINAPI create(LPCTSTR app, LPTSTR cmd, LPSECURITY_ATTRIBUTES ps, LPSECURITY_ATTRIBUTES ts,
   BOOL inherit, DWORD flags, LPVOID env, LPCTSTR dir, LPSTARTUPINFO si, LPPROCESS_INFORMATION pi) {
-  if (! active) return CreateProcess(app, cmd, ps, ts, inherit, flags | (live_image.empty() ? 0 : CREATE_NO_WINDOW), env, dir, si, pi);
+  if (! active) return CreateProcess(app, cmd, ps, ts, inherit, flags, env, dir, si, pi);
   creates++;
   if (! create_ok) { SetLastError(create_error); return FALSE; }
   launch_flags = flags;
@@ -85,13 +83,6 @@ BOOL WINAPI unregister_wait(HANDLE h, HANDLE completion) {
   if (unregister_error) { SetLastError(unregister_error); return FALSE; }
   if (completion && completion != INVALID_HANDLE_VALUE) REQUIRE(SetEvent(completion));
   return TRUE;
-}
-BOOL WINAPI terminate(HANDLE h, UINT result) {
-  if (! active) return TerminateProcess(h, result);
-  CHECK(h == process_handle && ! process_closed);
-  stopped = terminate_ok;
-  if (! terminate_ok) SetLastError(ERROR_ACCESS_DENIED);
-  return terminate_ok;
 }
 DWORD WINAPI wait(HANDLE h, DWORD timeout) {
   if (drain_entered && h == completion_event && timeout == INFINITE) SetEvent(drain_entered);
@@ -194,15 +185,6 @@ int exit_action(const TCHAR *name, DWORD *code, TCHAR *action, bool *fallback) {
   return get_exit_action(name, code, action, fallback);
 }
 
-static void environment_case(bool created, bool terminated, DWORD waited, int expected) {
-  reset(); create_ok = created; terminate_ok = terminated; wait_result = waited;
-  TCHAR block[] = _T("A=1\0");
-  CHECK(test_environment(block) == expected);
-  CHECK(closes == (created ? 2U : 0U));
-  CHECK(waits == (created ? 1U : 0U));
-  if (created) CHECK(launch_flags & CREATE_SUSPENDED);
-  active = false;
-}
 static void service_case(bool suspended, bool created, bool resume_success, bool abort, unsigned long throttle = 1, bool duplicate_success = true) {
   reset(); create_ok = created; resume_ok = resume_success; abort_hook = abort; wait_result = WAIT_TIMEOUT; duplicate_ok = duplicate_success;
   nssm_service_t *service = new nssm_service_t();
@@ -586,11 +568,6 @@ void test_launch_handles() {
   test_control_overlap();
   test_startup_cancellation();
   test_cleanup_overlap();
-  launch_test::environment_case(true, true, WAIT_OBJECT_0, 0);
-  launch_test::environment_case(true, false, WAIT_FAILED, -1);
-  launch_test::environment_case(true, true, WAIT_TIMEOUT, -1);
-  launch_test::environment_case(true, false, WAIT_OBJECT_0, 0); // Already exited.
-  launch_test::environment_case(false, false, WAIT_FAILED, -1);
   launch_test::service_case(false, true, true, false);
   launch_test::service_case(false, true, true, false, 0);
   launch_test::service_case(true, true, true, false);
@@ -598,25 +575,5 @@ void test_launch_handles() {
   launch_test::service_case(false, true, true, true);
   launch_test::service_case(true, true, false, false);
   launch_test::service_case(false, true, true, false, 1, false); // Failed observer duplication must clean up.
-  launch_test::reset();
-  launch_test::create_ok = false;
-  launch_test::create_error = ERROR_INVALID_PARAMETER;
-  TCHAR empty[] = { 0, 0 };
-  CHECK(test_environment(empty) == 1);
-  CHECK(! launch_test::closes);
-  launch_test::active = false;
   for (unsigned i = 0; i < 200; i++) launch_test::service_case(i % 2 != 0, true, true, false);
-
-  TCHAR exe[PATH_LENGTH];
-  REQUIRE(GetModuleFileName(NULL, exe, _countof(exe)));
-  launch_test::live_image = _T("\"") + std::basic_string<TCHAR>(exe) + _T("\"");
-  TCHAR block[] = _T("NSSM_VALIDATION_TEST=1\0");
-  REQUIRE(test_environment(block) == 0); // Warm-up before handle accounting.
-  DWORD before, after;
-  before = test_handle_count();
-  for (unsigned i = 0; i < 200; i++) CHECK(test_environment(block) == 0);
-  after = test_handle_count();
-  CHECK(after == before);
-  printf("Validator handles after 200 launches: before=%lu after=%lu\n", before, after);
-  launch_test::live_image.clear();
 }

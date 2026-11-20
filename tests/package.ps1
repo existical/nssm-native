@@ -26,6 +26,18 @@ function Get-PackageArchive([string]$Name) {
     if (!$checkedFiles.ContainsKey($path)) { throw "Missing checksum-covered archive: $Name" }
     return $path
 }
+# The packager copies the same flat source identity into every manifest.
+function Assert-SourceIdentity($Expected, $Actual, [string]$Location) {
+    if (!$Actual -or @($Expected.PSObject.Properties).Count -ne @($Actual.PSObject.Properties).Count) {
+        throw "Source identity mismatch in $Location"
+    }
+    foreach ($property in $Expected.PSObject.Properties) {
+        $other = $Actual.PSObject.Properties[$property.Name]
+        if (!$other -or $other.Name -cne $property.Name -or ![object]::Equals($property.Value, $other.Value)) {
+            throw "Source identity mismatch in $Location ($($property.Name))"
+        }
+    }
+}
 $manifest = Get-Content -LiteralPath (Join-Path $package 'build-info.json') -Raw | ConvertFrom-Json
 if ($manifest.builds.Count -ne 4 -or $manifest.source.commit -notmatch '^[0-9a-f]{40}$' -or -not $manifest.source.clean) { throw 'Invalid package manifest.' }
 if ($manifest.schema -notin @(1, 2)) { throw 'Unsupported package manifest version.' }
@@ -37,6 +49,7 @@ New-Item -ItemType Directory -Path $work | Out-Null
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 foreach ($record in $manifest.builds) {
     $build = $record.build
+    Assert-SourceIdentity $manifest.source $build.source $record.archive
     if ($build.architecture -notin @('x64','x86') -or $build.configuration -notin @('Release','Debug')) { throw 'Invalid build configuration.' }
     $report = "$($build.architecture)-$($build.configuration)-tests.xml"
     $reportPath = [IO.Path]::GetFullPath((Join-Path $package "evidence/$report"))
@@ -78,7 +91,8 @@ foreach ($record in $manifest.builds) {
     $destination = Join-Path $work $name
     Expand-Archive -LiteralPath $archive -DestinationPath $destination
     $inner = Get-Content -LiteralPath (Join-Path $destination 'build-info.json') -Raw | ConvertFrom-Json
-    if ($inner.source.commit -ne $manifest.source.commit -or $inner.validation.failures -ne 0 -or $inner.validation.tests -lt 37) { throw 'Binary identity or validation mismatch.' }
+    Assert-SourceIdentity $manifest.source $inner.source "$name/build-info.json"
+    if ($inner.validation.failures -ne 0 -or $inner.validation.tests -lt 37) { throw 'Binary identity or validation mismatch.' }
     if ($build.schema -ne $manifest.schema -or $inner.schema -ne $manifest.schema -or
         $inner.architecture -ne $build.architecture -or $inner.configuration -ne $build.configuration -or
         $inner.version_output -cne $build.version_output -or $inner.validation.report -cne $report -or
@@ -99,7 +113,8 @@ if ((Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvar
 $source = Join-Path $work 'source'
 Expand-Archive -LiteralPath $archivePath -DestinationPath $source
 $identity = Get-Content -LiteralPath (Join-Path $source 'source-info.json') -Raw | ConvertFrom-Json
-if ($identity.commit -ne $manifest.source.commit -or $identity.description -ne $manifest.source.description -or (Test-Path -LiteralPath "$source/.git")) { throw 'Source archive revision mismatch.' }
+Assert-SourceIdentity $manifest.source $identity 'source-info.json'
+if (Test-Path -LiteralPath "$source/.git") { throw 'Unexpected Git metadata in the source archive.' }
 & cmake "-DNSSM_SOURCE_DIR=$source" "-DNSSM_VERSION_HEADER=$source/version.h" -P "$source/cmake/Version.cmake"
 if ($LASTEXITCODE -ne 0) { throw 'Archive version generation failed.' }
 $header = Get-Content -LiteralPath "$source/version.h" -Raw

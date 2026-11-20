@@ -396,6 +396,15 @@ static int run_start() {
 }
 
 void test_startup() {
+  TCHAR image[16];
+  CHECK(service_image_path(_T("nssm.exe"), image, _countof(image)) && !_tcscmp(image, _T("nssm.exe")));
+  CHECK(service_image_path(_T("C:\\a b\\x.exe"), image, 15) && !_tcscmp(image, _T("\"C:\\a b\\x.exe\"")));
+  CHECK(!service_image_path(_T("C:\\a b\\x.exe"), image, 14));
+  std::wstring long_path = L"C:\\a space\\" + std::wstring(300, L'x') + L"\\nssm.exe";
+  std::vector<TCHAR> full(long_path.size() + 3);
+  CHECK(service_image_path(long_path.c_str(), full.data(), full.size()));
+  CHECK(L"\"" + long_path + L"\"" == full.data());
+  CHECK(!service_image_path(long_path.c_str(), full.data(), full.size() - 1));
   TCHAR *name[] = {_T("NSSM-Lock-Test")};
   wait_test::fail_hook_lock = true;
   service_main(1, name);
