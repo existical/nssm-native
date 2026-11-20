@@ -1091,12 +1091,12 @@ int native_dump_objectname(const TCHAR *service_name, void *param, const TCHAR *
   int ret = native_get_objectname(service_name, param, name, default_value, value, additional);
   if (ret != 1) return ret;
 
-  /* Properly checking for a virtual account requires the actual service name. */
-  if (! _tcsnicmp(NSSM_VIRTUAL_SERVICE_ACCOUNT_DOMAIN, value->string, _tcslen(NSSM_VIRTUAL_SERVICE_ACCOUNT_DOMAIN))) {
-    TCHAR *name = virtual_account(service_name);
-    if (! name) return -1;
+  const dump_context_t *context = (const dump_context_t *) default_value;
+  if (is_virtual_account(context->source_name, value->string)) {
+    TCHAR *target_account = virtual_account(service_name);
+    if (! target_account) return -1;
     HeapFree(GetProcessHeap(), 0, value->string);
-    value->string = name;
+    value->string = target_account;
   }
   else {
     /* Do we need to dump a dummy password? */

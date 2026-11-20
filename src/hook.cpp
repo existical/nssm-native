@@ -31,14 +31,17 @@ static unsigned long WINAPI await_hook(void *arg) {
   hook->k.kill_window_delay = NSSM_KILL_WINDOW_GRACE_PERIOD;
   hook->k.kill_threads_delay = NSSM_KILL_THREADS_GRACE_PERIOD;
   hook->k.creation_time = hook->creation_time;
+  if (!hook->k.creation_time.dwLowDateTime && !hook->k.creation_time.dwHighDateTime)
+    get_process_creation_time(hook->process_handle, &hook->k.creation_time);
   GetSystemTimeAsFileTime(&hook->k.exit_time);
-  kill_process_tree(&hook->k, hook->pid);
+  unsigned long cleanup_errors = kill_process_tree(&hook->k, hook->pid);
 
   if (! ret) {
     unsigned long exitcode;
     if (! GetExitCodeProcess(hook->process_handle, &exitcode)) ret = NSSM_HOOK_STATUS_ERROR;
     else if (exitcode == NSSM_HOOK_STATUS_ABORT) ret = NSSM_HOOK_STATUS_ABORT;
     else if (exitcode) ret = NSSM_HOOK_STATUS_FAILED;
+    else if (cleanup_errors) ret = NSSM_HOOK_STATUS_ERROR;
   }
   CloseHandle(hook->process_handle);
   HeapFree(GetProcessHeap(), 0, hook);
@@ -134,12 +137,15 @@ bool valid_hook_name(const TCHAR *hook_event, const TCHAR *hook_action, bool qui
 /* The service hook lock protects this list. Only started workers are linked. */
 void await_hook_threads(hook_thread_t *threads, SERVICE_STATUS_HANDLE status_handle, SERVICE_STATUS *status, unsigned long deadline) {
   if (!threads) return;
+  ULONGLONG start = deadline ? monotonic_milliseconds() : 0;
   hook_thread_data_t **link = &threads->first;
   threads->last = NULL;
   while (*link) {
     hook_thread_data_t *worker = *link;
-    bool complete = deadline ?
-        await_single_handle(status_handle, status, worker->thread_handle, worker->name, _T(__FUNCTION__), deadline) == 0 :
+    ULONGLONG elapsed = deadline ? monotonic_milliseconds() - start : 0;
+    DWORD remaining = elapsed < deadline ? deadline - (DWORD)elapsed : 0;
+    bool complete = remaining ?
+        await_single_handle(status_handle, status, worker->thread_handle, worker->name, _T(__FUNCTION__), remaining) == 0 :
         WaitForSingleObject(worker->thread_handle, 0) == WAIT_OBJECT_0;
     if (complete) {
       *link = worker->next;
@@ -327,7 +333,7 @@ int nssm_hook(hook_thread_t *hook_threads, nssm_service_t *service, TCHAR *hook_
     hook->process_handle = pi.hProcess;
     hook->pid = pi.dwProcessId;
     hook->deadline = deadline;
-    if (get_process_creation_time(hook->process_handle, &hook->creation_time)) GetSystemTimeAsFileTime(&hook->creation_time);
+    get_process_creation_time(hook->process_handle, &hook->creation_time);
 
     await_hook_threads(hook_threads, service->status_handle, &service->status, 0);
     hook_thread_data_t *entry = hook_threads ? (hook_thread_data_t *) HeapAlloc(GetProcessHeap(), 0, sizeof(*entry)) : NULL;

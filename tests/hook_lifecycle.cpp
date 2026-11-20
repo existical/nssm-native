@@ -14,6 +14,8 @@ static bool active, fail_thread, deferred, fail_process, fail_exit_query, fail_w
 static bool fail_worker_wait, timeout_worker_wait, fail_environment;
 static const TCHAR *failed_variable;
 static DWORD process_wait, process_exit;
+static DWORD creation_failures, cleanup_birth;
+static ULONGLONG elapsed;
 static int fail_after = -1, hook_lookup;
 static std::vector<unsigned long> events;
 static bool live;
@@ -77,7 +79,7 @@ static DWORD WINAPI wait(HANDLE value, DWORD timeout) {
   handle *h = lookup(value);
   if (! h->worker) return process_wait;
   if (fail_worker_wait) return WAIT_FAILED;
-  if (timeout_worker_wait) return WAIT_TIMEOUT;
+  if (timeout_worker_wait && !h->done) return WAIT_TIMEOUT;
   if (! h->done && timeout) {
     h->result = h->routine(h->argument);
     h->done = true;
@@ -123,9 +125,10 @@ static int await(SERVICE_STATUS_HANDLE sh, SERVICE_STATUS *status, HANDLE h, TCH
   readable(name);
   REQUIRE(timeout > 0 && timeout != INFINITE);
   DWORD result = wait(h, timeout);
+  if (result == WAIT_TIMEOUT) elapsed += timeout;
   return result == WAIT_OBJECT_0 ? 0 : result == WAIT_TIMEOUT ? 1 : -1;
 }
-static void kill(kill_t *k, unsigned long pid) {
+static unsigned long kill(kill_t *k, unsigned long pid) {
   if (live) {
     // The live helper has no descendants. Test ownership without invoking the
     // separately reviewed process-tree walker against other local processes.
@@ -136,18 +139,23 @@ static void kill(kill_t *k, unsigned long pid) {
       CHECK(TerminateProcess(k->process_handle, 0));
       CHECK(WaitForSingleObject(k->process_handle, 5000) == WAIT_OBJECT_0);
     }
-    return;
+    return 0;
   }
-  if (! active) { kill_process_tree(k, pid); return; }
+  if (! active) return kill_process_tree(k, pid);
   readable(k->name);
   lookup(k->process_handle);
+  cleanup_birth = k->creation_time.dwLowDateTime;
+  return !cleanup_birth;
 }
 static int creation(HANDLE h, FILETIME *time) {
   if (! active) return get_process_creation_time(h, time);
   lookup(h);
-  ZeroMemory(time, sizeof(*time));
+  if (creation_failures) { --creation_failures; return 1; }
+  time->dwHighDateTime = 0;
+  time->dwLowDateTime = 1234;
   return 0;
 }
+static ULONGLONG now_ms() { return active ? elapsed : monotonic_milliseconds(); }
 static int set_env(nssm_service_t *service) { return active ? (int) fail_environment : set_service_environment(service); }
 static void unset_env(nssm_service_t *service) { if (! active) unset_service_environment(service); }
 static BOOL WINAPI variable(LPCTSTR name, LPCTSTR value) { return active ? (!failed_variable || _tcscmp(name, failed_variable) != 0) : SetEnvironmentVariable(name, value); }
@@ -167,6 +175,7 @@ struct fixture {
     fail_worker_wait = timeout_worker_wait = false;
     process_wait = WAIT_OBJECT_0;
     process_exit = 0;
+    elapsed = creation_failures = cleanup_birth = 0;
     fail_after = -1;
     hook_lookup = 0;
     events.clear();
@@ -201,6 +210,7 @@ struct fixture {
 #define GetExitCodeProcess hook_test::process_code
 #define GetExitCodeThread hook_test::thread_code
 #define await_single_handle hook_test::await
+#define monotonic_milliseconds hook_test::now_ms
 #define kill_process_tree hook_test::kill
 #define get_process_creation_time hook_test::creation
 #define set_service_environment hook_test::set_env
@@ -220,6 +230,7 @@ struct fixture {
 #undef GetExitCodeProcess
 #undef GetExitCodeThread
 #undef await_single_handle
+#undef monotonic_milliseconds
 #undef kill_process_tree
 #undef get_process_creation_time
 #undef set_service_environment
@@ -229,6 +240,25 @@ struct fixture {
 #undef log_event
 
 void test_hook_lifecycle() {
+  for (DWORD failures : {1UL, 2UL}) {
+    hook_test::fixture f;
+    hook_test::creation_failures = failures;
+    CHECK(f.run(false) == (failures == 1 ? NSSM_HOOK_STATUS_SUCCESS : NSSM_HOOK_STATUS_ERROR));
+    CHECK(!hook_test::creation_failures && hook_test::cleanup_birth == (failures == 1 ? 1234UL : 0UL));
+  }
+  {
+    hook_test::fixture f;
+    hook_test::deferred = true;
+    CHECK(!f.run() && !f.run() && !f.run());
+    HANDLE complete = f.list.last->thread_handle;
+    REQUIRE(hook_test::wait(complete, 1) == WAIT_OBJECT_0);
+    hook_test::timeout_worker_wait = true;
+    f.drain();
+    CHECK(hook_test::elapsed == 100 && f.list.last && f.list.last->thread_handle != complete);
+    hook_test::timeout_worker_wait = false;
+    f.drain();
+    CHECK(!f.list.first && !f.list.last);
+  }
   {
     hook_test::fixture f;
     hook_test::fail_environment = true;

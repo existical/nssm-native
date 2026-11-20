@@ -282,6 +282,19 @@ struct fixture {
 void test_process_identity() {
   using namespace process_test;
   {
+    fixture f;
+    std::unique_ptr<nssm_service_t> service(new nssm_service_t());
+    service->process_handle = f.context.process_handle;
+    service->pid = f.root->pid;
+    kill_t root;
+    f.root->times_fail = true;
+    service_kill_t(service.get(), &root);
+    CHECK(!process_identity(&root));
+    f.root->times_fail = false;
+    service_kill_t(service.get(), &root);
+    CHECK(process_identity(&root) && root.creation_time.dwLowDateTime == 100 && !f.root->opens);
+  }
+  {
     process_test::fixture f;
     process_test::old_child = process_test::add(20, 10, 200);
     process_test::replacement = process_test::add(20, 999, 2000);

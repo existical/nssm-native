@@ -83,6 +83,12 @@ foreach ($record in $manifest.builds) {
     if ($build.artifacts.Count -ne 2 -or (Compare-Object $expectedFiles @($build.artifacts.name) -CaseSensitive)) {
         throw 'Package must declare an executable and its symbols.'
     }
+    $flavor = if ($build.architecture -eq 'x64') { '64-bit' } else { '32-bit' }
+    if ($build.configuration -eq 'Debug') { $flavor += ' debug' }
+    $prefix = "NSSM $($build.file_version) $flavor "
+    if (!$build.file_version -or $build.version_output -cnotmatch ('^' + [regex]::Escape($prefix) + '[0-9]{4}-[0-9]{2}-[0-9]{2}$')) {
+        throw "Version output disagrees with build configuration in $report"
+    }
     $archive = Get-PackageArchive $record.archive
     if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $record.sha256) { throw 'Archive hash mismatch.' }
     $name = $record.build.architecture + '-' + $record.build.configuration
@@ -105,7 +111,12 @@ foreach ($record in $manifest.builds) {
         if ($outer.sha256 -cne $artifact.sha256) { throw 'Inner and outer artifact hashes disagree.' }
         if ((Get-FileHash -LiteralPath (Join-Path $destination $artifact.name) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $artifact.sha256) { throw 'Executable/symbol hash mismatch.' }
     }
-    $actual = (& (Join-Path $destination 'nssm.exe') version) -join "`n"
+    $exe = Join-Path $destination 'nssm.exe'
+    $info = [Diagnostics.FileVersionInfo]::GetVersionInfo([IO.Path]::GetFullPath($exe))
+    if ($info.FileVersion -cne $inner.file_version -or $info.FileVersion -cne $build.file_version -or
+        $info.ProductVersion -cne $inner.product_version -or $info.ProductVersion -cne $build.product_version -or
+        $info.IsDebug -ne ($build.configuration -eq 'Debug')) { throw "Executable version resource disagrees with $name" }
+    $actual = (& $exe version) -join "`n"
     if ($LASTEXITCODE -ne 0 -or $actual.Trim() -ne $inner.version_output) { throw 'Packaged executable version mismatch.' }
 }
 if (Compare-Object @('x64-Release','x64-Debug','x86-Release','x86-Debug') $combinations) { throw 'Incomplete build matrix.' }

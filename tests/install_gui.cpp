@@ -289,6 +289,24 @@ static void test_edit_list_load() {
   delete service;
   MSG message;
   while (PeekMessage(&message, NULL, WM_QUIT, WM_QUIT, PM_REMOVE)) {}
+  for (int field : {IDC_NAME, IDC_PATH, IDC_DIR, IDC_FLAGS, IDC_STDIN, IDC_STDOUT, IDC_STDERR,
+                    IDC_DISPLAYNAME, IDC_DESCRIPTION, IDC_USERNAME, IDC_KILL_WINDOW, IDC_ROTATE_BYTES_LOW}) {
+    for (bool partial : {false, true}) {
+      gui_test::reset();
+      nssm_service_t *owned = alloc_nssm_service(); REQUIRE(owned);
+      owned->handle = gui_test::borrowed;
+      _tcscpy_s(owned->flags, _T("original arguments"));
+      owned->username = (TCHAR *)HeapAlloc(GetProcessHeap(), 0, sizeof(_T("Example")));
+      REQUIRE(owned->username);
+      memcpy(owned->username, _T("Example"), sizeof(_T("Example")));
+      gui_test::display_failure = field;
+      gui_test::short_display = partial;
+      CHECK(nssm_gui(IDD_EDIT, owned) == 1 && gui_test::closes == 1 && !gui_test::saves);
+      gui_test::display_failure = 0;
+      gui_test::finish();
+      while (PeekMessage(&message, NULL, WM_QUIT, WM_QUIT, PM_REMOVE)) {}
+    }
+  }
   for (int field : {IDC_DEPENDENCIES, IDC_ENVIRONMENT}) {
     for (int failure = 0; failure < 4; ++failure) {
       gui_test::reset();

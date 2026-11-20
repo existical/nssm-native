@@ -124,6 +124,15 @@ static inline void set_logon_enabled(unsigned char interact_enabled, unsigned ch
   EnableWindow(GetDlgItem(tablist[NSSM_TAB_LOGON], IDC_PASSWORD2), credentials_enabled);
 }
 
+static bool display_text(HWND tab, int control, const TCHAR *text) {
+  HWND field = GetDlgItem(tab, control);
+  size_t length = _tcslen(text);
+  if (!field || length >= INT_MAX || !SetWindowText(field, text) || (size_t)GetWindowTextLength(field) != length) return false;
+  if (!length) return true;
+  std::unique_ptr<TCHAR[]> shown(new (std::nothrow) TCHAR[length + 1]);
+  return shown && GetWindowText(field, shown.get(), (int)length + 1) == (int)length && !_tcscmp(shown.get(), text);
+}
+
 static bool display_edit_list(HWND tab, int control, TCHAR *block, DWORD length) {
   if (!length) return true;
   TCHAR *formatted;
@@ -137,9 +146,7 @@ static bool display_edit_list(HWND tab, int control, TCHAR *block, DWORD length)
     }
   }
   const TCHAR *text = formatted ? formatted : _T("");
-  HWND field = GetDlgItem(tab, control);
-  bool complete = field && SetWindowText(field, text) &&
-      (size_t) GetWindowTextLength(field) == _tcslen(text);
+  bool complete = display_text(tab, control, text);
   if (formatted) HeapFree(GetProcessHeap(), 0, formatted);
   return complete;
 }
@@ -161,6 +168,43 @@ static bool load_edit_lists(HWND window, nssm_service_t *service) {
   return true;
 }
 
+static bool display_setting(HWND window, HWND tab, int control, const TCHAR *text, const TCHAR *name) {
+  if (display_text(tab, control, text)) return true;
+  popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_SETTING_LOAD_FAILED, name);
+  return false;
+}
+
+static bool load_edit_text(HWND window, nssm_service_t *service) {
+  HWND application = tablist[NSSM_TAB_APPLICATION], details = tablist[NSSM_TAB_DETAILS], io = tablist[NSSM_TAB_IO];
+  if (!display_setting(window, window, IDC_NAME, service->name, NSSM_NATIVE_NAME) ||
+      !display_setting(window, details, IDC_DISPLAYNAME, service->displayname, NSSM_NATIVE_DISPLAYNAME) ||
+      !display_setting(window, details, IDC_DESCRIPTION, service->description, NSSM_NATIVE_DESCRIPTION)) return false;
+  if (service->username && !is_virtual_account(service->name, service->username) &&
+      !display_setting(window, tablist[NSSM_TAB_LOGON], IDC_USERNAME, service->username, NSSM_NATIVE_OBJECTNAME)) return false;
+  if (service->native) return display_setting(window, application, IDC_PATH, service->image, NSSM_NATIVE_IMAGEPATH);
+  struct number_field { int tab, id; DWORD number; const TCHAR *name; };
+  const number_field numbers[] = {
+    {NSSM_TAB_SHUTDOWN, IDC_KILL_CONSOLE, service->kill_console_delay, NSSM_REG_KILL_CONSOLE_GRACE_PERIOD},
+    {NSSM_TAB_SHUTDOWN, IDC_KILL_WINDOW, service->kill_window_delay, NSSM_REG_KILL_WINDOW_GRACE_PERIOD},
+    {NSSM_TAB_SHUTDOWN, IDC_KILL_THREADS, service->kill_threads_delay, NSSM_REG_KILL_THREADS_GRACE_PERIOD},
+    {NSSM_TAB_EXIT, IDC_THROTTLE, service->throttle_delay, NSSM_REG_THROTTLE},
+    {NSSM_TAB_EXIT, IDC_RESTART_DELAY, service->restart_delay, NSSM_REG_RESTART_DELAY},
+    {NSSM_TAB_ROTATION, IDC_ROTATE_SECONDS, service->rotate_seconds, NSSM_REG_ROTATE_SECONDS},
+    {NSSM_TAB_ROTATION, IDC_ROTATE_BYTES_LOW, service->rotate_bytes_low, NSSM_REG_ROTATE_BYTES_LOW}
+  };
+  for (const auto &field : numbers) {
+    TCHAR digits[16] = {};
+    if (field.id != IDC_ROTATE_BYTES_LOW || !service->rotate_bytes_high) _stprintf_s(digits, _T("%lu"), field.number);
+    if (!display_setting(window, tablist[field.tab], field.id, digits, field.name)) return false;
+  }
+  return display_setting(window, application, IDC_PATH, service->exe, NSSM_REG_EXE) &&
+         display_setting(window, application, IDC_DIR, service->dir, NSSM_REG_DIR) &&
+         display_setting(window, application, IDC_FLAGS, service->flags, NSSM_REG_FLAGS) &&
+         display_setting(window, io, IDC_STDIN, service->stdin_path, NSSM_REG_STDIN) &&
+         display_setting(window, io, IDC_STDOUT, service->stdout_path, NSSM_REG_STDOUT) &&
+         display_setting(window, io, IDC_STDERR, service->stderr_path, NSSM_REG_STDERR);
+}
+
 int nssm_gui(int resource, nssm_service_t *service) {
   /* CLI callers transfer the original object and its SCM handle here. */
   struct service_owner_t {
@@ -175,7 +219,7 @@ int nssm_gui(int resource, nssm_service_t *service) {
     return 1;
   }
 
-  if (resource == IDD_EDIT && !load_edit_lists(dlg, service)) {
+  if (resource == IDD_EDIT && (!load_edit_text(dlg, service) || !load_edit_lists(dlg, service))) {
     DestroyWindow(dlg);
     return 1;
   }
@@ -194,7 +238,7 @@ int nssm_gui(int resource, nssm_service_t *service) {
   ShowWindow(dlg, SW_SHOW);
 
   /* Set service name if given */
-  if (service->name[0]) {
+  if (resource != IDD_EDIT && service->name[0]) {
     SetDlgItemText(dlg, IDC_NAME, service->name);
     /* No point making user click remove if the name is already entered */
     if (resource == IDD_REMOVE) {
@@ -218,15 +262,7 @@ int nssm_gui(int resource, nssm_service_t *service) {
     HWND combo;
     HWND list;
 
-    /* Application tab. */
-    if (service->native) SetDlgItemText(tablist[NSSM_TAB_APPLICATION], IDC_PATH, service->image);
-    else SetDlgItemText(tablist[NSSM_TAB_APPLICATION], IDC_PATH, service->exe);
-    SetDlgItemText(tablist[NSSM_TAB_APPLICATION], IDC_DIR, service->dir);
-    SetDlgItemText(tablist[NSSM_TAB_APPLICATION], IDC_FLAGS, service->flags);
-
     /* Details tab. */
-    SetDlgItemText(tablist[NSSM_TAB_DETAILS], IDC_DISPLAYNAME, service->displayname);
-    SetDlgItemText(tablist[NSSM_TAB_DETAILS], IDC_DESCRIPTION, service->description);
     combo = GetDlgItem(tablist[NSSM_TAB_DETAILS], IDC_STARTUP);
     SendMessage(combo, CB_SETCURSEL, service->startup, 0);
 
@@ -238,7 +274,6 @@ int nssm_gui(int resource, nssm_service_t *service) {
       }
       else {
         CheckRadioButton(tablist[NSSM_TAB_LOGON], IDC_LOCALSYSTEM, IDC_VIRTUAL_SERVICE, IDC_ACCOUNT);
-        SetDlgItemText(tablist[NSSM_TAB_LOGON], IDC_USERNAME, service->username);
         set_logon_enabled(0, 1);
       }
     }
@@ -276,17 +311,14 @@ int nssm_gui(int resource, nssm_service_t *service) {
       SendDlgItemMessage(tablist[NSSM_TAB_SHUTDOWN], IDC_METHOD_CONSOLE, BM_SETCHECK, BST_UNCHECKED, 0);
       EnableWindow(GetDlgItem(tablist[NSSM_TAB_SHUTDOWN], IDC_KILL_CONSOLE), 0);
     }
-    SetDlgItemInt(tablist[NSSM_TAB_SHUTDOWN], IDC_KILL_CONSOLE, service->kill_console_delay, 0);
     if (! (service->stop_method & NSSM_STOP_METHOD_WINDOW)) {
       SendDlgItemMessage(tablist[NSSM_TAB_SHUTDOWN], IDC_METHOD_WINDOW, BM_SETCHECK, BST_UNCHECKED, 0);
       EnableWindow(GetDlgItem(tablist[NSSM_TAB_SHUTDOWN], IDC_KILL_WINDOW), 0);
     }
-    SetDlgItemInt(tablist[NSSM_TAB_SHUTDOWN], IDC_KILL_WINDOW, service->kill_window_delay, 0);
     if (! (service->stop_method & NSSM_STOP_METHOD_THREADS)) {
       SendDlgItemMessage(tablist[NSSM_TAB_SHUTDOWN], IDC_METHOD_THREADS, BM_SETCHECK, BST_UNCHECKED, 0);
       EnableWindow(GetDlgItem(tablist[NSSM_TAB_SHUTDOWN], IDC_KILL_THREADS), 0);
     }
-    SetDlgItemInt(tablist[NSSM_TAB_SHUTDOWN], IDC_KILL_THREADS, service->kill_threads_delay, 0);
     if (! (service->stop_method & NSSM_STOP_METHOD_TERMINATE)) {
       SendDlgItemMessage(tablist[NSSM_TAB_SHUTDOWN], IDC_METHOD_TERMINATE, BM_SETCHECK, BST_UNCHECKED, 0);
     }
@@ -295,15 +327,10 @@ int nssm_gui(int resource, nssm_service_t *service) {
     }
 
     /* Restart tab. */
-    SetDlgItemInt(tablist[NSSM_TAB_EXIT], IDC_THROTTLE, service->throttle_delay, 0);
     combo = GetDlgItem(tablist[NSSM_TAB_EXIT], IDC_APPEXIT);
     SendMessage(combo, CB_SETCURSEL, service->default_exit_action, 0);
-    SetDlgItemInt(tablist[NSSM_TAB_EXIT], IDC_RESTART_DELAY, service->restart_delay, 0);
 
     /* I/O tab. */
-    SetDlgItemText(tablist[NSSM_TAB_IO], IDC_STDIN, service->stdin_path);
-    SetDlgItemText(tablist[NSSM_TAB_IO], IDC_STDOUT, service->stdout_path);
-    SetDlgItemText(tablist[NSSM_TAB_IO], IDC_STDERR, service->stderr_path);
     if (service->timestamp_log) SendDlgItemMessage(tablist[NSSM_TAB_IO], IDC_TIMESTAMP, BM_SETCHECK, BST_CHECKED, 0);
 
     /* Rotation tab. */
@@ -315,9 +342,6 @@ int nssm_gui(int resource, nssm_service_t *service) {
       EnableWindow(GetDlgItem(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW), 1);
     }
     if (service->rotate_stdout_online || service->rotate_stderr_online) SendDlgItemMessage(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_ONLINE, BM_SETCHECK, BST_CHECKED, 0);
-    SetDlgItemInt(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_SECONDS, service->rotate_seconds, 0);
-    if (service->rotate_bytes_high) SetDlgItemText(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW, _T(""));
-    else SetDlgItemInt(tablist[NSSM_TAB_ROTATION], IDC_ROTATE_BYTES_LOW, service->rotate_bytes_low, 0);
 
     /* Hooks tab. */
     if (service->hook_share_output_handles) SendDlgItemMessage(tablist[NSSM_TAB_HOOKS], IDC_REDIRECT_HOOK, BM_SETCHECK, BST_CHECKED, 0);

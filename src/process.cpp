@@ -74,6 +74,8 @@ void service_kill_t(nssm_service_t *service, kill_t *k) {
   k->status_handle = service->status_handle;
   k->status = &service->status;
   k->creation_time = service->creation_time;
+  if (k->process_handle && !k->creation_time.dwLowDateTime && !k->creation_time.dwHighDateTime)
+    get_process_creation_time(k->process_handle, &k->creation_time);
   k->exit_time = service->exit_time;
 }
 

@@ -6,6 +6,17 @@ static text_t dump_output;
 static text_t dump_executable = _T("C:\\Tools\\nssm.exe");
 static bool capture_dump = false;
 static bool fail_output;
+static TCHAR *configured_account;
+static QUERY_SERVICE_CONFIG *account_config(const TCHAR *name, SC_HANDLE handle, unsigned long *bytes = NULL) {
+  if (!configured_account) return query_service_config(name, handle, bytes);
+  auto config = (QUERY_SERVICE_CONFIG *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(QUERY_SERVICE_CONFIG));
+  REQUIRE(config);
+  config->lpServiceStartName = configured_account;
+  return config;
+}
+static const TCHAR *account_alias(const TCHAR *account) {
+  return configured_account ? NULL : well_known_username(account);
+}
 static DWORD delayed_error;
 static BOOL WINAPI change_config(SC_HANDLE handle, DWORD type, DWORD start, DWORD error, LPCTSTR binary, LPCTSTR group,
                                  LPDWORD tag, LPCTSTR deps, LPCTSTR user, LPCTSTR password, LPCTSTR display) {
@@ -94,7 +105,11 @@ static int test_dump_printf(const TCHAR *format, ...) {
 #define ChangeServiceConfig change_config
 #undef ChangeServiceConfig2
 #define ChangeServiceConfig2 change_config2
+#define query_service_config account_config
+#define well_known_username account_alias
 #include "../src/settings.cpp"
+#undef query_service_config
+#undef well_known_username
 #undef ChangeServiceConfig
 #define ChangeServiceConfig ChangeServiceConfigW
 #undef ChangeServiceConfig2
@@ -128,6 +143,28 @@ int dependency_test::dump(int type) {
 
 void test_exit_export() {
   registry_fixture registry;
+  extern imports_t imports;
+  auto previous = imports.IsWellKnownSid;
+  imports.IsWellKnownSid = reinterpret_cast<IsWellKnownSid_ptr>(GetProcAddress(GetModuleHandle(_T("advapi32.dll")), "IsWellKnownSid"));
+  REQUIRE(imports.IsWellKnownSid);
+  settings_t *object = settings;
+  while (object->name && !str_equiv(object->name, NSSM_NATIVE_OBJECTNAME)) ++object;
+  REQUIRE(object->name);
+  capture_dump = true;
+  TCHAR accounts[][32] = {_T("NT SERVICE\\Source"), _T("NT SERVICE2\\Source"), _T("NT SERVICE\\Other")};
+  for (auto &account : accounts) {
+    configured_account = account;
+    dump_output.clear();
+    CHECK(!dump_setting(_T("Target"), NULL, reinterpret_cast<SC_HANDLE>(1), object, _T("Source")));
+    if (account == accounts[0]) {
+      CHECK(dump_output.find(_T("NT Service\\Target")) != text_t::npos && dump_output.find(_T("****")) == text_t::npos);
+    } else {
+      CHECK(dump_output.find(account) != text_t::npos && dump_output.find(_T("****")) != text_t::npos);
+    }
+  }
+  configured_account = NULL;
+  capture_dump = false;
+  imports.IsWellKnownSid = previous;
   TCHAR raw[] = _T("%SystemRoot% hook");
   value_t command = {}; command.string = raw;
   const TCHAR *source = _T("NSSM-Test-HookExport");

@@ -85,6 +85,15 @@ $record.build.artifacts = @(@{name='nssm.exe'})
 $manifest | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $manifestPath
 Update-Checksums
 Reject-Evidence 'Package must declare an executable and its symbols'
+$record.build.artifacts = @(@{name='nssm.exe'}, @{name='nssm.pdb'})
+$record.build.file_version = 'fixture'
+foreach ($wrongFlavor in '32-bit', '64-bit debug') {
+    $record.build.version_output = "NSSM fixture $wrongFlavor 2026-11-20"
+    $manifest | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $manifestPath
+    [IO.File]::WriteAllText($xml, ('<testsuite tests="1" failures="0"><testcase name="nssm.smoke" status="run"><system-out>' + $record.build.version_output + '</system-out></testcase></testsuite>'))
+    Update-Checksums
+    Reject-Evidence 'Version output disagrees with build configuration'
+}
 $record.archive = 'subdir/fixture.zip'
 $manifest | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $manifestPath
 Update-Checksums
