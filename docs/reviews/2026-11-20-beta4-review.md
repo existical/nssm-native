@@ -10,6 +10,7 @@ Reviewed commit `1ea9c65217a07617878e7dd1fa7c95a335af65c7`. The review covered t
 | Medium | Service enumeration sizes one allocation from the total outstanding entries, retries without checking the resume handle, and ignores stdout failures. | A large inventory can exceed the API buffer limit, a stalled page can loop, and an incomplete listing can return success. |
 | Medium | Numeric GUI fields accept a prefix or silently ignore conversion failures. | The dialog can report success after saving a different timeout or rotation threshold from the one the operator entered. |
 | Low | The main dialog loads two private icon handles without releasing them. | Opening the dialog consumes USER resources for the rest of the process lifetime. |
+| High | A failure to format or populate existing dependency or environment entries leaves the editor open with an empty field. | Saving an unrelated edit can clear the stored entries. |
 
 ## Implementation checklist
 
@@ -19,4 +20,5 @@ Reviewed commit `1ea9c65217a07617878e7dd1fa7c95a335af65c7`. The review covered t
 - [x] Enumerate SCM records in bounded pages, detect a stalled cursor and propagate output errors. Exercise multiple pages, an empty database, failure responses and an unwritable output handle.
 - [x] Validate complete unsigned decimal values in GUI numeric fields before saving. Identify the invalid setting and keep the existing advanced rotation threshold when its field is untouched. Exercise invalid input, zero and the maximum DWORD.
 - [x] Give the dialog icons explicit ownership and release both sizes after the window closes.
+- [ ] Abort editing if existing dependency or environment entries cannot be displayed in full. Exercise formatting and control failures and verify that the editor exits before saving.
 - [ ] Review the final diff, run the x86 and x64 Debug and Release suites, verify the package, and exercise the Windows service integration suites. Record the results and any limits below.
