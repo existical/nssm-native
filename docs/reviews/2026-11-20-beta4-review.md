@@ -20,5 +20,5 @@ Reviewed commit `1ea9c65217a07617878e7dd1fa7c95a335af65c7`. The review covered t
 - [x] Enumerate SCM records in bounded pages, detect a stalled cursor and propagate output errors. Exercise multiple pages, an empty database, failure responses and an unwritable output handle.
 - [x] Validate complete unsigned decimal values in GUI numeric fields before saving. Identify the invalid setting and keep the existing advanced rotation threshold when its field is untouched. Exercise invalid input, zero and the maximum DWORD.
 - [x] Give the dialog icons explicit ownership and release both sizes after the window closes.
-- [ ] Abort editing if existing dependency or environment entries cannot be displayed in full. Exercise formatting and control failures and verify that the editor exits before saving.
+- [x] Abort editing if existing dependency or environment entries cannot be displayed in full. Exercise formatting and control failures and verify that the editor exits before saving.
 - [ ] Review the final diff, run the x86 and x64 Debug and Release suites, verify the package, and exercise the Windows service integration suites. Record the results and any limits below.

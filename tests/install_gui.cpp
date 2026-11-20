@@ -16,6 +16,14 @@ static int write_hook(const TCHAR *service, const TCHAR *event, const TCHAR *act
   return fail_hook_save ? 1 : set_hook(service, event, action, command, expand);
 }
 static int token, save_result, fail_after = -1, read_failure;
+static int display_failure;
+static bool short_display;
+static BOOL WINAPI display(HWND field, LPCTSTR value) {
+  if (display_failure && GetDlgCtrlID(field) == display_failure) {
+    return short_display ? SetWindowText(field, _T("x")) : FALSE;
+  }
+  return SetWindowText(field, value);
+}
 static SC_HANDLE borrowed = reinterpret_cast<SC_HANDLE>(&token);
 static const TCHAR *known_account;
 LPVOID allocate(HANDLE h, DWORD f, SIZE_T n) {
@@ -90,6 +98,8 @@ static void finish() {
   allocations.clear(); active = false;
 }
 }
+#undef SetWindowText
+#define SetWindowText gui_test::display
 #define DestroyIcon gui_test::release_icon
 #define popup_message install_test::popup
 #define HeapAlloc gui_test::allocate
@@ -110,6 +120,8 @@ static void finish() {
 #undef LocalFree
 #undef GetOpenFileName
 #undef set_hook
+#undef SetWindowText
+#define SetWindowText SetWindowTextW
 #undef DestroyIcon
 #undef popup_message
 #undef HeapAlloc
@@ -221,7 +233,45 @@ static HWND gui_window(nssm_service_t *original) {
   return window;
 }
 void test_gui_hook_launch(const TCHAR *);
+static void test_edit_list_load() {
+  TCHAR block[] = _T("ONE=1\0TWO=2\0");
+  nssm_service_t *service = new nssm_service_t();
+  HWND window = gui_window(service);
+  service->dependencies = service->env = block;
+  service->dependencieslen = service->envlen = _countof(block);
+  REQUIRE(load_edit_lists(window, service));
+  TCHAR text[40];
+  GetDlgItemText(tablist[NSSM_TAB_DEPENDENCIES], IDC_DEPENDENCIES, text, _countof(text));
+  CHECK(!_tcscmp(text, _T("ONE=1\r\nTWO=2")));
+  GetDlgItemText(tablist[NSSM_TAB_ENVIRONMENT], IDC_ENVIRONMENT, text, _countof(text));
+  CHECK(!_tcscmp(text, _T("ONE=1\r\nTWO=2")));
+  CHECK(IsDlgButtonChecked(tablist[NSSM_TAB_ENVIRONMENT], IDC_ENVIRONMENT_REPLACE) == BST_CHECKED);
+  DestroyWindow(window);
+  delete service;
+  MSG message;
+  while (PeekMessage(&message, NULL, WM_QUIT, WM_QUIT, PM_REMOVE)) {}
+  for (int field : {IDC_DEPENDENCIES, IDC_ENVIRONMENT}) {
+    for (int failure = 0; failure < 3; ++failure) {
+      gui_test::reset();
+      nssm_service_t *owned = alloc_nssm_service(); REQUIRE(owned);
+      owned->handle = gui_test::borrowed;
+      TCHAR *copy = copy_environment_block(block); REQUIRE(copy);
+      DWORD length = failure ? _countof(block) : 3;
+      if (field == IDC_DEPENDENCIES) { owned->dependencies = copy; owned->dependencieslen = length; }
+      else { owned->env_extra = copy; owned->env_extralen = length; }
+      gui_test::display_failure = failure ? field : 0;
+      gui_test::short_display = failure == 2;
+      CHECK(nssm_gui(IDD_EDIT, owned) == 1);
+      CHECK(gui_test::closes == 1 && !gui_test::saves);
+      gui_test::display_failure = 0;
+      gui_test::finish();
+      while (PeekMessage(&message, NULL, WM_QUIT, WM_QUIT, PM_REMOVE)) {}
+    }
+  }
+}
+
 void test_gui_retry() {
+  test_edit_list_load();
   registry_fixture registry;
   nssm_service_t original = {}; original.handle = gui_test::borrowed;
   HWND window = gui_window(&original);

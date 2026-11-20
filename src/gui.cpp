@@ -106,6 +106,36 @@ static inline void set_logon_enabled(unsigned char interact_enabled, unsigned ch
   EnableWindow(GetDlgItem(tablist[NSSM_TAB_LOGON], IDC_PASSWORD2), credentials_enabled);
 }
 
+static bool display_edit_list(HWND tab, int control, TCHAR *block, DWORD length) {
+  if (!length) return true;
+  TCHAR *formatted;
+  DWORD capacity;
+  if (format_double_null(block, length, &formatted, &capacity)) return false;
+  const TCHAR *text = formatted ? formatted : _T("");
+  HWND field = GetDlgItem(tab, control);
+  bool complete = field && SetWindowText(field, text) &&
+      (size_t) GetWindowTextLength(field) == _tcslen(text);
+  if (formatted) HeapFree(GetProcessHeap(), 0, formatted);
+  return complete;
+}
+
+static bool load_edit_lists(HWND window, nssm_service_t *service) {
+  if (!display_edit_list(tablist[NSSM_TAB_DEPENDENCIES], IDC_DEPENDENCIES, service->dependencies, service->dependencieslen)) {
+    popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_SETTING_LOAD_FAILED, gui_message(NSSM_GUI_TAB_DEPENDENCIES).get());
+    return false;
+  }
+  if (service->native) return true;
+  HWND tab = tablist[NSSM_TAB_ENVIRONMENT];
+  bool extra = service->env_extralen != 0;
+  if ((!extra && service->envlen && !CheckDlgButton(tab, IDC_ENVIRONMENT_REPLACE, BST_CHECKED)) ||
+      !display_edit_list(tab, IDC_ENVIRONMENT, extra ? service->env_extra : service->env,
+                         extra ? service->env_extralen : service->envlen)) {
+    popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_SETTING_LOAD_FAILED, extra ? NSSM_REG_ENV_EXTRA : NSSM_REG_ENV);
+    return false;
+  }
+  return true;
+}
+
 int nssm_gui(int resource, nssm_service_t *service) {
   /* CLI callers transfer the original object and its SCM handle here. */
   struct service_owner_t {
@@ -117,6 +147,11 @@ int nssm_gui(int resource, nssm_service_t *service) {
   HWND dlg = dialog(MAKEINTRESOURCE(resource), 0, nssm_dlg, (LPARAM) service);
   if (! dlg) {
     popup_message(0, MB_OK, NSSM_GUI_CREATEDIALOG_FAILED, error_string(GetLastError()));
+    return 1;
+  }
+
+  if (resource == IDD_EDIT && !load_edit_lists(dlg, service)) {
+    DestroyWindow(dlg);
     return 1;
   }
 
@@ -185,19 +220,6 @@ int nssm_gui(int resource, nssm_service_t *service) {
     else {
       CheckRadioButton(tablist[NSSM_TAB_LOGON], IDC_LOCALSYSTEM, IDC_VIRTUAL_SERVICE, IDC_LOCALSYSTEM);
       if (service->type & SERVICE_INTERACTIVE_PROCESS) SendDlgItemMessage(tablist[NSSM_TAB_LOGON], IDC_INTERACT, BM_SETCHECK, BST_CHECKED, 0);
-    }
-
-    /* Dependencies tab. */
-    if (service->dependencieslen) {
-      TCHAR *formatted;
-      unsigned long newlen;
-      if (format_double_null(service->dependencies, service->dependencieslen, &formatted, &newlen)) {
-        popup_message(dlg, MB_OK | MB_ICONEXCLAMATION, NSSM_EVENT_OUT_OF_MEMORY, _T("dependencies"), _T("nssm_dlg()"));
-      }
-      else {
-        SetDlgItemText(tablist[NSSM_TAB_DEPENDENCIES], IDC_DEPENDENCIES, formatted);
-        HeapFree(GetProcessHeap(), 0, formatted);
-      }
     }
 
     /* Process tab. */
@@ -279,30 +301,6 @@ int nssm_gui(int resource, nssm_service_t *service) {
     if (service->stdout_disposition != service->stderr_disposition || (service->stdout_disposition && service->stdout_disposition != NSSM_STDOUT_DISPOSITION && service->stdout_disposition != CREATE_ALWAYS) || (service->stderr_disposition && service->stderr_disposition != NSSM_STDERR_DISPOSITION && service->stderr_disposition != CREATE_ALWAYS)) popup_message(dlg, MB_OK | MB_ICONWARNING, NSSM_GUI_WARN_STDIO);
     if (service->rotate_bytes_high) popup_message(dlg, MB_OK | MB_ICONWARNING, NSSM_GUI_WARN_ROTATE_BYTES);
 
-    /* Environment tab. */
-    TCHAR *env;
-    unsigned long envlen;
-    if (service->env_extralen) {
-      env = service->env_extra;
-      envlen = service->env_extralen;
-    }
-    else {
-      env = service->env;
-      envlen = service->envlen;
-      if (envlen) SendDlgItemMessage(tablist[NSSM_TAB_ENVIRONMENT], IDC_ENVIRONMENT_REPLACE, BM_SETCHECK, BST_CHECKED, 0);
-    }
-
-    if (envlen) {
-      TCHAR *formatted;
-      unsigned long newlen;
-      if (format_double_null(env, envlen, &formatted, &newlen)) {
-        popup_message(dlg, MB_OK | MB_ICONEXCLAMATION, NSSM_EVENT_OUT_OF_MEMORY, _T("environment"), _T("nssm_dlg()"));
-      }
-      else {
-        SetDlgItemText(tablist[NSSM_TAB_ENVIRONMENT], IDC_ENVIRONMENT, formatted);
-        HeapFree(GetProcessHeap(), 0, formatted);
-      }
-    }
     if (service->envlen && service->env_extralen) popup_message(dlg, MB_OK | MB_ICONWARNING, NSSM_GUI_WARN_ENVIRONMENT);
   }
 
@@ -1062,7 +1060,7 @@ int edit(HWND window, nssm_service_t *orig_service) {
       return 6;
   }
 
-  if (update_hooks(service->name)) {
+  if (!service->native && update_hooks(service->name)) {
     popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_HOOK_SAVE_FAILED);
     cleanup_nssm_service(service);
     return 6;
