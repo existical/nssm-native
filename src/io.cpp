@@ -29,18 +29,14 @@ static bool logger_stopping(logger_t *logger, unsigned long delay = 0) {
   return WaitForSingleObject(logger->stop_event, delay) != WAIT_TIMEOUT;
 }
 
-static int dup_handle(HANDLE source_handle, HANDLE *dest_handle_ptr, TCHAR *source_description, TCHAR *dest_description, unsigned long flags) {
+static int dup_handle(HANDLE source_handle, HANDLE *dest_handle_ptr, TCHAR *source_description, TCHAR *dest_description, bool inherit = true) {
   if (! dest_handle_ptr) return 1;
 
-  if (! DuplicateHandle(GetCurrentProcess(), source_handle, GetCurrentProcess(), dest_handle_ptr, 0, true, flags)) {
+  if (! DuplicateHandle(GetCurrentProcess(), source_handle, GetCurrentProcess(), dest_handle_ptr, 0, inherit, DUPLICATE_SAME_ACCESS)) {
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_DUPLICATEHANDLE_FAILED, source_description, dest_description, error_string(GetLastError()));
     return 2;
   }
   return 0;
-}
-
-static int dup_handle(HANDLE source_handle, HANDLE *dest_handle_ptr, TCHAR *source_description, TCHAR *dest_description) {
-  return dup_handle(source_handle, dest_handle_ptr, source_description, dest_description, DUPLICATE_SAME_ACCESS);
 }
 
 /*
@@ -589,7 +585,7 @@ int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
     else service->stdout_thread = 0;
 
     if (! service->stdout_thread) {
-      if (dup_handle(stdout_handle, &service->stdout_si, NSSM_REG_STDOUT, _T("stdout"), DUPLICATE_CLOSE_SOURCE | DUPLICATE_SAME_ACCESS)) return 4;
+      service->stdout_si = stdout_handle;
       service->rotate_stdout_online = NSSM_ROTATE_OFFLINE;
     }
 
@@ -610,7 +606,7 @@ int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
 
       /* Two handles to the same file will create a race. */
       /* XXX: Here we assume that either both or neither handle must be a pipe. */
-      if (dup_handle(service->stdout_si, &service->stderr_si, _T("stdout"), _T("stderr"))) return 6;
+      if (dup_handle(service->stdout_si, &service->stderr_si, _T("stdout"), _T("stderr"), false)) return 6;
     }
     else {
       DWORD disposition = service->stderr_disposition;
@@ -625,7 +621,7 @@ int get_output_handles(nssm_service_t *service, STARTUPINFO *si) {
       else service->stderr_thread = 0;
 
       if (! service->stderr_thread) {
-        if (dup_handle(stderr_handle, &service->stderr_si, NSSM_REG_STDERR, _T("stderr"), DUPLICATE_CLOSE_SOURCE | DUPLICATE_SAME_ACCESS)) return 7;
+        service->stderr_si = stderr_handle;
         service->rotate_stderr_online = NSSM_ROTATE_OFFLINE;
       }
     }

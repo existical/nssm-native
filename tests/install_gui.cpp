@@ -59,6 +59,7 @@ static BOOL WINAPI show(HWND h, int mode) {
 }
 static unsigned labels, browse_calls;
 static bool long_filter;
+static const TCHAR *chosen_hook;
 static TCHAR *label(DWORD id) {
   TCHAR *value;
   if (long_filter && id == NSSM_GUI_BROWSE_FILTER_APPLICATIONS) {
@@ -77,6 +78,11 @@ static HLOCAL WINAPI release_label(HLOCAL p) {
 static BOOL WINAPI browse_file(LPOPENFILENAME info) {
   ++browse_calls;
   CHECK(info->lpstrTitle && *info->lpstrTitle && (info->Flags & OFN_NOCHANGEDIR));
+  if (chosen_hook) {
+    if (!*chosen_hook) return FALSE;
+    REQUIRE(_tcscpy_s(info->lpstrFile, info->nMaxFile, chosen_hook) == 0);
+    return TRUE;
+  }
   if (long_filter) CHECK(!info->lpstrFilter);
   else {
     const TCHAR *p = info->lpstrFilter;
@@ -144,7 +150,7 @@ void test_install_gui() {
   CHECK(gui_test::labels == 0);
   for (bool oversized : {false, true}) {
     gui_test::long_filter = oversized;
-    browse(window, _T(""), 0, NSSM_GUI_BROWSE_FILTER_APPLICATIONS, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
+    browse(window, false, 0, NSSM_GUI_BROWSE_FILTER_APPLICATIONS, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
     CHECK(gui_test::labels == 0);
   }
   gui_test::long_filter = false;
@@ -466,6 +472,22 @@ void test_gui_hooks() {
   HKEY key = open_registry(original.name, _T("AppEvents\\Start"), KEY_READ); REQUIRE(key);
   CHECK(get_string(key, _T("Pre"), displayed, sizeof(displayed), false, false, true) == 0);
   CHECK(! _tcscmp(displayed, command)); RegCloseKey(key);
+  DestroyWindow(window);
+  window = gui_window(&original);
+  HWND hook_tab = tablist[NSSM_TAB_HOOKS];
+  for (const TCHAR *selection : {_T(""), _T("C:\\Hook Folder\\probe.exe")}) {
+    gui_test::chosen_hook = selection;
+    SendMessage(hook_tab, WM_COMMAND, IDC_BROWSE_HOOK, 0);
+    REQUIRE(!update_hooks(original.name));
+    REQUIRE(!get_hook(original.name, NSSM_HOOK_EVENT_START, NSSM_HOOK_ACTION_PRE, displayed, sizeof(displayed), false));
+    CHECK(!_tcscmp(displayed, *selection ? _T("\"C:\\Hook Folder\\probe.exe\"") : command));
+  }
+  std::basic_string<TCHAR> too_long(PATH_LENGTH - 1, _T('x'));
+  gui_test::chosen_hook = too_long.c_str();
+  SendMessage(hook_tab, WM_COMMAND, IDC_BROWSE_HOOK, 0);
+  GetDlgItemText(hook_tab, IDC_HOOK, displayed, _countof(displayed));
+  CHECK(!_tcscmp(displayed, _T("\"C:\\Hook Folder\\probe.exe\"")));
+  gui_test::chosen_hook = NULL;
   DestroyWindow(window);
   // View/cancel and unrelated saves retain both the literal text and its type.
   for (DWORD type : {REG_SZ, REG_EXPAND_SZ}) {

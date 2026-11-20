@@ -300,6 +300,27 @@ static void normal_streams(bool shared) {
   CHECK(f.contents() == (shared ? "stdout tail\nstderr tail\n" : "stdout tail\n"));
   if (! shared) CHECK(f.contents(true) == "stderr tail\n");
 }
+static void standard_handle_inheritance() {
+  for (bool shared : {false, true}) {
+    for (bool pipe : {false, true}) {
+      fixture f(shared);
+      f.service->use_stdout_pipe = f.service->use_stderr_pipe = pipe;
+      REQUIRE(!get_output_handles(f.service, &f.si));
+      STARTUPINFO hook = {};
+      REQUIRE(!use_output_handles(f.service, &hook));
+      DWORD flags;
+      for (HANDLE h : {f.service->stdout_si, f.service->stderr_si}) {
+        REQUIRE(GetHandleInformation(h, &flags));
+        CHECK(!(flags & HANDLE_FLAG_INHERIT));
+      }
+      for (HANDLE h : {f.si.hStdOutput, f.si.hStdError, hook.hStdOutput, hook.hStdError}) {
+        REQUIRE(GetHandleInformation(h, &flags));
+        CHECK(flags & HANDLE_FLAG_INHERIT);
+      }
+      close_output_handles(&hook);
+    }
+  }
+}
 static DWORD WINAPI manual_rotation(void *arg) {
   return await_logger_rotation(static_cast<nssm_service_t *>(arg), 0) ? 0 : 1;
 }
@@ -357,6 +378,9 @@ static void failure_cases() {
     fail_pipe = failure == 2; thread_mode = failure == 3 ? 1 : 0;
     REQUIRE(get_output_handles(f.service, &f.si) == 0); // Direct file fallback.
     CHECK(! f.service->stdout_thread && ! f.service->stdout_logger);
+    DWORD flags;
+    REQUIRE(GetHandleInformation(f.service->stdout_si, &flags));
+    CHECK(!(flags & HANDLE_FLAG_INHERIT));
     output(f.si.hStdOutput, "fallback\n"); f.stop();
     CHECK(f.contents() == "fallback\n");
   }
@@ -693,6 +717,7 @@ void test_logger_ownership() {
   logger_test::rotation_completion(false);
   logger_test::rotation_completion(true);
   logger_test::aliased_redirection();
+  logger_test::standard_handle_inheritance();
   nssm_service_t *service = new nssm_service_t();
   InitializeCriticalSection(&service->hook_section);
   service->stdout_thread = CreateEvent(NULL, TRUE, TRUE, NULL);

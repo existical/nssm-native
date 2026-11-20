@@ -71,6 +71,13 @@ void test_install_ownership() {
   CHECK(pre_install_service(2, args) == 1);
   CHECK(pre_install_service(1, args) == 1);
   install_test::finish();
+  TCHAR invalid_keys[][4] = {_T("a/b"), _T("a\\b")};
+  for (auto &invalid : invalid_keys) {
+    TCHAR *arguments[] = {invalid, args[1]};
+    install_test::reset(4);
+    CHECK(pre_install_service(2, arguments) == 2 && install_test::objects.empty());
+    install_test::finish();
+  }
   TCHAR *empty_path[] = {args[0], _T("")};
   install_test::reset(4);
   CHECK(pre_install_service(2, empty_path) == 2);

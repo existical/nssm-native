@@ -152,6 +152,10 @@ int wmain(int argc, wchar_t **argv) {
       require(run(argv[1], L"get " + quoted(native.name) + L" ImagePath").code == 0, "Native SCM settings remain readable");
       require(run(argv[1], L"status " + quoted(source.name + L" custom")).code == 0, "Named status resolves the display name");
       require(run(argv[1], L"dump " + quoted(source.name), true).code != 0, "Unwritable output fails the whole dump");
+      for (const wchar_t *invalid : {L"slash/name", L"slash\\name"}) {
+        result bad_target = run(argv[1], L"dump " + quoted(source.name) + L" " + quoted(invalid));
+        require(bad_target.code != 0 && bad_target.output.find(L" install ") == std::wstring::npos, "Reject invalid clone service keys before output");
+      }
       const std::wstring raw_log = L"%SystemRoot%\\literal.log";
       service_fixture::set(source.key, L"AppStdout", raw_log, REG_SZ);
       service_fixture::set(source.key, L"AppStderr", raw_log, REG_EXPAND_SZ);
@@ -212,6 +216,10 @@ int wmain(int argc, wchar_t **argv) {
       service_fixture::set(imported.key, L"AppParameters", L"first\r\nsecond", REG_SZ);
       result multiline = run(argv[1], L"dump " + quoted(imported.name));
       require(multiline.code != 0 && multiline.output.find(L"second") == std::wstring::npos, "Suppress the unrepresentable command");
+      service_fixture::set(imported.key, L"Application", std::wstring(8191, L'x'), REG_SZ);
+      result long_install = run(argv[1], L"dump " + quoted(imported.name));
+      require(long_install.code != 0 && long_install.output.find(L" install ") == std::wstring::npos, "Reject an oversized install command before output");
+      service_fixture::set(imported.key, L"Application", argv[1], REG_SZ);
       const wchar_t *rules[] = {L"Default Ignore", L"0 Restart", L"42 Exit", L"4294967295 Suicide"};
       for (const wchar_t *rule : rules) require(exported.output.find(L" AppExit " + std::wstring(rule)) != std::wstring::npos, "Export contains every exit rule");
       require(run(argv[1], L"set " + quoted(source.name) + L" AppParameters denied").code != 0, "Setter still requires change access");

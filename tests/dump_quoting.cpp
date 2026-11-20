@@ -251,9 +251,8 @@ void test_exit_export() {
   for (bool literal : {true, false}) {
     REQUIRE(!set_string(parameters, NSSM_REG_EXE, &long_application[0], !literal));
     dump_output.clear();
-    CHECK(!dump_launch_string(service, parameters, NSSM_REG_EXE, NULL, NULL, NULL));
-    if (literal) CHECK(dump_output.find(long_application) != text_t::npos);
-    else CHECK(dump_output.empty());
+    CHECK((dump_launch_string(service, parameters, NSSM_REG_EXE, NULL, NULL, NULL) != 0) == literal);
+    CHECK(dump_output.empty());
   }
   fail_output = true;
   CHECK(setting_dump_string(service, REG_SZ, NSSM_REG_FLAGS, &path, NULL) != 0);
@@ -328,6 +327,19 @@ void test_dump_quoting() {
   CHECK(setting_dump_string(_T("Test"), REG_SZ, _T("AppParameters"), &value, empty) == 0);
   CHECK(dump_output == _T("C:\\Tools\\nssm.exe set Test AppParameters \"\" \"\"\n"));
   dump_output.clear();
+
+  // Measure the entire emitted command after quoting, including the subparameter.
+  text_t prefix = dump_executable + _T(" set Test AppEvents Start/Pre ");
+  text_t payload(8191 - prefix.size(), _T('x'));
+  value.string = &payload[0];
+  CHECK(!setting_dump_string(_T("Test"), REG_SZ, _T("AppEvents"), &value, _T("Start/Pre")));
+  CHECK(dump_output == prefix + payload + _T("\n"));
+  dump_output.clear();
+  payload += _T('x');
+  value.string = &payload[0];
+  CHECK(setting_dump_string(_T("Test"), REG_SZ, _T("AppEvents"), &value, _T("Start/Pre")) != 0);
+  CHECK(dump_output.empty());
+  value.string = empty;
 
   // Each input fits its original setting limit. Escaping exceeds the fixed
   // dump buffer, and no part of that command may be printed on failure.

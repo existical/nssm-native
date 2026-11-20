@@ -2,6 +2,7 @@
 
 namespace launch_test {
 static bool cleanup_race;
+static STARTUPINFO *pending_stdio;
 static volatile LONG cleanup_calls;
 static HANDLE cleanup_entered, cleanup_release, stop_entered, cleanup_stopped;
 static bool active, create_ok, resume_ok, abort_hook, stopped;
@@ -46,6 +47,12 @@ BOOL WINAPI create(LPCTSTR app, LPTSTR cmd, LPSECURITY_ATTRIBUTES ps, LPSECURITY
   BOOL inherit, DWORD flags, LPVOID env, LPCTSTR dir, LPSTARTUPINFO si, LPPROCESS_INFORMATION pi) {
   if (! active) return CreateProcess(app, cmd, ps, ts, inherit, flags, env, dir, si, pi);
   creates++;
+  if (pending_stdio) {
+    CHECK(inherit && pending_stdio == si);
+    DWORD flags;
+    for (HANDLE h : {si->hStdInput, si->hStdOutput, si->hStdError})
+      CHECK(GetHandleInformation(h, &flags) && (flags & HANDLE_FLAG_INHERIT));
+  }
   if (! create_ok) { SetLastError(create_error); return FALSE; }
   launch_flags = flags;
   process_closed = thread_closed = false;
@@ -143,8 +150,24 @@ BOOL WINAPI status(SERVICE_STATUS_HANDLE h, LPSERVICE_STATUS value) {
 }
 BOOL WINAPI free_console() { return active ? TRUE : FreeConsole(); }
 int parameters(nssm_service_t *service, STARTUPINFO *si) { return active ? 0 : get_parameters(service, si); }
-int output(nssm_service_t *service, STARTUPINFO *si) { return active ? 0 : get_output_handles(service, si); }
-void close_output(STARTUPINFO *si) { if (active) output_closes++; else close_output_handles(si); }
+int output(nssm_service_t *service, STARTUPINFO *si) {
+  if (!active) return get_output_handles(service, si);
+  if (service->hook_share_output_handles) {
+    pending_stdio = si;
+    SECURITY_ATTRIBUTES security = {sizeof(security), NULL, TRUE};
+    si->dwFlags |= STARTF_USESTDHANDLES;
+    for (HANDLE *h : {&si->hStdInput, &si->hStdOutput, &si->hStdError}) {
+      *h = CreateEvent(&security, TRUE, FALSE, NULL);
+      REQUIRE(*h);
+    }
+  }
+  return 0;
+}
+void close_output(STARTUPINFO *si) {
+  if (active) output_closes++;
+  if (!active || pending_stdio == si) close_output_handles(si);
+  if (pending_stdio == si) pending_stdio = NULL;
+}
 void cleanup(nssm_service_t *service) {
   if (cleanup_race) {
     InterlockedIncrement(&cleanup_calls);
@@ -164,6 +187,11 @@ unsigned long kill_tree(kill_t *k, unsigned long pid) {
 }
 int hook(hook_thread_t *list, nssm_service_t *service, TCHAR *event, TCHAR *action, unsigned long *control, unsigned long deadline, bool async) {
   if (! active) return nssm_hook(list, service, event, action, control, deadline, async);
+  if (pending_stdio && str_equiv(event, NSSM_HOOK_EVENT_START) && str_equiv(action, NSSM_HOOK_ACTION_PRE)) {
+    DWORD flags;
+    for (HANDLE h : {pending_stdio->hStdInput, pending_stdio->hStdOutput, pending_stdio->hStdError})
+      CHECK(GetHandleInformation(h, &flags) && !(flags & HANDLE_FLAG_INHERIT));
+  }
   if (power_entered && str_equiv(event, NSSM_HOOK_EVENT_POWER)) {
     power_calls.push_back(action);
     SetEvent(power_entered);
@@ -195,6 +223,7 @@ static void service_case(bool suspended, bool created, bool resume_success, bool
   nssm_service_t *service = new nssm_service_t();
   _tcscpy_s(service->name, _T("Launch test")); _tcscpy_s(service->exe, _T("fake.exe"));
   service->allow_restart = true; service->no_console = true; service->throttle_delay = throttle;
+  service->hook_share_output_handles = true;
   service->affinity = suspended ? 1 : 0;
   service->kill_process_tree = true;
   InitializeCriticalSection(&service->hook_section);

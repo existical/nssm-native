@@ -244,7 +244,9 @@ Replay these commands with a version supporting this selector. An ordinary sette
 using the output: an error can leave earlier complete lines in the stream, so
 discard the entire output on failure. Do not pipe a dump directly into a shell.
 Dump fails when an argument contains a carriage return or line feed, or when
-its escaped form exceeds the dump buffer.
+its escaped form exceeds the dump buffer. Each complete command must also fit
+within the 8,191-character cmd.exe limit. A clone target must be a valid service
+key name. Forward slashes and backslashes are invalid in that name.
 
 The quoting tests use `cmd.exe /d /v:off`, with AutoRun and delayed expansion
 disabled. The latter keeps exclamation marks literal. Legacy escaping still has

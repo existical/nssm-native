@@ -598,6 +598,10 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
 
   /* Get service name. */
   if (!read_service_name(window, service->name)) return 2;
+  if (!orig_service && !valid_service_key_name(service->name)) {
+    popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_MESSAGE_OPENSERVICE_FAILED, error_string(ERROR_INVALID_NAME));
+    return 2;
+  }
 
   /* Get executable name */
   if (! service->native) {
@@ -1098,7 +1102,7 @@ UINT_PTR CALLBACK browse_hook(HWND dlg, UINT message, WPARAM w, LPARAM l) {
 }
 
 /* Browse for application */
-void browse(HWND window, TCHAR *current, unsigned long flags, ...) {
+static void browse(HWND window, bool hook_command, unsigned long flags, ...) {
   if (! window) return;
 
   OPENFILENAME ofn = {};
@@ -1133,7 +1137,7 @@ void browse(HWND window, TCHAR *current, unsigned long flags, ...) {
     ofn.nMaxFile = DIR_LENGTH;
   }
   else {
-    if (current) _sntprintf_s(ofn.lpstrFile, PATH_LENGTH, _TRUNCATE, _T("%s"), current);
+    if (hook_command) ofn.lpstrFile[0] = 0;
     else if (!GetWindowText(window, ofn.lpstrFile, PATH_LENGTH)) ofn.lpstrFile[0] = 0;
     ofn.nMaxFile = PATH_LENGTH;
   }
@@ -1142,7 +1146,14 @@ void browse(HWND window, TCHAR *current, unsigned long flags, ...) {
   ofn.Flags = OFN_EXPLORER | OFN_HIDEREADONLY | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | flags;
   if (GetOpenFileName(&ofn)) {
     if (flags & OFN_NOVALIDATE) strip_basename(ofn.lpstrFile);
-    SendMessage(window, WM_SETTEXT, 0, (LPARAM) ofn.lpstrFile);
+    if (hook_command) {
+      text_buffer<CMD_LENGTH> command;
+      if (!command.get()) popup_message(ofn.hwndOwner, MB_OK | MB_ICONEXCLAMATION, NSSM_MESSAGE_OUT_OF_MEMORY, NSSM_REG_HOOK, _T("browse()"));
+      else if (_sntprintf_s(command.get(), command.size(), _TRUNCATE, _T("\"%s\""), ofn.lpstrFile) < 0)
+        popup_message(ofn.hwndOwner, MB_OK | MB_ICONEXCLAMATION, NSSM_MESSAGE_PATH_TOO_LONG, NSSM_REG_HOOK);
+      else SetWindowText(window, command.get());
+    }
+    else SetWindowText(window, ofn.lpstrFile);
   }
   HeapFree(GetProcessHeap(), 0, ofn.lpstrFile);
 }
@@ -1169,14 +1180,14 @@ INT_PTR CALLBACK tab_dlg(HWND tab, UINT message, WPARAM w, LPARAM l) {
         /* Browse for application. */
         case IDC_BROWSE:
           dlg = GetDlgItem(tab, IDC_PATH);
-          browse(dlg, NULL, OFN_FILEMUSTEXIST, NSSM_GUI_BROWSE_FILTER_APPLICATIONS, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
+          browse(dlg, false, OFN_FILEMUSTEXIST, NSSM_GUI_BROWSE_FILTER_APPLICATIONS, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
           fill_browse_default(tab, IDC_PATH, IDC_DIR, true);
           break;
 
         /* Browse for startup directory. */
         case IDC_BROWSE_DIR:
           dlg = GetDlgItem(tab, IDC_DIR);
-          browse(dlg, NULL, OFN_NOVALIDATE, NSSM_GUI_BROWSE_FILTER_DIRECTORIES, 0);
+          browse(dlg, false, OFN_NOVALIDATE, NSSM_GUI_BROWSE_FILTER_DIRECTORIES, 0);
           break;
 
         /* Log on. */
@@ -1219,20 +1230,20 @@ INT_PTR CALLBACK tab_dlg(HWND tab, UINT message, WPARAM w, LPARAM l) {
         /* Browse for stdin. */
         case IDC_BROWSE_STDIN:
           dlg = GetDlgItem(tab, IDC_STDIN);
-          browse(dlg, NULL, 0, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
+          browse(dlg, false, 0, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
           break;
 
         /* Browse for stdout. */
         case IDC_BROWSE_STDOUT:
           dlg = GetDlgItem(tab, IDC_STDOUT);
-          browse(dlg, NULL, 0, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
+          browse(dlg, false, 0, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
           fill_browse_default(tab, IDC_STDOUT, IDC_STDERR, false);
           break;
 
         /* Browse for stderr. */
         case IDC_BROWSE_STDERR:
           dlg = GetDlgItem(tab, IDC_STDERR);
-          browse(dlg, NULL, 0, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
+          browse(dlg, false, 0, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
           break;
 
         /* Rotation. */
@@ -1255,7 +1266,7 @@ INT_PTR CALLBACK tab_dlg(HWND tab, UINT message, WPARAM w, LPARAM l) {
         /* Browse for hook. */
         case IDC_BROWSE_HOOK:
           dlg = GetDlgItem(tab, IDC_HOOK);
-          browse(dlg, _T(""), OFN_FILEMUSTEXIST, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
+          browse(dlg, true, OFN_FILEMUSTEXIST, NSSM_GUI_BROWSE_FILTER_ALL_FILES, 0);
           break;
 
         /* Hook. */

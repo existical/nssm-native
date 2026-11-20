@@ -487,7 +487,7 @@ SC_HANDLE open_service(SC_HANDLE services, TCHAR *service_name, unsigned long ac
   }
   else if (!service_handle) {
     error = GetLastError();
-    if (error == ERROR_SERVICE_DOES_NOT_EXIST) {
+    if (error == ERROR_SERVICE_DOES_NOT_EXIST || error == ERROR_INVALID_NAME) {
       DWORD length = _countof(resolved);
       if (GetServiceKeyName(services, service_name, resolved, &length)) {
         service_handle = OpenService(services, resolved, access);
@@ -906,6 +906,10 @@ void cleanup_nssm_service(nssm_service_t *service) {
 }
 
 /* About to install the service */
+bool valid_service_key_name(const TCHAR *name) {
+  return name && *name && _tcslen(name) < SERVICE_NAME_LENGTH && !_tcspbrk(name, _T("/\\"));
+}
+
 static bool valid_service_name(const TCHAR *name) {
   if (name && *name && _tcslen(name) < SERVICE_NAME_LENGTH) return true;
   print_message(stderr, NSSM_MESSAGE_OPENSERVICE_FAILED, error_string(ERROR_INVALID_NAME));
@@ -913,7 +917,10 @@ static bool valid_service_name(const TCHAR *name) {
 }
 
 int pre_install_service(int argc, TCHAR **argv) {
-  if (argc && !valid_service_name(argv[0])) return 2;
+  if (argc && !valid_service_key_name(argv[0])) {
+    print_message(stderr, NSSM_MESSAGE_OPENSERVICE_FAILED, error_string(ERROR_INVALID_NAME));
+    return 2;
+  }
   if (argc >= 2 && !argv[1][0]) {
     print_message(stderr, NSSM_GUI_MISSING_PATH);
     return 2;
@@ -1031,6 +1038,10 @@ int pre_edit_service(int argc, TCHAR **argv) {
     mode = MODE_RESETTING;
   }
   else if (str_equiv(verb, _T("dump"))) {
+    if (argc > 2 && !valid_service_key_name(argv[2])) {
+      print_message(stderr, NSSM_MESSAGE_OPENSERVICE_FAILED, error_string(ERROR_INVALID_NAME));
+      return 2;
+    }
     mandatory = 1;
     remainder = 2;
     mode = MODE_DUMPING;
@@ -1195,10 +1206,7 @@ int pre_edit_service(int argc, TCHAR **argv) {
 
   if (mode == MODE_DUMPING) {
     TCHAR *service_name = service->name;
-    if (argc > remainder) {
-      if (!valid_service_name(argv[remainder])) return 2;
-      service_name = argv[remainder];
-    }
+    if (argc > remainder) service_name = argv[remainder];
     key = open_registry(service->name, KEY_READ);
     if (! key) return 4;
 
@@ -1212,7 +1220,7 @@ int pre_edit_service(int argc, TCHAR **argv) {
     if (quote(service_name, quoted_service_name, _countof(quoted_service_name))) return 5;
     if (quote(service->exe, quoted_exe.get(), quoted_exe.size())) return 6;
     if (quote(nssm_exe(), quoted_nssm.get(), quoted_nssm.size())) return 6;
-    if (_tprintf(_T("%s install %s %s\n"), quoted_nssm.get(), quoted_service_name, quoted_exe.get()) < 0) return 1;
+    if (write_dump_command(_T("%s install %s %s"), quoted_nssm.get(), quoted_service_name, quoted_exe.get())) return 1;
 
     ret = 0;
     for (i = 0; settings[i].name; i++) {
@@ -1963,6 +1971,16 @@ static int launch_failure(nssm_service_t *service, DWORD code) {
   return code;
 }
 
+/* A Start/Pre hook that redirects output inherits its own set of handles.
+   Keep the application's pending startup handles private until its launch. */
+static bool set_launch_handle_inheritance(STARTUPINFO *si, bool inherit) {
+  if (!(si->dwFlags & STARTF_USESTDHANDLES)) return true;
+  DWORD flags = inherit ? HANDLE_FLAG_INHERIT : 0;
+  return SetHandleInformation(si->hStdInput, HANDLE_FLAG_INHERIT, flags) &&
+         SetHandleInformation(si->hStdOutput, HANDLE_FLAG_INHERIT, flags) &&
+         SetHandleInformation(si->hStdError, HANDLE_FLAG_INHERIT, flags);
+}
+
 /* Start the service */
 int start_service(nssm_service_t *service) {
   service_cleanup_lock state(service);
@@ -2017,7 +2035,7 @@ int start_service(nssm_service_t *service) {
   /* Did another thread receive a stop control? */
   if (restart_allowed(service)) {
     /* Set up I/O redirection. */
-    if (get_output_handles(service, &si)) {
+    if (get_output_handles(service, &si) || !set_launch_handle_inheritance(&si, false)) {
       if (restart_allowed(service)) log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_GET_OUTPUT_HANDLES_FAILED, service->name);
       FreeConsole();
       close_output_handles(&si);
@@ -2049,8 +2067,13 @@ int start_service(nssm_service_t *service) {
       return launch_failure(service, 2);
     }
 
-    bool inherit_handles = false;
-    if (si.dwFlags & STARTF_USESTDHANDLES) inherit_handles = true;
+    if (!set_launch_handle_inheritance(&si, true)) {
+      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_GET_OUTPUT_HANDLES_FAILED, service->name);
+      close_output_handles(&si);
+      unset_service_environment(service);
+      return launch_failure(service, 4);
+    }
+    bool inherit_handles = (si.dwFlags & STARTF_USESTDHANDLES) != 0;
     unsigned long flags = service->priority & priority_mask();
     if (service->affinity) flags |= CREATE_SUSPENDED;
     if (! service->no_console) flags |= CREATE_NEW_CONSOLE;

@@ -131,6 +131,24 @@ static int setting_not_dumpable(const TCHAR *service_name, void *param, const TC
   return 0;
 }
 
+/* cmd.exe accepts up to 8191 characters before the line ending. */
+int write_dump_command(const TCHAR *format, ...) {
+  text_buffer<8192> line;
+  if (!line.get()) {
+    print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("command line"), _T("write_dump_command()"));
+    return 1;
+  }
+  va_list args;
+  va_start(args, format);
+  int length = _vsntprintf_s(line.get(), line.size(), _TRUNCATE, format, args);
+  va_end(args);
+  if (length < 0) {
+    print_message(stderr, NSSM_MESSAGE_DUMP_LINE_TOO_LONG);
+    return 1;
+  }
+  return _tprintf(_T("%s\n"), line.get()) < 0;
+}
+
 static int setting_dump_string(const TCHAR *service_name, unsigned long type, const TCHAR *name, const value_t *value, const TCHAR *additional) {
   struct arguments {
     TCHAR service[SERVICE_NAME_LENGTH * 2], executable[EXE_LENGTH * 2];
@@ -153,10 +171,8 @@ static int setting_dump_string(const TCHAR *service_name, unsigned long type, co
   else return 2;
 
   if (quote(nssm_exe(), args->executable, _countof(args->executable))) return 3;
-  int written;
-  if (additional) written = _tprintf(_T("%s set %s %s %s %s\n"), args->executable, args->service, name, args->additional, args->value);
-  else written = _tprintf(_T("%s set %s %s %s\n"), args->executable, args->service, name, args->value);
-  return written < 0;
+  if (additional) return write_dump_command(_T("%s set %s %s %s %s"), args->executable, args->service, name, args->additional, args->value);
+  return write_dump_command(_T("%s set %s %s %s"), args->executable, args->service, name, args->value);
 }
 
 /* Restore literal launch/I/O values with an explicit setter after install. */
