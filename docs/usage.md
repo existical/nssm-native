@@ -160,8 +160,10 @@ Application and hook cleanup retain the original process handle while walking
 descendants. Each candidate child is opened once, its current parent and
 creation time are checked, and that same handle is used for cleanup. Child
 times are checked against the immediate parent, including when the root has
-already exited. `processes` uses read-only process rights and returns nonzero
-when traversal fails.
+already exited. `processes` uses read-only process rights. A stopped service
+produces an empty listing. If the service is starting or stopping, or its PID
+changes while NSSM opens the process, the command reports an error. Retry
+after the service settles. A traversal failure also returns a nonzero exit code.
 
 Missing, inaccessible or unverified identities are skipped and reported rather
 than reopened by PID. This can leave a subtree running. Cleanup also skips

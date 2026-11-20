@@ -131,7 +131,12 @@ BOOL WINAPI affinity(HANDLE h, PDWORD_PTR process, PDWORD_PTR system) {
 }
 BOOL WINAPI set_affinity(HANDLE h, DWORD_PTR mask) { if (! active) return SetProcessAffinityMask(h, mask); if (! affinity_ok) SetLastError(ERROR_ACCESS_DENIED); return affinity_ok; }
 BOOL WINAPI status(SERVICE_STATUS_HANDLE h, LPSERVICE_STATUS value) {
-  if (active && value->dwCurrentState == SERVICE_STOPPED) stopped_statuses++;
+  if (active && (value->dwCurrentState == SERVICE_RUNNING || value->dwCurrentState == SERVICE_PAUSED || value->dwCurrentState == SERVICE_STOPPED))
+    CHECK(!value->dwCheckPoint && !value->dwWaitHint);
+  if (active && value->dwCurrentState == SERVICE_STOPPED) {
+    CHECK(!value->dwControlsAccepted);
+    stopped_statuses++;
+  }
   if (active && value->dwCurrentState == SERVICE_RUNNING) running_statuses++;
   if (cleanup_race && value->dwCurrentState == SERVICE_STOPPED) SetEvent(cleanup_stopped);
   return active ? TRUE : SetServiceStatus(h, value);

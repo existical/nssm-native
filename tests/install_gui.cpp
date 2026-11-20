@@ -357,6 +357,20 @@ void test_gui_retry() {
   CHECK(edited->rotate_bytes_high == 2 && edited->rotate_bytes_low == 1234);
   CHECK(edited->stdout_sharing == FILE_SHARE_DELETE && edited->stdout_type == REG_SZ && edited->preserve_stdout_path);
   cleanup_nssm_service(edited);
+  gui_test::reset();
+  for (int id : {IDC_STDIN, IDC_STDOUT, IDC_STDERR}) {
+    HWND field = GetDlgItem(tablist[NSSM_TAB_IO], id);
+    REQUIRE(field);
+    SetWindowLongPtr(field, GWLP_ID, 0);
+    CHECK(edit(window, &original) == 5 && !gui_test::saves);
+    SetWindowLongPtr(field, GWLP_ID, id);
+  }
+  gui_test::finish();
+  SetDlgItemText(tablist[NSSM_TAB_IO], IDC_STDOUT, _T(""));
+  edited = alloc_nssm_service(); REQUIRE(edited && !configure(window, edited, &original));
+  CHECK(!edited->stdout_path[0] && !edited->preserve_stdout_path);
+  cleanup_nssm_service(edited);
+  SetDlgItemText(tablist[NSSM_TAB_IO], IDC_STDOUT, original.stdout_path);
   SendMessage(process_tab, WM_COMMAND, MAKEWPARAM(IDC_AFFINITY, LBN_SELCHANGE), (LPARAM)cpus);
   edited = alloc_nssm_service(); REQUIRE(edited && !configure(window, edited, &original));
   CHECK(edited->affinity == 2); cleanup_nssm_service(edited);

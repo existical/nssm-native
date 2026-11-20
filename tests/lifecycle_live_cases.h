@@ -157,7 +157,9 @@ static int test(const std::wstring &nssm) {
           service_fixture::set(key, std::wstring(event) == L"Stop" ? L"Pre" : L"Post", hook_command, REG_EXPAND_SZ); RegCloseKey(key);
         }
         require(ChangeServiceConfigW(owned.service, SERVICE_NO_CHANGE, SERVICE_DEMAND_START, SERVICE_NO_CHANGE, NULL, NULL, NULL, NULL, NULL, NULL, NULL) != FALSE, "Enable owned wrapper");
-        command(nssm, L"start " + quoted(owned.name), 60000);
+        result stopped_listing = run(nssm, L"processes " + quoted(owned.name));
+        require(!stopped_listing.code && stopped_listing.output.empty(), "Stopped service has an empty process list");
+        command(nssm, L"start " + quoted(owned.name) + L" debug", 60000);
         observer first, first_child; first.attach(file(dir.path, L"app.pid")); first_child.attach(file(dir.path, L"child.pid"));
         write(file(dir.path, L"crash"), "crash");
         observer restarted, restarted_child; restarted.attach(file(dir.path, L"app.pid"), first.pid); restarted_child.attach(file(dir.path, L"child.pid"), first_child.pid);

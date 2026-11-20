@@ -31,6 +31,21 @@ static bool restart_allowed(nssm_service_t *service) {
   return InterlockedCompareExchange(&service->allow_restart, 0, 0) != 0;
 }
 
+static bool status_pending(DWORD state) {
+  return state == SERVICE_START_PENDING || state == SERVICE_STOP_PENDING ||
+         state == SERVICE_PAUSE_PENDING || state == SERVICE_CONTINUE_PENDING;
+}
+
+static void report_service_status(nssm_service_t *service) {
+  SERVICE_STATUS &status = service->status;
+  if (!status_pending(status.dwCurrentState)) {
+    status.dwCheckPoint = 0;
+    status.dwWaitHint = 0;
+  }
+  if (status.dwCurrentState == SERVICE_STOPPED) status.dwControlsAccepted = 0;
+  SetServiceStatus(service->status_handle, &status);
+}
+
 /* The caller owns a separate SYNCHRONIZE handle. Never hold the cleanup lock
    across the wait: STOP must be able to terminate the child and wake us. */
 enum class startup_result { alive, exited, cancelled, failed };
@@ -43,10 +58,10 @@ static startup_result await_startup(nssm_service_t *service, HANDLE process, uns
     {
       service_cleanup_lock state(service);
       if (! restart_allowed(service) || service->stopping) return startup_result::cancelled;
-      if (interval) {
+      if (interval && status_pending(service->status.dwCurrentState)) {
         service->status.dwWaitHint = interval + NSSM_WAITHINT_MARGIN;
         service->status.dwCheckPoint++;
-        SetServiceStatus(service->status_handle, &service->status);
+        report_service_status(service);
       }
     }
     DWORD result = WaitForSingleObject(process, interval);
@@ -899,6 +914,10 @@ static bool valid_service_name(const TCHAR *name) {
 
 int pre_install_service(int argc, TCHAR **argv) {
   if (argc && !valid_service_name(argv[0])) return 2;
+  if (argc >= 2 && !argv[1][0]) {
+    print_message(stderr, NSSM_GUI_MISSING_PATH);
+    return 2;
+  }
   nssm_service_t *service = alloc_nssm_service();
   if (! service) {
     print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("service"), _T("pre_install_service()"));
@@ -1660,16 +1679,13 @@ static void report_start_pending(nssm_service_t *service) {
   service->status.dwCurrentState = SERVICE_START_PENDING;
   service->status.dwWaitHint = NSSM_SERVICE_STATUS_DEADLINE + NSSM_WAITHINT_MARGIN;
   ++service->status.dwCheckPoint;
-  SetServiceStatus(service->status_handle, &service->status);
+  report_service_status(service);
 }
 
 /* Service initialisation */
-void WINAPI service_main(unsigned long argc, TCHAR **argv) {
+void WINAPI service_main(unsigned long, TCHAR **argv) {
   nssm_service_t *service = alloc_nssm_service();
   if (! service) return;
-
-  static volatile bool await_debugger = (argc > 1 && str_equiv(argv[1], _T("debug")));
-  while (await_debugger) Sleep(1000);
 
   if (_sntprintf_s(service->name, _countof(service->name), _TRUNCATE, _T("%s"), argv[0]) < 0) {
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_OUT_OF_MEMORY, _T("service->name"), _T("service_main()"));
@@ -1704,7 +1720,7 @@ void WINAPI service_main(unsigned long argc, TCHAR **argv) {
     service->status.dwCurrentState = SERVICE_STOPPED;
     service->status.dwWin32ExitCode = ERROR_NOT_ENOUGH_MEMORY;
     service->status.dwWaitHint = 0;
-    SetServiceStatus(service->status_handle, &service->status);
+    report_service_status(service);
     return;
   }
   report_start_pending(service);
@@ -1772,7 +1788,7 @@ void WINAPI service_main(unsigned long argc, TCHAR **argv) {
       service->status.dwCurrentState = SERVICE_STOP_PENDING;
       service->status.dwControlsAccepted = 0;
       service->status.dwWaitHint = NSSM_SERVICE_STATUS_DEADLINE + NSSM_WAITHINT_MARGIN;
-      SetServiceStatus(service->status_handle, &service->status);
+      report_service_status(service);
     }
     nssm_hook(&hook_threads, service, NSSM_HOOK_EVENT_STOP, NSSM_HOOK_ACTION_PRE, &service->stop_control, NSSM_SERVICE_STATUS_DEADLINE, false);
     stop_service(service, 0, true, true);
@@ -1890,7 +1906,7 @@ unsigned long WINAPI service_control_handler(unsigned long control, unsigned lon
       service->throttle = 0;
       service->status.dwCurrentState = SERVICE_CONTINUE_PENDING;
       service->status.dwWaitHint = NSSM_WAITHINT_MARGIN;
-      SetServiceStatus(service->status_handle, &service->status);
+      report_service_status(service);
       SetEvent(service->resume_event);
       log_event(EVENTLOG_INFORMATION_TYPE, NSSM_EVENT_RESET_THROTTLE, service->name);
       return NO_ERROR;
@@ -1943,7 +1959,7 @@ static int launch_failure(nssm_service_t *service, DWORD code) {
   cleanup_loggers(service);
   service->status.dwCurrentState = SERVICE_PAUSED;
   service->status.dwControlsAccepted = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN;
-  SetServiceStatus(service->status_handle, &service->status);
+  report_service_status(service);
   return code;
 }
 
@@ -2137,7 +2153,7 @@ int start_service(nssm_service_t *service) {
   /* Signal successful start */
   service->status.dwCurrentState = SERVICE_RUNNING;
   service->status.dwControlsAccepted &= ~SERVICE_ACCEPT_PAUSE_CONTINUE;
-  SetServiceStatus(service->status_handle, &service->status);
+  report_service_status(service);
 
   /* Post-start hook. */
   if (! service->throttle) {
@@ -2170,7 +2186,7 @@ int stop_service(nssm_service_t *service, unsigned long exitcode, bool graceful,
   if (graceful) {
     service->status.dwCurrentState = SERVICE_STOP_PENDING;
     service->status.dwWaitHint = NSSM_WAITHINT_MARGIN;
-    SetServiceStatus(service->status_handle, &service->status);
+    report_service_status(service);
   }
 
   /* Nothing to do if service isn't running */
@@ -2199,7 +2215,7 @@ int stop_service(nssm_service_t *service, unsigned long exitcode, bool graceful,
       service->status.dwWin32ExitCode = NO_ERROR;
       service->status.dwServiceSpecificExitCode = 0;
     }
-    SetServiceStatus(service->status_handle, &service->status);
+    report_service_status(service);
   }
 
   if (graceful && service->finished_event) SetEvent(service->finished_event);
@@ -2305,7 +2321,7 @@ void CALLBACK end_service(void *arg, unsigned char why) {
       if (service->status.dwCurrentState == SERVICE_START_PENDING) {
         service->status.dwCurrentState = SERVICE_RUNNING;
         service->status.dwControlsAccepted &= ~SERVICE_ACCEPT_PAUSE_CONTINUE;
-        SetServiceStatus(service->status_handle, &service->status);
+        report_service_status(service);
       }
     }
       log_event(EVENTLOG_INFORMATION_TYPE, NSSM_EVENT_EXIT_IGNORE, service->name, code, exit_action_strings[action], service->exe);
@@ -2348,7 +2364,7 @@ void throttle_restart(nssm_service_t *service) {
   ResetEvent(service->resume_event);
   service->status.dwCurrentState = SERVICE_PAUSED;
   service->status.dwControlsAccepted |= SERVICE_ACCEPT_PAUSE_CONTINUE;
-  SetServiceStatus(service->status_handle, &service->status);
+  report_service_status(service);
   state.unlock();
   HANDLE events[] = {service->stop_event, service->resume_event};
   /* MAXDWORD is a valid configured delay, but means infinite to the API. */
@@ -2409,7 +2425,7 @@ int await_single_handle(SERVICE_STATUS_HANDLE status_handle, SERVICE_STATUS *sta
     interval = timeout - waited;
     if (interval > NSSM_SERVICE_STATUS_DEADLINE) interval = NSSM_SERVICE_STATUS_DEADLINE;
 
-    if (status) {
+    if (status && status_pending(status->dwCurrentState)) {
       status->dwWaitHint = interval + NSSM_WAITHINT_MARGIN;
       status->dwCheckPoint++;
       SetServiceStatus(status_handle, status);
@@ -2507,6 +2523,43 @@ int list_nssm_services(int argc, TCHAR **argv) {
   return result;
 }
 
+static DWORD query_service_pid(SC_HANDLE handle, DWORD *pid) {
+  SERVICE_STATUS_PROCESS status;
+  DWORD needed;
+  *pid = 0;
+  if (!QueryServiceStatusEx(handle, SC_STATUS_PROCESS_INFO, reinterpret_cast<LPBYTE>(&status), sizeof(status), &needed)) return GetLastError();
+  switch (status.dwCurrentState) {
+    case SERVICE_STOPPED:
+      return ERROR_SUCCESS;
+    case SERVICE_RUNNING:
+    case SERVICE_PAUSED:
+    case SERVICE_PAUSE_PENDING:
+    case SERVICE_CONTINUE_PENDING:
+      *pid = status.dwProcessId;
+      return *pid ? ERROR_SUCCESS : ERROR_RETRY;
+    default:
+      return ERROR_RETRY;
+  }
+}
+
+/* Keep the process object alive across the second SCM query so that its PID
+   cannot be recycled between identity verification and tree enumeration. */
+static DWORD open_service_process(SC_HANDLE handle, kill_t *root) {
+  DWORD error = query_service_pid(handle, &root->pid);
+  if (error || !root->pid) return error;
+  HANDLE process = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, root->pid);
+  if (!process) return GetLastError();
+
+  DWORD current_pid;
+  error = query_service_pid(handle, &current_pid);
+  if (error || current_pid != root->pid) {
+    CloseHandle(process);
+    return error ? error : ERROR_RETRY;
+  }
+  root->process_handle = process;
+  return ERROR_SUCCESS;
+}
+
 int service_process_tree(int argc, TCHAR **argv) {
   int errors = 0;
   if (argc < 1) return usage(1);
@@ -2526,7 +2579,6 @@ int service_process_tree(int argc, TCHAR **argv) {
   (void) get_debug_token(&token);
 
   TCHAR canonical_name[SERVICE_NAME_LENGTH];
-  SERVICE_STATUS_PROCESS service_status;
   nssm_service_t *service;
   kill_t k;
 
@@ -2539,26 +2591,15 @@ int service_process_tree(int argc, TCHAR **argv) {
       continue;
     }
 
-    unsigned long size;
-    int ret = QueryServiceStatusEx(service_handle, SC_STATUS_PROCESS_INFO, (LPBYTE) &service_status, sizeof(service_status), &size);
-    long error = GetLastError();
+    ZeroMemory(&k, sizeof(k));
+    DWORD error = open_service_process(service_handle, &k);
     CloseServiceHandle(service_handle);
-    if (! ret) {
+    if (error) {
       _ftprintf(stderr, _T("%s: %s\n"), canonical_name, error_string(error));
       errors++;
       continue;
     }
-
-    ZeroMemory(&k, sizeof(k));
-    k.pid = service_status.dwProcessId;
-    if (! k.pid) continue;
-
-    k.process_handle = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, k.pid);
-    if (! k.process_handle) {
-      _ftprintf(stderr, _T("%s: %lu: %s\n"), canonical_name, k.pid, error_string(GetLastError()));
-      errors++;
-      continue;
-    }
+    if (!k.process_handle) continue;
 
     if (get_process_creation_time(k.process_handle, &k.creation_time)) {
       CloseHandle(k.process_handle);

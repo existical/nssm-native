@@ -71,6 +71,11 @@ void test_install_ownership() {
   CHECK(pre_install_service(2, args) == 1);
   CHECK(pre_install_service(1, args) == 1);
   install_test::finish();
+  TCHAR *empty_path[] = {args[0], _T("")};
+  install_test::reset(4);
+  CHECK(pre_install_service(2, empty_path) == 2);
+  CHECK(install_test::objects.empty() && !install_test::manager_closes);
+  install_test::finish();
   std::basic_string<TCHAR> long_flags(CMD_LENGTH + 1, _T('x'));
   TCHAR *long_args[] = {args[0], args[1], &long_flags[0]};
   install_test::reset(0);

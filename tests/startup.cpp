@@ -66,6 +66,22 @@ static int manager_token, service_token;
 static SC_HANDLE manager_handle = reinterpret_cast<SC_HANDLE>(&manager_token);
 static SC_HANDLE service_handle = reinterpret_cast<SC_HANDLE>(&service_token);
 
+struct process_sample { DWORD state, pid, error; };
+static std::vector<process_sample> process_samples;
+static unsigned process_queries;
+static BOOL WINAPI query_process(SC_HANDLE handle, SC_STATUS_TYPE type, LPBYTE buffer, DWORD capacity, LPDWORD needed) {
+  REQUIRE(handle == service_handle && type == SC_STATUS_PROCESS_INFO && capacity >= sizeof(SERVICE_STATUS_PROCESS));
+  REQUIRE(process_queries < process_samples.size());
+  process_sample sample = process_samples[process_queries++];
+  if (sample.error) { SetLastError(sample.error); return FALSE; }
+  SERVICE_STATUS_PROCESS *status = reinterpret_cast<SERVICE_STATUS_PROCESS *>(buffer);
+  *status = {};
+  status->dwCurrentState = sample.state;
+  status->dwProcessId = sample.pid;
+  *needed = sizeof(*status);
+  return TRUE;
+}
+
 enum class inventory { pages, empty, stalled, denied };
 static inventory listing;
 static unsigned pages_read;
@@ -192,6 +208,7 @@ static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
 #define GetServiceKeyName scm::name
 #define StartService scm::start
 #define ControlService scm::control
+#define QueryServiceStatusEx scm::query_process
 #define QueryServiceStatus scm::query
 #undef QueryServiceConfig
 #define QueryServiceConfig dependency_test::query
@@ -240,6 +257,7 @@ static BOOL WINAPI service_release(HANDLE heap, DWORD flags, LPVOID p) {
 #define nssm_hook launch_test::hook
 #define log_event launch_test::log
 #include "../src/service.cpp"
+#undef QueryServiceStatusEx
 #undef QueryServiceConfig
 #define QueryServiceConfig QueryServiceConfigW
 #undef QueryServiceConfig2
@@ -364,7 +382,7 @@ void test_handle_waits() {
   for (unsigned timeout = 0; timeout <= 1; timeout++) {
     for (unsigned i = 0; i < _countof(outcomes); i++) {
       requests.clear(); results.assign(1, outcomes[i]); statuses = 0;
-      SERVICE_STATUS state = {}; state.dwCheckPoint = 42; state.dwWaitHint = 100;
+      SERVICE_STATUS state = {}; state.dwCurrentState = SERVICE_START_PENDING; state.dwCheckPoint = 42; state.dwWaitHint = 100;
       CHECK(await_single_handle(NULL, &state, NULL, _T("Wait test"), _T("test"), timeout) == expected[i]);
       CHECK(requests.size() == 1);
       if (requests.size()) CHECK(requests[0] == timeout);
@@ -372,10 +390,16 @@ void test_handle_waits() {
     }
   }
   requests.clear(); results.assign(3, WAIT_TIMEOUT); statuses = 0;
-  SERVICE_STATUS state = {}; state.dwWaitHint = MAXDWORD;
+  SERVICE_STATUS state = {}; state.dwCurrentState = SERVICE_STOP_PENDING; state.dwWaitHint = MAXDWORD;
   CHECK(await_single_handle(NULL, &state, NULL, _T("Wait test"), _T("test"), NSSM_SERVICE_STATUS_DEADLINE * 2 + 7) == 1);
   CHECK(requests.size() == 3 && requests[0] == NSSM_SERVICE_STATUS_DEADLINE && requests[1] == NSSM_SERVICE_STATUS_DEADLINE && requests[2] == 7);
   CHECK(statuses == 3 && state.dwWaitHint == 7 + NSSM_WAITHINT_MARGIN);
+  for (DWORD stable : {SERVICE_RUNNING, SERVICE_PAUSED, SERVICE_STOPPED}) {
+    state = {}; state.dwCurrentState = stable;
+    requests.clear(); results.assign(1, WAIT_TIMEOUT); statuses = 0;
+    CHECK(await_single_handle(NULL, &state, NULL, _T("Wait test"), _T("test"), 1) == 1);
+    CHECK(!statuses && !state.dwCheckPoint && !state.dwWaitHint);
+  }
   active = false;
   HANDLE event = CreateEvent(NULL, TRUE, FALSE, NULL); REQUIRE(event);
   CHECK(await_single_handle(NULL, NULL, event, _T("Wait test"), _T("test"), 0) == 1);
@@ -404,7 +428,34 @@ static int run_start() {
   return result;
 }
 
+static void check_service_process(std::initializer_list<scm::process_sample> samples, DWORD expected, bool opened = false) {
+  scm::process_samples = samples;
+  scm::process_queries = 0;
+  DWORD before = test_handle_count();
+  kill_t root = {};
+  CHECK(open_service_process(scm::service_handle, &root) == expected);
+  CHECK(scm::process_queries == samples.size());
+  CHECK(!!root.process_handle == opened);
+  if (root.process_handle) {
+    CHECK(root.pid == GetCurrentProcessId());
+    CloseHandle(root.process_handle);
+  }
+  CHECK(test_handle_count() == before);
+}
+
 void test_startup() {
+  DWORD pid = GetCurrentProcessId();
+  check_service_process({{SERVICE_STOPPED, pid}}, ERROR_SUCCESS);
+  check_service_process({{SERVICE_START_PENDING, pid}}, ERROR_RETRY);
+  check_service_process({{SERVICE_STOP_PENDING, pid}}, ERROR_RETRY);
+  check_service_process({{SERVICE_RUNNING, 0}}, ERROR_RETRY);
+  check_service_process({{SERVICE_RUNNING, pid}, {SERVICE_RUNNING, pid + 1}}, ERROR_RETRY);
+  check_service_process({{SERVICE_RUNNING, pid}, {SERVICE_STOPPED, pid}}, ERROR_RETRY);
+  check_service_process({{SERVICE_RUNNING, pid}, {SERVICE_STOP_PENDING, pid}}, ERROR_RETRY);
+  check_service_process({{SERVICE_RUNNING, pid}, {0, 0, ERROR_ACCESS_DENIED}}, ERROR_ACCESS_DENIED);
+  for (DWORD state : {SERVICE_RUNNING, SERVICE_PAUSED, SERVICE_PAUSE_PENDING, SERVICE_CONTINUE_PENDING})
+    check_service_process({{state, pid}, {SERVICE_RUNNING, pid}}, ERROR_SUCCESS, true);
+
   TCHAR image[16];
   CHECK(service_image_path(_T("nssm.exe"), image, _countof(image)) && !_tcscmp(image, _T("nssm.exe")));
   CHECK(service_image_path(_T("C:\\a b\\x.exe"), image, 15) && !_tcscmp(image, _T("\"C:\\a b\\x.exe\"")));

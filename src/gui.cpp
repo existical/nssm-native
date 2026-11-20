@@ -545,10 +545,8 @@ static int update_hooks(TCHAR *service_name) {
   return 0;
 }
 
-static bool check_io(HWND owner, TCHAR *name, TCHAR *buffer, unsigned long len, unsigned long control) {
-  LRESULT count = SendMessage(GetDlgItem(tablist[NSSM_TAB_IO], control), WM_GETTEXTLENGTH, 0, 0);
-  if (! count) return true;
-  if (count > 0 && (unsigned long) count < len && GetDlgItemText(tablist[NSSM_TAB_IO], control, buffer, (int) len) == count) return true;
+static bool check_io(HWND owner, TCHAR *name, TCHAR *buffer, int len, int control) {
+  if (read_edit_text(tablist[NSSM_TAB_IO], control, buffer, len)) return true;
   popup_message(owner, MB_OK | MB_ICONEXCLAMATION, NSSM_MESSAGE_PATH_TOO_LONG, name);
   return false;
 }
