@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.25.0-beta.4
+
+- Advance the service startup checkpoint when NSSM takes over from Windows. This fixes a race that could make `nssm start` time out while a service was still starting.
+- Preserve an empty replacement environment when its last variable is removed. Reject malformed additions and report environment setup failures before launching applications or hooks.
+- Back off automatic log rotation retries after an archive failure while continuing to write output. An explicit rotation request can still proceed immediately.
+- Reject truncated GUI settings, release dialog strings, report registry and delayed-start errors, and write CLI usage to redirected stderr.
+- Require checksum coverage for every packaged file and validate archive names against the package inventory. [Release notes](docs/releases/v2.25.0-beta.4.md)
+
 ## 2.25.0-beta.3
 
 - Preserve concurrent log writes and report startup progress during configured rotation delays.
