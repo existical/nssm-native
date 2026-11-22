@@ -1,13 +1,7 @@
 #include "nssm.h"
 
-static unsigned long cp;
-
-bool setup_utf8(bool console) {
+bool setup_utf8() {
 #ifdef UNICODE
-  if (console) {
-    cp = GetConsoleOutputCP();
-    if (!cp || !SetConsoleOutputCP(CP_UTF8)) return false;
-  }
   // A detached service can have no streams. Redirected CLI streams still need UTF-8.
   int out = _fileno(stdout), err = _fileno(stderr);
   bool stdout_ready = out < 0 || _setmode(out, _O_U8TEXT) != -1;
@@ -16,10 +10,6 @@ bool setup_utf8(bool console) {
 #else
   return true;
 #endif
-}
-
-void unsetup_utf8() {
-  if (cp) SetConsoleOutputCP(cp);
 }
 
 /*

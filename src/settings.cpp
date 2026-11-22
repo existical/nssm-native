@@ -1,4 +1,5 @@
 #include "nssm.h"
+#include <algorithm>
 /* XXX: (value && value->string) is probably bogus because value is probably never null */
 
 /* Affinity. */
@@ -558,21 +559,12 @@ static int setting_get_environment(const TCHAR *service_name, void *param, const
     /* Find named environment variable. */
     TCHAR *s;
     size_t len = _tcslen(additional);
-    for (s = env; *s; s++) {
-      /* Look for <additional>=<string> NULL NULL */
-      if (! _tcsnicmp(s, additional, len) && s[len] == _T('=')) {
-        /* Strip <key>= */
-        s += len + 1;
-        ret = value_from_string(name, value, s);
-        HeapFree(GetProcessHeap(), 0, env);
-        return ret;
-      }
-
-      /* Skip this string. */
-      for ( ; *s; s++);
-    }
+    const TCHAR *last = NULL;
+    for (s = env; *s; s += _tcslen(s) + 1)
+      if (!_tcsnicmp(s, additional, len) && s[len] == _T('=')) last = s + len + 1;
+    ret = last ? value_from_string(name, value, last) : 0;
     HeapFree(GetProcessHeap(), 0, env);
-    return 0;
+    return ret;
   }
 
   int error = format_double_null(env, envlen, &formatted, &newlen);
@@ -582,6 +574,48 @@ static int setting_get_environment(const TCHAR *service_name, void *param, const
   ret = value_from_string(name, value, formatted);
   if (newlen) HeapFree(GetProcessHeap(), 0, formatted);
   return ret;
+}
+
+// Incremental '+' replaces all matching keys. Repeated keys must be replayed
+// together so subsequent assignments expand against the original sequence.
+static int environment_has_duplicates(const TCHAR *block) {
+  struct key_t { const TCHAR *text; size_t length; };
+  size_t count = 0;
+  for (const TCHAR *s = block; *s; s += _tcslen(s) + 1) ++count;
+  std::unique_ptr<key_t[]> keys(new (std::nothrow) key_t[count]);
+  if (!keys) return -1;
+  size_t i = 0;
+  for (const TCHAR *s = block; *s; s += _tcslen(s) + 1) {
+    const TCHAR *equals = _tcschr(s, _T('='));
+    if (!equals || equals == s) return -1;
+    keys[i++] = {s, static_cast<size_t>(equals - s)};
+  }
+  auto less = [](const key_t &a, const key_t &b) {
+    if (a.length != b.length) return a.length < b.length;
+    return _tcsnicmp(a.text, b.text, a.length) < 0;
+  };
+  std::sort(keys.get(), keys.get() + count, less);
+  for (i = 1; i < count; ++i)
+    if (!less(keys[i - 1], keys[i])) return 1;
+  return 0;
+}
+
+static int dump_environment_block(const TCHAR *service_name, const TCHAR *name, const TCHAR *block) {
+  text_buffer<8192> args, executable, service;
+  if (!args.get() || !service.get() || !executable.get() ||
+      quote(nssm_exe(), executable.get(), executable.size()) ||
+      quote(service_name, service.get(), service.size())) return 1;
+  size_t used = 0;
+  for (const TCHAR *entry = block; *entry; entry += _tcslen(entry) + 1) {
+    if (_tcspbrk(entry, _T("\r\n"))) return 1;
+    if (used + 1 >= args.size() || quote(entry, args.get() + used + 1, args.size() - used - 1)) {
+      print_message(stderr, NSSM_MESSAGE_DUMP_LINE_TOO_LONG);
+      return 1;
+    }
+    args.get()[used++] = entry == block ? _T(':') : _T(' ');
+    used += _tcslen(args.get() + used);
+  }
+  return write_dump_command(_T("%s set %s %s %s"), executable.get(), service.get(), name, args.get());
 }
 
 static int setting_dump_environment(const TCHAR *service_name, void *param, const TCHAR *name, void *default_value, value_t *value, const TCHAR *additional) {
@@ -598,6 +632,13 @@ static int setting_dump_environment(const TCHAR *service_name, void *param, cons
     value_t empty;
     empty.string = _T(":");
     int ret = setting_dump_string(service_name, REG_SZ, name, &empty, NULL);
+    HeapFree(GetProcessHeap(), 0, env);
+    return ret;
+  }
+
+  int duplicates = environment_has_duplicates(env);
+  if (duplicates) {
+    int ret = duplicates < 0 ? 1 : dump_environment_block(service_name, name, env);
     HeapFree(GetProcessHeap(), 0, env);
     return ret;
   }
@@ -1152,32 +1193,7 @@ int native_set_startup(const TCHAR *service_name, void *param, const TCHAR *name
     return -1;
   }
 
-  unsigned long startup;
-  switch (service_startup) {
-    case NSSM_STARTUP_MANUAL: startup = SERVICE_DEMAND_START; break;
-    case NSSM_STARTUP_DISABLED: startup = SERVICE_DISABLED; break;
-    default: startup = SERVICE_AUTO_START;
-  }
-
-  if (! ChangeServiceConfig(service_handle, SERVICE_NO_CHANGE, startup, SERVICE_NO_CHANGE, 0, 0, 0, 0, 0, 0, 0)) {
-    print_message(stderr, NSSM_MESSAGE_CHANGESERVICECONFIG_FAILED, error_string(GetLastError()));
-    return -1;
-  }
-
-  SERVICE_DELAYED_AUTO_START_INFO delayed;
-  ZeroMemory(&delayed, sizeof(delayed));
-  if (service_startup == NSSM_STARTUP_DELAYED) delayed.fDelayedAutostart = 1;
-  else delayed.fDelayedAutostart = 0;
-  if (! ChangeServiceConfig2(service_handle, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, &delayed)) {
-    unsigned long error = GetLastError();
-    /* Pre-Vista we expect to fail with ERROR_INVALID_LEVEL */
-    if (error != ERROR_INVALID_LEVEL || delayed.fDelayedAutostart) {
-      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SERVICE_CONFIG_DELAYED_AUTO_START_INFO_FAILED, service_name, error_string(error));
-      return -1;
-    }
-  }
-
-  return 1;
+  return change_service_startup(service_name, service_handle, service_startup) ? -1 : 1;
 }
 
 int native_get_startup(const TCHAR *service_name, void *param, const TCHAR *name, void *default_value, value_t *value, const TCHAR *additional) {
@@ -1186,6 +1202,11 @@ int native_get_startup(const TCHAR *service_name, void *param, const TCHAR *name
 
   QUERY_SERVICE_CONFIG *qsc = query_service_config(service_name, service_handle);
   if (! qsc) return -1;
+  if (qsc->dwStartType == SERVICE_BOOT_START || qsc->dwStartType == SERVICE_SYSTEM_START) {
+    const TCHAR *mode = qsc->dwStartType == SERVICE_BOOT_START ? _T("SERVICE_BOOT_START") : _T("SERVICE_SYSTEM_START");
+    HeapFree(GetProcessHeap(), 0, qsc);
+    return value_from_string(name, value, mode);
+  }
 
   unsigned long startup;
   int ret = get_service_startup(service_name, service_handle, qsc, &startup);

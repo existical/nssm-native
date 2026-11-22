@@ -171,13 +171,13 @@ static void test_stream_modes() {
   out_fd = 1; err_fd = 2;
   for (failed_fd = 0; failed_fd <= 2; ++failed_fd) {
     attempts = 0;
-    CHECK(setup_utf8(false) == (failed_fd == 0));
+    CHECK(setup_utf8() == (failed_fd == 0));
     CHECK(attempts == 2);
   }
   attempts = 0; out_fd = err_fd = -2;
-  CHECK(setup_utf8(false) && !attempts);
+  CHECK(setup_utf8() && !attempts);
   out_fd = 1;
-  CHECK(setup_utf8(false) && attempts == 1);
+  CHECK(setup_utf8() && attempts == 1);
   active = false;
 }
 

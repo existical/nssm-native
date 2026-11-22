@@ -356,6 +356,28 @@ void test_gui_retry() {
   nssm_service_t *edited = alloc_nssm_service(); REQUIRE(edited);
   SendDlgItemMessage(tablist[NSSM_TAB_ENVIRONMENT], IDC_ENVIRONMENT_REPLACE, BM_SETCHECK, BST_CHECKED, 0);
   REQUIRE(configure(window, edited, &original) == 0);
+  REQUIRE(edited->preserve_priority);
+  HKEY priority_key = open_registry(edited->name, KEY_READ | KEY_WRITE);
+  REQUIRE(priority_key);
+  for (DWORD stored : {static_cast<DWORD>(HIGH_PRIORITY_CLASS), 12345UL}) {
+    REQUIRE(!set_number(priority_key, NSSM_REG_PRIORITY, stored));
+    REQUIRE(!create_parameters(edited, true));
+    DWORD actual;
+    CHECK(get_number(priority_key, NSSM_REG_PRIORITY, &actual) == 1 && actual == stored);
+  }
+  HWND priority = GetDlgItem(process_tab, IDC_PRIORITY);
+  for (int index : {NSSM_HIGH_PRIORITY, NSSM_NORMAL_PRIORITY}) {
+    SendMessage(priority, CB_SETCURSEL, index, 0);
+    SendMessage(process_tab, WM_COMMAND, MAKEWPARAM(IDC_PRIORITY, CBN_SELCHANGE), reinterpret_cast<LPARAM>(priority));
+    nssm_service_t *choice = alloc_nssm_service();
+    REQUIRE(choice && !configure(window, choice, &original));
+    REQUIRE(!choice->preserve_priority && !create_parameters(choice, true));
+    DWORD actual;
+    if (index == NSSM_HIGH_PRIORITY) CHECK(get_number(priority_key, NSSM_REG_PRIORITY, &actual) == 1 && actual == HIGH_PRIORITY_CLASS);
+    else CHECK(RegQueryValueExW(priority_key, NSSM_REG_PRIORITY, NULL, NULL, NULL, NULL) == ERROR_FILE_NOT_FOUND);
+    cleanup_nssm_service(choice);
+  }
+  RegCloseKey(priority_key);
   CHECK(!edited->dir[0] && edited->envlen == 2 && edited->env && !edited->env[0] && !edited->env[1]);
   CHECK(edited->stdout_copy_and_truncate && edited->stderr_copy_and_truncate);
   CHECK(edited->rotate_delay == 71 && edited->stderr_disposition == OPEN_EXISTING);
@@ -468,6 +490,19 @@ void test_gui_hooks() {
         !_tcscmp(inherited, _T("inherited")));
   TCHAR displayed[CMD_LENGTH]; GetDlgItemText(tablist[NSSM_TAB_HOOKS], IDC_HOOK, displayed, _countof(displayed));
   CHECK(! _tcscmp(displayed, command));
+  HWND hooks = tablist[NSSM_TAB_HOOKS];
+  gui_test::display_failure = IDC_HOOK;
+  set_hook_tab(0, 1);
+  CHECK(!IsWindowEnabled(GetDlgItem(hooks, IDC_HOOK)) && !IsWindowEnabled(GetDlgItem(hooks, IDC_BROWSE_HOOK)));
+  SetDlgItemText(hooks, IDC_HOOK, _T("stale edit"));
+  REQUIRE(!update_hooks(original.name));
+  REQUIRE(!get_hook(original.name, NSSM_HOOK_EVENT_START, NSSM_HOOK_ACTION_POST, displayed, sizeof(displayed), false));
+  CHECK(!displayed[0]);
+  gui_test::display_failure = 0;
+  set_hook_tab(0, 0);
+  CHECK(IsWindowEnabled(GetDlgItem(hooks, IDC_HOOK)) && IsWindowEnabled(GetDlgItem(hooks, IDC_BROWSE_HOOK)));
+  GetDlgItemText(hooks, IDC_HOOK, displayed, _countof(displayed));
+  CHECK(!_tcscmp(displayed, command));
   CHECK(update_hooks(original.name) == 0);
   HKEY key = open_registry(original.name, _T("AppEvents\\Start"), KEY_READ); REQUIRE(key);
   CHECK(get_string(key, _T("Pre"), displayed, sizeof(displayed), false, false, true) == 0);

@@ -34,6 +34,8 @@ static int app(const std::wstring &dir) {
   wchar_t value[32];
   if (! GetEnvironmentVariableW(L"NSSM_TEST_AFTER", value, _countof(value)) || wcscmp(value, L"present")) return 12;
   output(STD_OUTPUT_HANDLE, "stdin-and-environment-ok\n");
+  output(STD_OUTPUT_HANDLE, GetConsoleWindow() ? "console-window-present\n" : "console-window-absent\n");
+  if (!GetConsoleWindow()) output(STD_ERROR_HANDLE, "no-console-stderr\n");
   wchar_t self[32768]; if (! GetModuleFileNameW(NULL, self, _countof(self))) return 13;
   std::wstring command = quoted(self) + L" --wrapped-child " + quoted(dir);
   STARTUPINFOW si = {}; si.cb = sizeof(si); si.dwFlags = STARTF_USESTDHANDLES;
@@ -165,10 +167,14 @@ static int test(const std::wstring &nssm) {
         observer restarted, restarted_child; restarted.attach(file(dir.path, L"app.pid"), first.pid); restarted_child.attach(file(dir.path, L"child.pid"), first_child.pid);
         first.exited("crashed root"); first_child.exited("crashed root descendant");
         command(nssm, L"stop " + quoted(owned.name), 60000); restarted.exited("restart root"); restarted_child.exited("restart descendant");
+        require(read(file(dir.path, L"stdout.log")).find("console-window-present") != std::string::npos, "Default launch gives the wrapped app a console");
+        command(nssm, set + L"AppNoConsole 1");
         command(nssm, L"start " + quoted(owned.name), 60000);
         observer second, second_child; second.attach(file(dir.path, L"app.pid"), restarted.pid); second_child.attach(file(dir.path, L"child.pid"), restarted_child.pid);
         command(nssm, L"stop " + quoted(owned.name), 60000); second.exited("second root"); second_child.exited("second descendant");
         std::string out = read(file(dir.path, L"stdout.log")), err = read(file(dir.path, L"stderr.log"));
+        require(out.find("console-window-absent") != std::string::npos && err.find("no-console-stderr") != std::string::npos,
+                "AppNoConsole suppresses the console window and preserves both redirected streams");
         const char *tokens[] = {"stdin-and-environment-ok", "stdout-final-tail", "hook-start-quoted-ok", "hook-stop-quoted-ok", "hook-exit-quoted-ok"};
         for (const char *token : tokens) require(out.find(token) != std::string::npos, "Captured application and hook output");
         require(err.find("stderr-final-tail") != std::string::npos && err.find("descendant-ready") != std::string::npos, "Captured stderr and descendant output");

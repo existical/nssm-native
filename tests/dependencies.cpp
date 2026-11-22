@@ -1,4 +1,5 @@
 #include "dependency_fixture.h"
+#include "install_fixture.h"
 #include <algorithm>
 namespace dependency_test {
 bool active;
@@ -6,6 +7,9 @@ static std::vector<std::basic_string<TCHAR>> current;
 static std::vector<void *> owned;
 static unsigned manager_opens, manager_closes, service_opens, service_closes, writes, queries;
 static bool fail_query, fail_change, fail_manager, fail_service;
+static bool editing;
+static DWORD startup;
+static std::wstring display_name;
 static bool fail_name, grow_query;
 static int fail_after = -1, malformed_query;
 static SC_HANDLE manager_handle = reinterpret_cast<SC_HANDLE>(1), dependency_handle = reinterpret_cast<SC_HANDLE>(2);
@@ -64,9 +68,16 @@ BOOL WINAPI query(SC_HANDLE h, LPQUERY_SERVICE_CONFIG out, DWORD bytes, LPDWORD 
 }
 BOOL WINAPI change(SC_HANDLE h, DWORD type, DWORD start, DWORD error, LPCTSTR path, LPCTSTR group, LPDWORD tag, LPCTSTR deps, LPCTSTR account, LPCTSTR password, LPCTSTR display) {
   if (! active) return ChangeServiceConfig(h, type, start, error, path, group, tag, deps, account, password, display);
-  CHECK(type == SERVICE_NO_CHANGE && start == SERVICE_NO_CHANGE && error == SERVICE_NO_CHANGE);
-  CHECK(! path && ! group && ! tag && ! account && ! password && ! display); writes++;
+  CHECK(error == SERVICE_NO_CHANGE && !path && !group && !tag);
+  if (editing) {
+    CHECK(type == SERVICE_WIN32_OWN_PROCESS && start == SERVICE_DISABLED && account && display);
+  }
+  else {
+    CHECK(type == SERVICE_NO_CHANGE && start == SERVICE_NO_CHANGE && !account && !password && !display);
+  }
+  writes++;
   if (fail_change) { SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
+  if (editing) { startup = start; display_name = display; }
   CHECK(deps != NULL); // NULL means unchanged to SCM, not an empty dependency list.
   if (! deps) return TRUE;
   current.clear(); for (const TCHAR *s = deps; *s; s += _tcslen(s) + 1) current.push_back(s);
@@ -88,6 +99,33 @@ static void finish() {
 void test_dependencies() {
   using namespace dependency_test;
   registry_fixture registry;
+  for (unsigned scenario = 0; scenario < 3; ++scenario) {
+    reset({_T("OriginalDependency")});
+    install_test::reset(4); // Accept description and delayed-start writes after a successful edit.
+    editing = true; startup = SERVICE_DEMAND_START; display_name = L"Original";
+    fail_change = scenario == 1;
+    nssm_service_t *service = alloc_nssm_service();
+    REQUIRE(service);
+    service->native = true;
+    service->startup = NSSM_STARTUP_DISABLED;
+    _tcscpy_s(service->displayname, _T("Changed"));
+    TCHAR valid[] = _T("ServiceA\0"), invalid[] = _T("MissingDependency\0");
+    service->dependencies = scenario ? valid : invalid;
+    service->dependencieslen = scenario ? _countof(valid) : _countof(invalid);
+    CHECK(edit_service(service, true) == (scenario == 2 ? 0 : 5));
+    CHECK(writes == (scenario ? 1U : 0U));
+    if (scenario == 2) {
+      expect({_T("ServiceA")}); CHECK(startup == SERVICE_DISABLED && display_name == L"Changed");
+    }
+    else {
+      expect({_T("OriginalDependency")}); CHECK(startup == SERVICE_DEMAND_START && display_name == L"Original");
+    }
+    service->dependencies = NULL;
+    cleanup_nssm_service(service);
+    editing = false;
+    install_test::finish();
+    finish();
+  }
   HKEY key; REQUIRE(RegCreateKeyEx(HKEY_LOCAL_MACHINE, NSSM_REGISTRY_GROUPS, 0, NULL, 0, KEY_ALL_ACCESS, NULL, &key, NULL) == ERROR_SUCCESS);
   TCHAR groups[] = _T("Alpha\0Beta\0");
   REQUIRE(RegSetValueEx(key, NSSM_REG_GROUPS, 0, REG_MULTI_SZ, reinterpret_cast<BYTE *>(groups), sizeof(groups)) == ERROR_SUCCESS); RegCloseKey(key);

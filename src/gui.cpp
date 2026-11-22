@@ -474,11 +474,14 @@ static hook_draft_t *selected_hook;
 
 static void set_hook_tab(int event_index, int action_index) {
   selected_hook = NULL;
+  HWND tab = tablist[NSSM_TAB_HOOKS];
+  EnableWindow(GetDlgItem(tab, IDC_HOOK), FALSE);
+  EnableWindow(GetDlgItem(tab, IDC_BROWSE_HOOK), FALSE);
   if (event_index < 0 || event_index > NSSM_GUI_HOOK_EVENT_ROTATE - NSSM_GUI_HOOK_EVENT_START) return;
   int first_event = NSSM_GUI_HOOK_EVENT_START;
   HWND combo;
   combo = GetDlgItem(tablist[NSSM_TAB_HOOKS], IDC_HOOK_EVENT);
-  SendMessage(combo, CB_SETCURSEL, event_index, 0);
+  if (SendMessage(combo, CB_SETCURSEL, event_index, 0) != event_index) return;
   combo = GetDlgItem(tablist[NSSM_TAB_HOOKS], IDC_HOOK_ACTION);
   SendMessage(combo, CB_RESETCONTENT, 0, 0);
 
@@ -523,14 +526,16 @@ static void set_hook_tab(int event_index, int action_index) {
       break;
   }
 
-  SendMessage(combo, CB_SETCURSEL, action_index, 0);
+  if (SendMessage(combo, CB_SETCURSEL, action_index, 0) != action_index) return;
 
   if (! hook_action) return;
-  for (size_t i = 0; i < _countof(hook_names); i++) {
-    if (str_equiv(hook_event, hook_names[i].event) && str_equiv(hook_action, hook_names[i].action)) {
+  for (size_t draft = 0; draft < _countof(hook_names); draft++) {
+    if (str_equiv(hook_event, hook_names[draft].event) && str_equiv(hook_action, hook_names[draft].action)) {
       // WM_SETTEXT can synchronously notify EN_CHANGE.
-      SetDlgItemText(tablist[NSSM_TAB_HOOKS], IDC_HOOK, hook_drafts[i].command);
-      selected_hook = &hook_drafts[i];
+      if (!display_setting(tab, tab, IDC_HOOK, hook_drafts[draft].command, NSSM_REG_HOOK)) return;
+      selected_hook = &hook_drafts[draft];
+      EnableWindow(GetDlgItem(tab, IDC_HOOK), TRUE);
+      EnableWindow(GetDlgItem(tab, IDC_BROWSE_HOOK), TRUE);
       break;
     }
   }
@@ -823,6 +828,7 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
   if (!read_choice(tablist[NSSM_TAB_PROCESS], IDC_PRIORITY, NSSM_IDLE_PRIORITY + 1,
       NSSM_REG_PRIORITY, &priority_index)) return 5;
   service->priority = priority_index_to_constant(priority_index);
+  service->preserve_priority = orig_service && !GetWindowLongPtr(GetDlgItem(tablist[NSSM_TAB_PROCESS], IDC_PRIORITY), GWLP_USERDATA);
 
   service->affinity = 0LL;
   if (orig_service && !GetWindowLongPtr(tablist[NSSM_TAB_PROCESS], DWLP_USER))
@@ -1203,6 +1209,10 @@ INT_PTR CALLBACK tab_dlg(HWND tab, UINT message, WPARAM w, LPARAM l) {
           set_logon_enabled(0, 1);
           break;
 
+        case IDC_PRIORITY:
+          if (HIWORD(w) == CBN_SELCHANGE) SetWindowLongPtr(GetDlgItem(tab, IDC_PRIORITY), GWLP_USERDATA, TRUE);
+          break;
+
         /* Affinity. */
         case IDC_AFFINITY:
           if (HIWORD(w) == LBN_SELCHANGE) SetWindowLongPtr(tab, DWLP_USER, TRUE);
@@ -1475,13 +1485,9 @@ INT_PTR CALLBACK nssm_dlg(HWND window, UINT message, WPARAM w, LPARAM l) {
       notification = (NMHDR *) l;
       switch (notification->code) {
         case TCN_SELCHANGE:
-          HWND tabs;
-          int selection;
-
-          tabs = GetDlgItem(window, IDC_TAB1);
-          if (! tabs) return 0;
-
-          selection = (int) SendMessage(tabs, TCM_GETCURSEL, 0, 0);
+          HWND tab_control = GetDlgItem(window, IDC_TAB1);
+          if (! tab_control) return 0;
+          int selection = (int) SendMessage(tab_control, TCM_GETCURSEL, 0, 0);
           if (selection != selected_tab) {
             ShowWindow(tablist[selected_tab], SW_HIDE);
             ShowWindow(tablist[selection], SW_SHOWDEFAULT);

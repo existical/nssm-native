@@ -240,6 +240,8 @@ A dump preserves literal registry strings for Application, AppParameters, AppDir
 and the three standard I/O paths with setters such as `nssm set MyService REG_SZ:AppStdout log.txt`.
 Replay these commands with a version supporting this selector. An ordinary setter stores an expandable string.
 
+For an environment block with repeated variable names, a named `get` returns the last stored assignment. A dump emits those assignments together in their original order so that references between assignments retain their meaning. The complete command must fit the shell limit described below.
+
 `nssm dump MyService` prints commands for cmd.exe. Check its exit status before
 using the output: an error can leave earlier complete lines in the stream, so
 discard the entire output on failure. Do not pipe a dump directly into a shell.

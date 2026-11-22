@@ -7,28 +7,17 @@ static text_t dump_executable = _T("C:\\Tools\\nssm.exe");
 static bool capture_dump = false;
 static bool fail_output;
 static TCHAR *configured_account;
+static DWORD configured_startup = MAXDWORD;
 static QUERY_SERVICE_CONFIG *account_config(const TCHAR *name, SC_HANDLE handle, unsigned long *bytes = NULL) {
-  if (!configured_account) return query_service_config(name, handle, bytes);
+  if (!configured_account && configured_startup == MAXDWORD) return query_service_config(name, handle, bytes);
   auto config = (QUERY_SERVICE_CONFIG *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(QUERY_SERVICE_CONFIG));
   REQUIRE(config);
   config->lpServiceStartName = configured_account;
+  config->dwStartType = configured_startup;
   return config;
 }
 static const TCHAR *account_alias(const TCHAR *account) {
   return configured_account ? NULL : well_known_username(account);
-}
-static DWORD delayed_error;
-static BOOL WINAPI change_config(SC_HANDLE handle, DWORD type, DWORD start, DWORD error, LPCTSTR binary, LPCTSTR group,
-                                 LPDWORD tag, LPCTSTR deps, LPCTSTR user, LPCTSTR password, LPCTSTR display) {
-  if (delayed_error) return TRUE;
-  return dependency_test::change(handle, type, start, error, binary, group, tag, deps, user, password, display);
-}
-static BOOL WINAPI change_config2(SC_HANDLE handle, DWORD level, LPVOID value) {
-  if (delayed_error && level == SERVICE_CONFIG_DELAYED_AUTO_START_INFO) {
-    SetLastError(delayed_error);
-    return FALSE;
-  }
-  return ChangeServiceConfig2(handle, level, value);
 }
 static bool fail_exit_enumeration;
 static unsigned exit_enum_calls;
@@ -102,9 +91,7 @@ static int test_dump_printf(const TCHAR *format, ...) {
 #define RegDeleteValue reset_test::remove
 #define enumerate_registry_values test_enumerate_exit
 #undef ChangeServiceConfig
-#define ChangeServiceConfig change_config
-#undef ChangeServiceConfig2
-#define ChangeServiceConfig2 change_config2
+#define ChangeServiceConfig dependency_test::change
 #define query_service_config account_config
 #define well_known_username account_alias
 #include "../src/settings.cpp"
@@ -112,8 +99,6 @@ static int test_dump_printf(const TCHAR *format, ...) {
 #undef well_known_username
 #undef ChangeServiceConfig
 #define ChangeServiceConfig ChangeServiceConfigW
-#undef ChangeServiceConfig2
-#define ChangeServiceConfig2 ChangeServiceConfig2W
 #undef enumerate_registry_values
 #undef HeapAlloc
 #undef HeapFree
@@ -264,17 +249,35 @@ void test_exit_export() {
   CHECK(setting_dump_environment(service, parameters, NSSM_REG_ENV_EXTRA, NULL, &env, NULL) != 0);
   CHECK(dump_output.find(_T("A=one")) != text_t::npos && dump_output.find(_T("B=two")) == text_t::npos);
   reset_test::fail_entry = -1; capture_dump = false;
+  TCHAR duplicate[] = _T("MODE=one\0COPY=%MODE%\0mode=two\0");
+  REQUIRE(RegSetValueEx(parameters, NSSM_REG_ENV_EXTRA, 0, REG_MULTI_SZ, (BYTE *)duplicate, sizeof(duplicate)) == ERROR_SUCCESS);
+  value_t selected = {};
+  REQUIRE(setting_get_environment(service, parameters, NSSM_REG_ENV_EXTRA, NULL, &selected, _T("Mode")) >= 0 && selected.string);
+  CHECK(!_tcscmp(selected.string, _T("two"))); HeapFree(GetProcessHeap(), 0, selected.string);
+  capture_dump = true; dump_output.clear();
+  REQUIRE(!setting_dump_environment(service, parameters, NSSM_REG_ENV_EXTRA, NULL, &env, NULL));
+  CHECK(dump_output.find(_T(" AppEnvironmentExtra :MODE=one ")) != text_t::npos);
+  CHECK(dump_output.find(_T(" mode=two\n")) != text_t::npos && dump_output.find(_T('\n')) == dump_output.size() - 1);
+  text_t long_block = _T("MODE=");
+  long_block.append(8200, _T('x')); long_block.push_back(0);
+  long_block.append(_T("mode=two")); long_block.push_back(0); long_block.push_back(0);
+  REQUIRE(RegSetValueEx(parameters, NSSM_REG_ENV_EXTRA, 0, REG_MULTI_SZ, (const BYTE *)long_block.data(),
+                        static_cast<DWORD>(long_block.size() * sizeof(TCHAR))) == ERROR_SUCCESS);
+  dump_output.clear();
+  CHECK(setting_dump_environment(service, parameters, NSSM_REG_ENV_EXTRA, NULL, &env, NULL) != 0 && dump_output.empty());
+  capture_dump = false;
   RegCloseKey(parameters); RegCloseKey(key);
 }
 
 void test_setting_ownership() {
-  value_t startup = {};
-  startup.string = _T("SERVICE_DELAYED_AUTO_START");
-  for (DWORD failure : {DWORD(ERROR_ACCESS_DENIED), DWORD(ERROR_INVALID_LEVEL)}) {
-    delayed_error = failure;
-    CHECK(native_set_startup(_T("test"), &startup, NSSM_NATIVE_STARTUP, NULL, &startup, NULL) < 0);
+  for (DWORD mode : {DWORD(SERVICE_BOOT_START), DWORD(SERVICE_SYSTEM_START)}) {
+    configured_startup = mode;
+    value_t startup = {};
+    REQUIRE(native_get_startup(_T("Driver"), &startup, NSSM_NATIVE_STARTUP, NULL, &startup, NULL) >= 0 && startup.string);
+    CHECK(!_tcscmp(startup.string, mode == SERVICE_BOOT_START ? _T("SERVICE_BOOT_START") : _T("SERVICE_SYSTEM_START")));
+    HeapFree(GetProcessHeap(), 0, startup.string);
   }
-  delayed_error = 0;
+  configured_startup = MAXDWORD;
   registry_fixture registry;
   HKEY key = open_registry(_T("NSSM-Test-Reset"), KEY_READ | KEY_WRITE); REQUIRE(key);
   const TCHAR *names[] = {NSSM_REG_EXE, NSSM_REG_FLAGS, NSSM_REG_DIR, NSSM_REG_STDIN, NSSM_REG_STDOUT, NSSM_REG_STDERR};

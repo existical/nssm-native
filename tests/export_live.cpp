@@ -136,6 +136,11 @@ int wmain(int argc, wchar_t **argv) {
       require(run(argv[1], L"reset " + quoted(imported.name) + L" Application").code != 0, "Reject removal of required Application");
       require(run(argv[1], L"get " + quoted(imported.name) + L" Application").output.find(argv[1]) != std::wstring::npos, "Preserve repaired application");
       source.configure(argv[1]); imported.configure(argv[1]);
+      require(!run(argv[1], L"set " + quoted(source.name) + L" Start SERVICE_DELAYED_AUTO_START").code,
+              "Change a disabled fixture to delayed automatic startup");
+      require(run(argv[1], L"get " + quoted(source.name) + L" Start").output.find(L"SERVICE_DELAYED_AUTO_START") != std::wstring::npos,
+              "Read back the delayed startup mode");
+      require(!run(argv[1], L"set " + quoted(source.name) + L" Start SERVICE_DISABLED").code, "Restore disabled startup");
       require(run(argv[1], L"version", true).code != 0, "Version detects an output error");
       require(run(argv[1], L"get " + quoted(imported.name) + L" Application", true).code != 0, "Get detects an output error");
       require(run(argv[1], L"status " + quoted(source.name), true).code != 0, "Status detects an output error");
@@ -163,6 +168,9 @@ int wmain(int argc, wchar_t **argv) {
       const std::wstring unicode = L"\u96ea\u03a9";
       service_fixture::set(source.key, L"AppParameters", unicode, REG_SZ);
       const wchar_t empty_environment[2] = {};
+      const wchar_t repeated[] = L"MODE=first value\0OTHER=one & two\0mode=last\0";
+      require(RegSetValueExW(source.key, L"AppEnvironmentExtra", 0, REG_MULTI_SZ, (const BYTE *)repeated, sizeof(repeated)) == ERROR_SUCCESS, "Store repeated environment keys");
+      require(run(argv[1], L"get " + quoted(source.name) + L" AppEnvironmentExtra MODE").output.find(L"last") != std::wstring::npos, "Read the last assignment");
       require(RegSetValueExW(source.key, L"AppEnvironment", 0, REG_MULTI_SZ, (const BYTE *)empty_environment, sizeof(empty_environment)) == ERROR_SUCCESS, "Write empty replacement environment");
       source.query_only();
       require(run(argv[1], L"status " + quoted(source.name)).code != 0, "Named status requires service query-status access");
@@ -237,7 +245,8 @@ int wmain(int argc, wchar_t **argv) {
           require(line.find(imported.name) != std::wstring::npos, "Replay targets only the destination fixture");
           require(run(argv[1], line.substr(command + 1)).code == 0, "Replay exported AppExit setting"); replayed++;
         }
-        if (line.find(L" REG_SZ:") != std::wstring::npos || line.find(L" AppStderr ") != std::wstring::npos || line.find(L" AppEnvironment :") != std::wstring::npos) {
+        if (line.find(L" REG_SZ:") != std::wstring::npos || line.find(L" AppStderr ") != std::wstring::npos ||
+            line.find(L" AppEnvironment :") != std::wstring::npos || line.find(L" AppEnvironmentExtra :") != std::wstring::npos) {
           size_t command = line.find(L" set ");
           require(command != std::wstring::npos && line.find(imported.name) != std::wstring::npos, "Typed setter targets the destination");
           wchar_t system[MAX_PATH];
@@ -252,6 +261,11 @@ int wmain(int argc, wchar_t **argv) {
       wchar_t restored[2] = {1,1}; DWORD size = sizeof(restored), kind = REG_NONE;
       require(RegQueryValueExW(imported.key, L"AppEnvironment", NULL, &kind, (BYTE *)restored, &size) == ERROR_SUCCESS &&
               kind == REG_MULTI_SZ && size == sizeof(restored) && !restored[0] && !restored[1], "Restore a present empty environment");
+      wchar_t replayed_env[_countof(repeated)];
+      DWORD env_bytes = sizeof(replayed_env), env_type = 0;
+      require(RegQueryValueExW(imported.key, L"AppEnvironmentExtra", NULL, &env_type, (BYTE *)replayed_env, &env_bytes) == ERROR_SUCCESS &&
+              env_type == REG_MULTI_SZ && env_bytes == sizeof(repeated) && !memcmp(repeated, replayed_env, sizeof(repeated)),
+              "Replay the repeated assignments byte for byte in their original order");
       for (auto value : {L"Application", L"AppStdout"}) {
         DWORD type = 0;
         require(RegQueryValueExW(imported.key, value, NULL, &type, NULL, NULL) == ERROR_SUCCESS && type == REG_SZ, "Restored literal registry type");

@@ -3,12 +3,16 @@
 namespace install_test {
 bool active, fail_allocation;
 static unsigned failure, frees, manager_closes, service_closes, deletes;
+static DWORD base_start;
+static bool delayed;
 static int manager_token, service_token;
 static SC_HANDLE manager_handle = reinterpret_cast<SC_HANDLE>(&manager_token), service_handle = reinterpret_cast<SC_HANDLE>(&service_token);
 static std::vector<void *> objects;
 void reset(unsigned scenario) {
   REQUIRE(objects.empty()); active = true; fail_allocation = false; failure = scenario;
   frees = manager_closes = service_closes = deletes = 0;
+  base_start = SERVICE_DISABLED;
+  delayed = false;
 }
 LPVOID allocate(HANDLE heap, DWORD flags, SIZE_T size) {
   if (active && size == sizeof(nssm_service_t) && fail_allocation) return NULL;
@@ -35,7 +39,15 @@ SC_HANDLE WINAPI create(SC_HANDLE h, LPCTSTR name, LPCTSTR display, DWORD access
 BOOL WINAPI change(SC_HANDLE h, DWORD type, DWORD start, DWORD error, LPCTSTR path, LPCTSTR group, LPDWORD tag, LPCTSTR dependencies, LPCTSTR account, LPCTSTR password, LPCTSTR display) {
   if (dependency_test::active) return dependency_test::change(h, type, start, error, path, group, tag, dependencies, account, password, display);
   if (! active) return ChangeServiceConfig(h, type, start, error, path, group, tag, dependencies, account, password, display);
-  CHECK(h == service_handle); SetLastError(ERROR_ACCESS_DENIED); return failure != 2;
+  CHECK(h == service_handle);
+  if (failure == 2) { SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
+  base_start = start;
+  return TRUE;
+}
+BOOL query_delayed(LPBYTE buffer) {
+  if (failure == 7) { SetLastError(ERROR_INVALID_LEVEL); return FALSE; }
+  reinterpret_cast<SERVICE_DELAYED_AUTO_START_INFO *>(buffer)->fDelayedAutostart = delayed;
+  return TRUE;
 }
 BOOL WINAPI change2(SC_HANDLE h, DWORD level, LPVOID info) {
   if (!active) return ChangeServiceConfig2(h, level, info);
@@ -43,6 +55,8 @@ BOOL WINAPI change2(SC_HANDLE h, DWORD level, LPVOID info) {
     SetLastError(ERROR_INVALID_LEVEL);
     return FALSE;
   }
+  if (level == SERVICE_CONFIG_DELAYED_AUTO_START_INFO)
+    delayed = static_cast<SERVICE_DELAYED_AUTO_START_INFO *>(info)->fDelayedAutostart != FALSE;
   return TRUE;
 }
 BOOL WINAPI remove(SC_HANDLE h) { if (! active) return DeleteService(h); CHECK(h == service_handle); deletes++; return TRUE; }
@@ -60,6 +74,14 @@ void finish() {
 }
 }
 void test_install_ownership() {
+  for (unsigned scenario : {2U, 6U, 7U, 4U}) {
+    install_test::reset(scenario);
+    bool success = !change_service_startup(_T("Test"), install_test::service_handle, NSSM_STARTUP_DELAYED);
+    CHECK(success == (scenario == 4));
+    CHECK(install_test::base_start == (success ? SERVICE_AUTO_START : SERVICE_DISABLED));
+    CHECK(install_test::delayed == success);
+    install_test::finish();
+  }
   const int expected[] = {2, 5, 6, 6, 0};
   TCHAR *args[] = {_T("NSSM-Test-Install"), _T("C:\\fixture.exe")};
   for (unsigned scenario = 0; scenario < _countof(expected); scenario++) {

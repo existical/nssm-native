@@ -155,8 +155,10 @@ int create_parameters(nssm_service_t *service, bool editing) {
   int errors = 0;
 
   /* Other non-default parameters. May fail. */
-  if (service->priority != NORMAL_PRIORITY_CLASS) errors += set_number(key, NSSM_REG_PRIORITY, service->priority);
-  else if (editing) errors += delete_parameter(key, NSSM_REG_PRIORITY);
+  if (!editing || !service->preserve_priority) {
+    if (service->priority != NORMAL_PRIORITY_CLASS) errors += set_number(key, NSSM_REG_PRIORITY, service->priority);
+    else if (editing) errors += delete_parameter(key, NSSM_REG_PRIORITY);
+  }
   if (service->affinity) {
     TCHAR *string = NULL;
     if (affinity_mask_to_string(service->affinity, &string)) errors++;

@@ -28,7 +28,7 @@ static ULONGLONG ticks() {
 }
 static LONGLONG fail_after;
 static ULONGLONG bytes_written;
-static unsigned rotations, write_errors;
+static unsigned rotations, write_errors, read_errors;
 static std::vector<std::basic_string<TCHAR> > rotated_paths;
 static SYSTEMTIME fixed_time = {2026, 11, 1, 2, 3, 4, 5, 6};
 static BOOL WINAPI read(HANDLE h, LPVOID data, DWORD size, LPDWORD count, LPOVERLAPPED overlap) {
@@ -163,6 +163,7 @@ static void log(unsigned short type, unsigned long id, Strings... insertions) {
   rotation_test::event(id);
   if (stream_test && id == NSSM_EVENT_ROTATED) rotations++;
   if (stream_test && id == NSSM_EVENT_WRITEFILE_FAILED) write_errors++;
+  if (stream_test && id == NSSM_EVENT_READFILE_FAILED) read_errors++;
 }
 static void console(nssm_service_t *) {}
 }

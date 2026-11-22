@@ -44,6 +44,7 @@ static bool fail_name, test_config;
 static std::wstring description;
 static DWORD config_error;
 static BOOL WINAPI config2(SC_HANDLE h, DWORD level, LPBYTE buffer, DWORD capacity, LPDWORD needed) {
+  if (install_test::active && level == SERVICE_CONFIG_DELAYED_AUTO_START_INFO) return install_test::query_delayed(buffer);
   if (!test_config) return QueryServiceConfig2(h, level, buffer, capacity, needed);
   if (config_error) { SetLastError(config_error); return FALSE; }
   if (level == SERVICE_CONFIG_DELAYED_AUTO_START_INFO) {

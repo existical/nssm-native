@@ -587,21 +587,25 @@ int remove_from_dependencies(TCHAR *dependencies, unsigned long dependencieslen,
   return ret;
 }
 
-int set_service_dependencies(const TCHAR *service_name, SC_HANDLE service_handle, TCHAR *buffer) {
+struct resolved_dependencies_t {
+  TCHAR *canonical = NULL;
+  ~resolved_dependencies_t() { if (canonical) HeapFree(GetProcessHeap(), 0, canonical); }
+  // SCM interprets NULL as "leave unchanged". An empty list explicitly clears it.
+  const TCHAR *data() const { return canonical ? canonical : _T("\0"); }
+};
+
+static int resolve_service_dependencies(const TCHAR *service_name, const TCHAR *buffer, resolved_dependencies_t &out) {
   struct resources_t {
     SC_HANDLE manager;
     HKEY key;
-    TCHAR *groups, *canonical;
-    resources_t() : manager(0), key(0), groups(0), canonical(0) {}
+    TCHAR *groups;
+    resources_t() : manager(0), key(0), groups(0) {}
     ~resources_t() {
       if (groups) HeapFree(GetProcessHeap(), 0, groups);
-      if (canonical) HeapFree(GetProcessHeap(), 0, canonical);
       if (key) RegCloseKey(key);
       if (manager) CloseServiceHandle(manager);
     }
   } resources;
-  TCHAR empty[2] = {0};
-  TCHAR *dependencies = empty; // A non-null empty block explicitly clears SCM dependencies.
   if (buffer && buffer[0]) {
     size_t count = 0;
     bool needs_groups = false;
@@ -627,8 +631,8 @@ int set_service_dependencies(const TCHAR *service_name, SC_HANDLE service_handle
       if (get_environment((TCHAR *) service_name, resources.key, NSSM_REG_GROUPS, &resources.groups, &length)) return 4;
     }
     size_t capacity = count * SERVICE_NAME_LENGTH + 2;
-    resources.canonical = (TCHAR *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, capacity * sizeof(TCHAR));
-    if (! resources.canonical) {
+    out.canonical = (TCHAR *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, capacity * sizeof(TCHAR));
+    if (! out.canonical) {
       print_message(stderr, NSSM_MESSAGE_OUT_OF_MEMORY, _T("dependencies"), _T("set_service_dependencies()"));
       return 3;
     }
@@ -654,12 +658,18 @@ int set_service_dependencies(const TCHAR *service_name, SC_HANDLE service_handle
         return 5;
       }
       size_t length = _tcslen(name) + 1;
-      memmove(resources.canonical + used, name, length * sizeof(TCHAR));
+      memmove(out.canonical + used, name, length * sizeof(TCHAR));
       used += length;
     }
-    dependencies = resources.canonical;
   }
-  if (! ChangeServiceConfig(service_handle, SERVICE_NO_CHANGE, SERVICE_NO_CHANGE, SERVICE_NO_CHANGE, 0, 0, 0, dependencies, 0, 0, 0)) {
+  return 0;
+}
+
+int set_service_dependencies(const TCHAR *service_name, SC_HANDLE service_handle, TCHAR *buffer) {
+  resolved_dependencies_t dependencies;
+  int result = resolve_service_dependencies(service_name, buffer, dependencies);
+  if (result) return result;
+  if (! ChangeServiceConfig(service_handle, SERVICE_NO_CHANGE, SERVICE_NO_CHANGE, SERVICE_NO_CHANGE, 0, 0, 0, dependencies.data(), 0, 0, 0)) {
     print_message(stderr, NSSM_MESSAGE_CHANGESERVICECONFIG_FAILED, error_string(GetLastError()));
     return -1;
   }
@@ -744,13 +754,45 @@ int get_service_description(const TCHAR *service_name, SC_HANDLE service_handle,
   return 3;
 }
 
+int change_service_startup(const TCHAR *name, SC_HANDLE handle, unsigned long choice, DWORD type,
+                          const TCHAR *dependencies, const TCHAR *account, const TCHAR *password, const TCHAR *display) {
+  DWORD start = SERVICE_AUTO_START;
+  if (choice == NSSM_STARTUP_MANUAL) start = SERVICE_DEMAND_START;
+  else if (choice == NSSM_STARTUP_DISABLED) start = SERVICE_DISABLED;
+
+  SERVICE_DELAYED_AUTO_START_INFO old = {}, desired = {choice == NSSM_STARTUP_DELAYED};
+  DWORD required;
+  bool changed = false;
+  if (!QueryServiceConfig2(handle, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, (BYTE *)&old, sizeof(old), &required)) {
+    DWORD error = GetLastError();
+    if (error != ERROR_INVALID_LEVEL || desired.fDelayedAutostart) {
+      print_message(stderr, NSSM_MESSAGE_QUERYSERVICECONFIG2_FAILED, name, _T("SERVICE_CONFIG_DELAYED_AUTO_START_INFO"), error_string(error));
+      return 1;
+    }
+  }
+  else if (!!old.fDelayedAutostart != !!desired.fDelayedAutostart) {
+    if (!ChangeServiceConfig2(handle, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, &desired)) {
+      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SERVICE_CONFIG_DELAYED_AUTO_START_INFO_FAILED, name, error_string(GetLastError()));
+      return 1;
+    }
+    changed = true;
+  }
+  if (ChangeServiceConfig(handle, type, start, SERVICE_NO_CHANGE, NULL, NULL, NULL, dependencies, account, password, display)) return 0;
+  DWORD error = GetLastError();
+  if (changed && !ChangeServiceConfig2(handle, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, &old))
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SERVICE_CONFIG_DELAYED_AUTO_START_INFO_FAILED, name, error_string(GetLastError()));
+  print_message(stderr, NSSM_MESSAGE_CHANGESERVICECONFIG_FAILED, error_string(error));
+  return 1;
+}
+
 int get_service_startup(const TCHAR *service_name, SC_HANDLE service_handle, const QUERY_SERVICE_CONFIG *qsc, unsigned long *startup) {
   if (! qsc) return 1;
 
   switch (qsc->dwStartType) {
     case SERVICE_DEMAND_START: *startup = NSSM_STARTUP_MANUAL; break;
     case SERVICE_DISABLED: *startup = NSSM_STARTUP_DISABLED; break;
-    default: *startup = NSSM_STARTUP_AUTOMATIC;
+    case SERVICE_AUTO_START: *startup = NSSM_STARTUP_AUTOMATIC; break;
+    default: return 1;
   }
 
   if (*startup != NSSM_STARTUP_AUTOMATIC) return 0;
@@ -1205,8 +1247,7 @@ int pre_edit_service(int argc, TCHAR **argv) {
   int ret;
 
   if (mode == MODE_DUMPING) {
-    TCHAR *service_name = service->name;
-    if (argc > remainder) service_name = argv[remainder];
+    TCHAR *target_name = argc > remainder ? argv[remainder] : service->name;
     key = open_registry(service->name, KEY_READ);
     if (! key) return 4;
 
@@ -1217,7 +1258,7 @@ int pre_edit_service(int argc, TCHAR **argv) {
     TCHAR quoted_service_name[SERVICE_NAME_LENGTH * 2];
     text_buffer<EXE_LENGTH * 2> quoted_exe, quoted_nssm;
     if (!quoted_exe.get() || !quoted_nssm.get()) return 6;
-    if (quote(service_name, quoted_service_name, _countof(quoted_service_name))) return 5;
+    if (quote(target_name, quoted_service_name, _countof(quoted_service_name))) return 5;
     if (quote(service->exe, quoted_exe.get(), quoted_exe.size())) return 6;
     if (quote(nssm_exe(), quoted_nssm.get(), quoted_nssm.size())) return 6;
     if (write_dump_command(_T("%s install %s %s"), quoted_nssm.get(), quoted_service_name, quoted_exe.get())) return 1;
@@ -1225,8 +1266,8 @@ int pre_edit_service(int argc, TCHAR **argv) {
     ret = 0;
     for (i = 0; settings[i].name; i++) {
       setting = &settings[i];
-      if (str_equiv(setting->name, NSSM_NATIVE_DISPLAYNAME) && ! str_equiv(service_name, service->name)) continue;
-      if (dump_setting(service_name, key, service->handle, setting, service->name)) ret++;
+      if (str_equiv(setting->name, NSSM_NATIVE_DISPLAYNAME) && ! str_equiv(target_name, service->name)) continue;
+      if (dump_setting(target_name, key, service->handle, setting, service->name)) ret++;
     }
     return stdout_ok() && !ret ? 0 : 1;
   }
@@ -1290,9 +1331,9 @@ int pre_edit_service(int argc, TCHAR **argv) {
 
     size_t s = 0;
     for (i = remainder; i < argc; i++) {
-      size_t len = _tcslen(argv[i]);
-      memmove(value.string + s, argv[i], len * sizeof(TCHAR));
-      s += len;
+      size_t argument_length = _tcslen(argv[i]);
+      memmove(value.string + s, argv[i], argument_length * sizeof(TCHAR));
+      s += argument_length;
       if (i < argc - 1) {
         if (setting->additional & ADDITIONAL_CRLF) {
           value.string[s++] = _T('\r');
@@ -1397,20 +1438,15 @@ int install_service(nssm_service_t *service, int (*save_hooks)(TCHAR *)) {
 int edit_service(nssm_service_t *service, bool editing) {
   if (! service) return 1;
 
+  resolved_dependencies_t dependencies;
+  if (resolve_service_dependencies(service->name, service->dependencieslen ? service->dependencies : NULL, dependencies)) return 5;
+
   /*
     The only two valid flags for service type are SERVICE_WIN32_OWN_PROCESS
     and SERVICE_INTERACTIVE_PROCESS.
   */
   service->type &= SERVICE_INTERACTIVE_PROCESS;
   service->type |= SERVICE_WIN32_OWN_PROCESS;
-
-  /* Startup type. */
-  unsigned long startup;
-  switch (service->startup) {
-    case NSSM_STARTUP_MANUAL: startup = SERVICE_DEMAND_START; break;
-    case NSSM_STARTUP_DISABLED: startup = SERVICE_DISABLED; break;
-    default: startup = SERVICE_AUTO_START;
-  }
 
   /* Display name. */
   if (! service->displayname[0]) _sntprintf_s(service->displayname, _countof(service->displayname), _TRUNCATE, _T("%s"), service->name);
@@ -1449,36 +1485,13 @@ int edit_service(nssm_service_t *service, bool editing) {
     }
   }
 
-  TCHAR *dependencies = _T("");
-  if (service->dependencieslen) dependencies = 0; /* Change later. */
-
-  if (! ChangeServiceConfig(service->handle, service->type, startup, SERVICE_NO_CHANGE, 0, 0, 0, dependencies, canon, password, service->displayname)) {
-    if (canon != username) HeapFree(GetProcessHeap(), 0, canon);
-    print_message(stderr, NSSM_MESSAGE_CHANGESERVICECONFIG_FAILED, error_string(GetLastError()));
-    return 5;
-  }
+  int change_error = change_service_startup(service->name, service->handle, service->startup, service->type,
+                                            dependencies.data(), canon, password, service->displayname);
   if (canon != username) HeapFree(GetProcessHeap(), 0, canon);
-
-  if (service->dependencieslen) {
-    if (set_service_dependencies(service->name, service->handle, service->dependencies)) return 5;
-  }
+  if (change_error) return 5;
 
   if (service->description[0] || editing) {
     if (set_service_description(service->name, service->handle, service->description)) return 5;
-  }
-
-  SERVICE_DELAYED_AUTO_START_INFO delayed;
-  ZeroMemory(&delayed, sizeof(delayed));
-  if (service->startup == NSSM_STARTUP_DELAYED) delayed.fDelayedAutostart = 1;
-  else delayed.fDelayedAutostart = 0;
-  /* Delayed startup isn't supported until Vista. */
-  if (! ChangeServiceConfig2(service->handle, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, &delayed)) {
-    unsigned long error = GetLastError();
-    /* Older managers can still provide ordinary automatic startup. */
-    if (error != ERROR_INVALID_LEVEL || delayed.fDelayedAutostart) {
-      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SERVICE_CONFIG_DELAYED_AUTO_START_INFO_FAILED, service->name, error_string(error));
-      return 5;
-    }
   }
 
   /* Don't mess with parameters which aren't ours. */
@@ -2076,7 +2089,7 @@ int start_service(nssm_service_t *service) {
     bool inherit_handles = (si.dwFlags & STARTF_USESTDHANDLES) != 0;
     unsigned long flags = service->priority & priority_mask();
     if (service->affinity) flags |= CREATE_SUSPENDED;
-    if (! service->no_console) flags |= CREATE_NEW_CONSOLE;
+    flags |= service->no_console ? CREATE_NO_WINDOW : CREATE_NEW_CONSOLE;
 
     report_start_pending(service);
     if (! CreateProcess(0, cmd, 0, 0, inherit_handles, flags, 0, service->dir, &si, &pi)) {

@@ -17,16 +17,17 @@ struct stream_fixture : fixture {
     fail_info = fail_size = fail_move = fail_truncate = fail_read = false;
     short_write = MAXDWORD; fail_after = -1; bytes_written = 0;
     ticks_per_byte = manual_at = move_attempts = 0; fail_first_move = false;
-    rotations = write_errors = 0; rotated_paths.clear();
+    rotations = write_errors = read_errors = 0; rotated_paths.clear();
     service->timestamp_log = timestamps;
     service->rotate_stdout_online = NSSM_ROTATE_ONLINE;
     service->rotate_bytes_low = static_cast<DWORD>(threshold);
     service->rotate_bytes_high = static_cast<DWORD>(threshold >> 32);
     thread_mode = 2;
   }
-  DWORD run() {
+  DWORD run(bool draining = false) {
     REQUIRE(get_output_handles(service, &si) == 0);
     REQUIRE(deferred_routine);
+    if (draining) set_logger_rotation(service, false);
     DWORD result = deferred_routine(deferred_argument);
     SetEvent(deferred_thread);
     deferred_routine = NULL; deferred_argument = NULL;
@@ -84,8 +85,19 @@ static void test_stream_bytes() {
     const std::string result = bom + wide_stamp + wide_bytes(L"first\r\n") + wide_stamp + wide_bytes(L"\n") + wide_stamp + wide_bytes(L"last\n") + wide_stamp + wide_bytes(L"end");
     { stream_fixture f(input, chunk); CHECK(f.run() == 0); CHECK(f.contents() == result); CHECK(bytes_written == result.size()); }
   }
-  { stream_fixture f("", 1); CHECK(f.run() == 0); CHECK(f.contents().empty()); }
-  { stream_fixture f("abc", 1); fail_read = true; CHECK(f.run() == 2); CHECK(f.contents().empty()); }
+  { stream_fixture f("", 1); CHECK(f.run() == 0 && !read_errors); CHECK(f.contents().empty()); }
+  for (auto mode : {NSSM_ROTATE_OFFLINE, NSSM_ROTATE_ONLINE, NSSM_ROTATE_ONLINE_ASAP}) {
+    stream_fixture f("abc", 1);
+    f.service->rotate_stdout_online = mode;
+    fail_read = true;
+    CHECK(f.run() == 2 && read_errors == 1);
+    CHECK(f.contents().empty());
+  }
+  {
+    stream_fixture f("abc", 1);
+    fail_read = true;
+    CHECK(f.run(true) == 2 && !read_errors);
+  }
   { stream_fixture f(bom, 1); CHECK(f.run() == 0); CHECK(f.contents() == bom); }
   { stream_fixture f("x", 1); CHECK(f.run() == 0); CHECK(f.contents() == stamp + "x"); }
   // UTF-8 remains byte-oriented, including multibyte sequences split across reads.

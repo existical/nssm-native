@@ -55,6 +55,7 @@ typedef struct {
   TCHAR *env_extra;
   unsigned long env_extralen;
   unsigned long priority;
+  bool preserve_priority;  /* An existing service's priority control was untouched. */
   unsigned long no_console;
   unsigned long stdin_type, stdout_type, stderr_type;
   bool preserve_stdin_path, preserve_stdout_path, preserve_stderr_path;
@@ -155,6 +156,8 @@ int get_service_dependencies(const TCHAR *, SC_HANDLE, TCHAR **, unsigned long *
 int get_service_dependencies(const TCHAR *, SC_HANDLE, TCHAR **, unsigned long *);
 int set_service_description(const TCHAR *, SC_HANDLE, TCHAR *);
 int get_service_description(const TCHAR *, SC_HANDLE, unsigned long, TCHAR *);
+int change_service_startup(const TCHAR *, SC_HANDLE, unsigned long, DWORD = SERVICE_NO_CHANGE,
+                          const TCHAR * = NULL, const TCHAR * = NULL, const TCHAR * = NULL, const TCHAR * = NULL);
 int get_service_startup(const TCHAR *, SC_HANDLE, const QUERY_SERVICE_CONFIG *, unsigned long *);
 int get_service_username(const TCHAR *, const QUERY_SERVICE_CONFIG *, TCHAR **, size_t *);
 int set_service_environment(nssm_service_t *);

@@ -305,12 +305,12 @@ HANDLE write_to_file(TCHAR *path, unsigned long sharing, SECURITY_ATTRIBUTES *at
   if (ret != INVALID_HANDLE_VALUE) {
     if (GetFileType(ret) != FILE_TYPE_DISK) return ret;
     if (append) {
-      HANDLE append = NULL;
-      if (DuplicateHandle(GetCurrentProcess(), ret, GetCurrentProcess(), &append,
+      HANDLE append_handle = NULL;
+      if (DuplicateHandle(GetCurrentProcess(), ret, GetCurrentProcess(), &append_handle,
                           FILE_APPEND_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
                           attributes && attributes->bInheritHandle, 0)) {
         CloseHandle(ret);
-        return append;
+        return append_handle;
       }
     }
     else if (SetFilePointerEx(ret, offset, NULL, FILE_END)) return ret;
@@ -789,7 +789,7 @@ static int try_read(logger_t *logger, void *address, unsigned long bufsize, unsi
 
 complain_read:
   /* Ignore the error if we've been requested to exit anyway. */
-  if (InterlockedCompareExchange(&logger->draining, 0, 0) || InterlockedCompareExchange(&logger->rotate_online, 0, 0) != NSSM_ROTATE_ONLINE) return ret;
+  if (InterlockedCompareExchange(&logger->draining, 0, 0) || logger_stopping(logger)) return ret;
   if (! (*complained & COMPLAINED_READ)) log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_READFILE_FAILED, logger->service_name, logger->path, error_string(error));
   *complained |= COMPLAINED_READ;
   return ret;

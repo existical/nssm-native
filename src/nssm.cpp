@@ -10,7 +10,6 @@ static const TCHAR *imageargv0 = _T("");
 
 void nssm_exit(int status) {
   free_imports();
-  unsetup_utf8();
   exit(status);
 }
 
@@ -265,7 +264,8 @@ const TCHAR *nssm_exe() {
 }
 
 int _tmain(int argc, TCHAR **argv) {
-  if (!setup_utf8(check_console())) {
+  check_console();
+  if (!setup_utf8()) {
     _fputts(_T("Unable to configure UTF-8 output.\n"), stderr);
     nssm_exit(1);
   }
