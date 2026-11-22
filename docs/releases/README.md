@@ -1,5 +1,6 @@
 # Preparing NSSM Native releases
 
+The [fifth beta](v2.25.0-beta.5.md) fixes service configuration edits, environment export, console handling and supervision.
 The [fourth beta](v2.25.0-beta.4.md) fixes startup checkpoint reporting, environment handling, rotation retries and package verification.
 The [third beta](v2.25.0-beta.3.md) includes the subsequent logging, configuration and service-management repairs.
 The [second beta](v2.25.0-beta.2.md) includes fixes NSSM-038 through NSSM-071.
@@ -59,13 +60,13 @@ Preserve all original upstream tags. Prepare docs/releases/<tag>.md and commit
 the actual included IDs, compatibility changes, evidence and known limits
 before tagging. Candidate preparation may use an unpublished local annotated
 tag on that clean commit so the actual beta version can be built and tested.
-The fourth beta uses `v2.25.0-beta.4`. When CI checks out an exact release tag, it passes that tag to the packager.
+The fifth beta uses `v2.25.0-beta.5`. When CI checks out an exact release tag, it passes that tag to the packager.
 
 ```powershell
 # Run only at the candidate commit, after the local tag has been prepared.
 $revision = git rev-parse HEAD
-./scripts/package.ps1 -Commit $revision -Tag v2.25.0-beta.4
-./tests/package.ps1 -PackageDirectory dist/v2.25.0-beta.4 -WorkDirectory build
+./scripts/package.ps1 -Commit $revision -Tag v2.25.0-beta.5
+./tests/package.ps1 -PackageDirectory dist/v2.25.0-beta.5 -WorkDirectory build
 ```
 
 The script verifies that tag and HEAD agree and version generation selects it.

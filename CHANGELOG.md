@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.25.0-beta.5
+
+- Preserve startup configuration when dependency validation or delayed-start changes fail. Report boot-start and system-start drivers correctly.
+- Preserve duplicate environment assignments during export and keep the console code page intact across overlapping CLI commands.
+- Protect existing priority and hook settings on GUI edits, honor console suppression for wrapped applications, and report fatal pipe reads across rotation modes.
+- Improve SCM status reporting, process identity checks, hook shutdown and log-handle inheritance. [Release notes](docs/releases/v2.25.0-beta.5.md)
+
 ## 2.25.0-beta.4
 
 - Advance the service startup checkpoint when NSSM takes over from Windows. This fixes a race that could make `nssm start` time out while a service was still starting.
