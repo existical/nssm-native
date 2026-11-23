@@ -15,6 +15,26 @@
   Environment variable names are case-insensitive!
 */
 
+// Both spans contain count UTF-16 code units. The environment uses ordinal casing.
+int compare_environment_key(const TCHAR *left, const TCHAR *right, size_t count) {
+  typedef int (WINAPI *compare_t)(LPCWSTR, int, LPCWSTR, int, BOOL);
+  static const compare_t compare = reinterpret_cast<compare_t>(
+      GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "CompareStringOrdinal"));
+  if (compare && count && count <= INT_MAX) {
+    int order = compare(left, (int)count, right, (int)count, TRUE);
+    if (order) return order - CSTR_EQUAL;
+  }
+  // Older systems lack CompareStringOrdinal. Uppercase one code unit at a time.
+  for (size_t i = 0; i < count; ++i) {
+    WCHAR a = left[i], b = right[i];
+    if (a == b) continue;
+    CharUpperBuffW(&a, 1);
+    CharUpperBuffW(&b, 1);
+    if (a != b) return a < b ? -1 : 1;
+  }
+  return 0;
+}
+
 /* Find the length in characters of an environment block. */
 size_t environment_length(TCHAR *env) {
   size_t len = 0;
@@ -187,7 +207,7 @@ int append_to_environment_block(TCHAR *env, unsigned long envlen, TCHAR *string,
       }
     }
   }
-  return append_to_double_null(env, envlen, newenv, newlen, string, keylen, false);
+  return append_to_double_null(env, envlen, newenv, newlen, string, keylen, false, compare_environment_key);
 }
 
 /*
@@ -210,7 +230,7 @@ int remove_from_environment_block(TCHAR *env, unsigned long envlen, const TCHAR 
   size_t keylen = equals ? equals - string : _tcslen(string);
   TCHAR *out = *newenv;
   for (const TCHAR *entry = env; *entry; entry += _tcslen(entry) + 1) {
-    if (! _tcsnicmp(entry, string, keylen) && entry[keylen] == _T('=') &&
+    if (_tcslen(entry) > keylen && entry[keylen] == _T('=') && !compare_environment_key(entry, string, keylen) &&
         (! equals || ! _tcscmp(entry + keylen + 1, equals + 1))) continue;
     size_t count = _tcslen(entry) + 1;
     memcpy(out, entry, count * sizeof(*out));

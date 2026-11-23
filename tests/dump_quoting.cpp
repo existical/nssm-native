@@ -249,15 +249,27 @@ void test_exit_export() {
   CHECK(setting_dump_environment(service, parameters, NSSM_REG_ENV_EXTRA, NULL, &env, NULL) != 0);
   CHECK(dump_output.find(_T("A=one")) != text_t::npos && dump_output.find(_T("B=two")) == text_t::npos);
   reset_test::fail_entry = -1; capture_dump = false;
-  TCHAR duplicate[] = _T("MODE=one\0COPY=%MODE%\0mode=two\0");
+  TCHAR duplicate[] = _T("NSSM_\u00c4=one\0NSSM_COPY=%NSSM_\u00c4%\0NSSM_\u00e4=two\0");
   REQUIRE(RegSetValueEx(parameters, NSSM_REG_ENV_EXTRA, 0, REG_MULTI_SZ, (BYTE *)duplicate, sizeof(duplicate)) == ERROR_SUCCESS);
   value_t selected = {};
-  REQUIRE(setting_get_environment(service, parameters, NSSM_REG_ENV_EXTRA, NULL, &selected, _T("Mode")) >= 0 && selected.string);
+  REQUIRE(setting_get_environment(service, parameters, NSSM_REG_ENV_EXTRA, NULL, &selected, _T("NSSM_\u00e4")) >= 0 && selected.string);
   CHECK(!_tcscmp(selected.string, _T("two"))); HeapFree(GetProcessHeap(), 0, selected.string);
+  REQUIRE(!set_environment_block(duplicate));
+  TCHAR observed[32];
+  for (const TCHAR *key_name : {L"NSSM_\u00c4", L"NSSM_\u00e4"}) {
+    REQUIRE(GetEnvironmentVariable(key_name, observed, _countof(observed)));
+    REQUIRE(setting_get_environment(service, parameters, NSSM_REG_ENV_EXTRA, NULL, &selected, key_name) >= 0 && selected.string);
+    CHECK(!_tcscmp(observed, selected.string) && !_tcscmp(observed, L"two"));
+    HeapFree(GetProcessHeap(), 0, selected.string);
+  }
+  REQUIRE(GetEnvironmentVariable(L"NSSM_COPY", observed, _countof(observed)));
+  CHECK(!_tcscmp(observed, L"one"));
+  SetEnvironmentVariable(L"NSSM_COPY", NULL);
+  SetEnvironmentVariable(L"NSSM_\u00c4", NULL);
   capture_dump = true; dump_output.clear();
   REQUIRE(!setting_dump_environment(service, parameters, NSSM_REG_ENV_EXTRA, NULL, &env, NULL));
-  CHECK(dump_output.find(_T(" AppEnvironmentExtra :MODE=one ")) != text_t::npos);
-  CHECK(dump_output.find(_T(" mode=two\n")) != text_t::npos && dump_output.find(_T('\n')) == dump_output.size() - 1);
+  CHECK(dump_output.find(_T(" AppEnvironmentExtra :NSSM_\u00c4=one ")) != text_t::npos);
+  CHECK(dump_output.find(_T(" NSSM_\u00e4=two\n")) != text_t::npos && dump_output.find(_T('\n')) == dump_output.size() - 1);
   text_t long_block = _T("MODE=");
   long_block.append(8200, _T('x')); long_block.push_back(0);
   long_block.append(_T("mode=two")); long_block.push_back(0); long_block.push_back(0);

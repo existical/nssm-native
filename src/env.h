@@ -1,6 +1,7 @@
 #ifndef ENV_H
 #define ENV_H
 
+int compare_environment_key(const TCHAR *, const TCHAR *, size_t);
 size_t environment_length(TCHAR *);
 TCHAR *copy_environment_block(TCHAR *);
 TCHAR *useful_environment(TCHAR *);

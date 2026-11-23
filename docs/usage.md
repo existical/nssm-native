@@ -353,6 +353,17 @@ could not be read. Existing values that earlier edits already expanded cannot
 be reconstructed automatically. CLI hook get/dump behavior is unchanged.
 See [NSSM-034](fixes/NSSM-034.md) for test evidence and limitations.
 
+When two operators edit the same service, saving the GUI preserves concurrent
+changes to Application, AppParameters and AppDirectory if the dialog still
+shows the original values. If both operators changed the same field to
+different values or changed its registry type, reopen the editor to load the
+current configuration and reapply the intended edit.
+
+If a save fails after updating parameters, hooks or the description, NSSM
+attempts to restore the values it wrote. The editor lists settings that need
+attention if restoration fails. A newly granted service logon right belongs
+to the account and can remain after a rejected account change.
+
 ## Dependency updates
 
 `reset Service DependOnService` clears service dependencies while retaining

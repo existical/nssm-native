@@ -5,12 +5,14 @@ bool active, fail_allocation;
 static unsigned failure, frees, manager_closes, service_closes, deletes;
 static DWORD base_start;
 static bool delayed;
+static std::wstring description;
 static int manager_token, service_token;
 static SC_HANDLE manager_handle = reinterpret_cast<SC_HANDLE>(&manager_token), service_handle = reinterpret_cast<SC_HANDLE>(&service_token);
 static std::vector<void *> objects;
 void reset(unsigned scenario) {
   REQUIRE(objects.empty()); active = true; fail_allocation = false; failure = scenario;
   frees = manager_closes = service_closes = deletes = 0;
+  description = L"Original description";
   base_start = SERVICE_DISABLED;
   delayed = false;
 }
@@ -44,6 +46,11 @@ BOOL WINAPI change(SC_HANDLE h, DWORD type, DWORD start, DWORD error, LPCTSTR pa
   base_start = start;
   return TRUE;
 }
+BOOL query_description(LPBYTE buffer) {
+  auto record = reinterpret_cast<SERVICE_DESCRIPTION *>(buffer);
+  record->lpDescription = const_cast<TCHAR *>(description.c_str());
+  return TRUE;
+}
 BOOL query_delayed(LPBYTE buffer) {
   if (failure == 7) { SetLastError(ERROR_INVALID_LEVEL); return FALSE; }
   reinterpret_cast<SERVICE_DELAYED_AUTO_START_INFO *>(buffer)->fDelayedAutostart = delayed;
@@ -55,12 +62,16 @@ BOOL WINAPI change2(SC_HANDLE h, DWORD level, LPVOID info) {
     SetLastError(ERROR_INVALID_LEVEL);
     return FALSE;
   }
+  if (level == SERVICE_CONFIG_DESCRIPTION) {
+    if (failure == 8) { SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
+    description = static_cast<SERVICE_DESCRIPTION *>(info)->lpDescription;
+  }
   if (level == SERVICE_CONFIG_DELAYED_AUTO_START_INFO)
     delayed = static_cast<SERVICE_DELAYED_AUTO_START_INFO *>(info)->fDelayedAutostart != FALSE;
   return TRUE;
 }
 BOOL WINAPI remove(SC_HANDLE h) { if (! active) return DeleteService(h); CHECK(h == service_handle); deletes++; return TRUE; }
-int parameters(nssm_service_t *service, bool editing) { return active ? (failure == 3 ? 1 : 0) : create_parameters(service, editing); }
+int parameters(nssm_service_t *service, bool editing, registry_edit *changes) { return active ? (failure == 3 ? 1 : 0) : create_parameters(service, editing, changes); }
 int popup(HWND, unsigned int, unsigned long, ...) { return IDOK; } // No dialogs in regression tests.
 void finish() {
   CHECK(frees == objects.size());
@@ -81,6 +92,38 @@ void test_install_ownership() {
     CHECK(install_test::base_start == (success ? SERVICE_AUTO_START : SERVICE_DISABLED));
     CHECK(install_test::delayed == success);
     install_test::finish();
+  }
+  // Write a real isolated parameter and a description, then reject the description,
+  // delayed-start flag or combined SCM change and inspect the restored state.
+  {
+    registry_fixture sandbox;
+    for (unsigned scenario : {8U, 6U, 2U, 4U}) {
+      nssm_service_t *s = alloc_nssm_service(); REQUIRE(s);
+      _tcscpy_s(s->name, L"NSSM-Edit-Rollback");
+      _tcscpy_s(s->description, L"Requested description");
+      s->startup = NSSM_STARTUP_DELAYED;
+      s->handle = install_test::service_handle;
+      HKEY key = open_registry(s->name, KEY_READ | KEY_WRITE); REQUIRE(key);
+      REQUIRE(!set_number(key, L"FixtureValue", 7));
+      install_test::reset(scenario);
+      auto stage_value = [](TCHAR *name, registry_edit *changes) -> int {
+        HKEY target = open_registry(name, KEY_READ | KEY_WRITE);
+        if (!target) return 1;
+        DWORD desired = 9;
+        long result = changes->stage(target, L"FixtureValue", REG_DWORD, (BYTE *)&desired, sizeof(desired));
+        RegCloseKey(target);
+        return result != 0;
+      };
+      bool success = !edit_service(s, true, stage_value);
+      CHECK(success == (scenario == 4));
+      DWORD actual;
+      CHECK(get_number(key, L"FixtureValue", &actual) == 1 && actual == (success ? 9UL : 7UL));
+      CHECK(install_test::description == (success ? L"Requested description" : L"Original description"));
+      CHECK(!s->rollback_errors[0] && install_test::delayed == success);
+      CHECK(install_test::base_start == (success ? SERVICE_AUTO_START : SERVICE_DISABLED));
+      install_test::finish();
+      RegCloseKey(key); s->handle = NULL; cleanup_nssm_service(s);
+    }
   }
   const int expected[] = {2, 5, 6, 6, 0};
   TCHAR *args[] = {_T("NSSM-Test-Install"), _T("C:\\fixture.exe")};

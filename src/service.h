@@ -32,8 +32,13 @@
 struct logger_t;
 struct completed_wait_t;
 
-typedef struct {
+class registry_edit;
+typedef struct nssm_service_t {
   bool native;
+  const nssm_service_t *original;  // Borrowed for the duration of a GUI save.
+  DWORD launch_types[3];          // Application, AppParameters, AppDirectory; REG_NONE if absent.
+  TCHAR edit_error[256];
+  TCHAR rollback_errors[1024];
   TCHAR name[SERVICE_NAME_LENGTH];
   TCHAR displayname[SERVICE_NAME_LENGTH];
   TCHAR description[VALUE_LENGTH];
@@ -168,7 +173,7 @@ int pre_remove_service(int, TCHAR **);
 int pre_edit_service(int, TCHAR **);
 int install_service(nssm_service_t *, int (*save_hooks)(TCHAR *) = NULL);
 int remove_service(nssm_service_t *);
-int edit_service(nssm_service_t *, bool);
+int edit_service(nssm_service_t *, bool, int (*stage_hooks)(TCHAR *, registry_edit *) = NULL);
 int control_service(unsigned long, int, TCHAR **, bool);
 int control_service(unsigned long, int, TCHAR **);
 void set_service_recovery(nssm_service_t *);

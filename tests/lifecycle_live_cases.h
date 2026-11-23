@@ -32,7 +32,8 @@ static int app(const std::wstring &dir) {
   char input[32] = {}; DWORD count;
   if (! ReadFile(GetStdHandle(STD_INPUT_HANDLE), input, sizeof(input)-1, &count, NULL) || std::string(input, count) != "stdin fixture\n") return 11;
   wchar_t value[32];
-  if (! GetEnvironmentVariableW(L"NSSM_TEST_AFTER", value, _countof(value)) || wcscmp(value, L"present")) return 12;
+  if (! GetEnvironmentVariableW(L"NSSM_TEST_AFTER", value, _countof(value)) || wcscmp(value, L"first")) return 12;
+  if (!GetEnvironmentVariableW(L"NSSM_\u00c4", value, _countof(value)) || wcscmp(value, L"last")) return 12;
   output(STD_OUTPUT_HANDLE, "stdin-and-environment-ok\n");
   output(STD_OUTPUT_HANDLE, GetConsoleWindow() ? "console-window-present\n" : "console-window-absent\n");
   if (!GetConsoleWindow()) output(STD_ERROR_HANDLE, "no-console-stderr\n");
@@ -121,7 +122,7 @@ static void command(const std::wstring &nssm, const std::wstring &args, DWORD ti
   if (r.code) fwprintf(stderr, L"Command %ls exited %lu\n%ls\n", args.c_str(), r.code, r.output.c_str());
   require(! r.code, "Lifecycle CLI command succeeds");
 }
-static int test(const std::wstring &nssm) {
+static int test(const std::wstring &nssm, bool edit = false) {
   SC_HANDLE manager = NULL;
   try {
     {
@@ -136,9 +137,18 @@ static int test(const std::wstring &nssm) {
         fixture owned(manager, nssm, dir.path);
         // Bootstrap Parameters/Application so NSSM recognises its own service
         // before using the public setting commands. The service stays disabled.
-        owned.configure(helper);
+        owned.configure(nssm);
         const std::wstring set = L"set " + quoted(owned.name) + L" ";
-        command(nssm, set + L"Application " + quoted(helper));
+        {
+          edit_live::editor editor(nssm, owned.name);
+          editor.open();
+          editor.set(IDC_DESCRIPTION, L"Concurrent deployment");
+          command(nssm, set + L"Application " + quoted(helper));
+          editor.save(true);
+          const std::wstring get = L"get " + quoted(owned.name) + L" ";
+          require(run(nssm, get + L"Description").output.find(L"Concurrent deployment") != std::wstring::npos, "Description edit succeeded");
+          require(run(nssm, get + L"Application").output.find(helper) != std::wstring::npos, "Unrelated edit preserved deployed executable");
+        }
         command(nssm, set + L"AppDirectory " + quoted(dir.path));
         command(nssm, set + L"AppParameters --wrapped-app " + quoted(dir.path));
         command(nssm, set + L"AppStdin " + quoted(file(dir.path, L"stdin.txt")));
@@ -148,7 +158,7 @@ static int test(const std::wstring &nssm) {
         command(nssm, set + L"AppRedirectHook 1");
         command(nssm, set + L"AppExit Default Restart");
         command(nssm, set + L"AppRestartDelay 100");
-        command(nssm, set + L"AppEnvironmentExtra NSSM_TEST_EMPTY= NSSM_TEST_AFTER=present");
+        command(nssm, set + L"AppEnvironmentExtra :NSSM_TEST_EMPTY= NSSM_\u00c4=first NSSM_TEST_AFTER=%NSSM_\u00e4% NSSM_\u00e4=last");
         const wchar_t *events[] = {L"Start", L"Stop", L"Exit"};
         for (const wchar_t *event : events) {
           // Exercise the complete stored hook command and its final quoted argument.

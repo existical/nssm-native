@@ -234,6 +234,37 @@ private:
   guarded_block &operator=(const guarded_block &);
 };
 
+static void test_hook_rollback(nssm_service_t *service) {
+  REQUIRE(!set_hook(service->name, L"Start", L"Pre", L"original", false));
+  for (auto failure : {L"Pre", L"Post"}) {
+    registry_edit changes(service);
+    REQUIRE(!set_hook(service->name, L"Start", L"Pre", L"edited", true, &changes));
+    REQUIRE(!set_hook(service->name, L"Start", L"Post", L"second", false, &changes));
+    registry_test::reject_write = failure;
+    CHECK(changes.apply() == ERROR_ACCESS_DENIED);
+    changes.rollback();
+    registry_test::reject_write = NULL;
+    CHECK(!service->rollback_errors[0]);
+    TCHAR command[32]; DWORD type = 0;
+    REQUIRE(!get_hook(service->name, L"Start", L"Pre", command, _countof(command), false, &type));
+    CHECK(!_tcscmp(command, L"original") && type == REG_SZ);
+    REQUIRE(!get_hook(service->name, L"Start", L"Post", command, _countof(command), false));
+    CHECK(!command[0]);
+  }
+  registry_edit changes(service);
+  REQUIRE(!set_hook(service->name, L"Start", L"Pre", L"edited", true, &changes));
+  REQUIRE(!set_hook(service->name, L"Start", L"Post", L"introduced", true, &changes));
+  REQUIRE(!changes.apply());
+  REQUIRE(!set_hook(service->name, L"Start", L"Post", L"external"));
+  registry_test::reject_write = L"Pre";
+  changes.rollback();
+  registry_test::reject_write = NULL;
+  CHECK(_tcsstr(service->rollback_errors, L"Start\\Pre") && _tcsstr(service->rollback_errors, L"Start\\Post"));
+  TCHAR command[32];
+  REQUIRE(!get_hook(service->name, L"Start", L"Post", command, _countof(command), false));
+  CHECK(!_tcscmp(command, L"external"));
+}
+
 static void test_parameter_saves() {
   nssm_service_t *service = alloc_nssm_service(); REQUIRE(service);
   set_nssm_service_defaults(service);
@@ -242,6 +273,7 @@ static void test_parameter_saves() {
   _tcscpy_s(service->dir, _T("C:\\"));
   HKEY key = open_registry(service->name, KEY_READ | KEY_WRITE); REQUIRE(key);
   REQUIRE(! create_parameters(service, false));
+  test_hook_rollback(service);
   REQUIRE(! set_number(key, _T("VendorSetting"), 13));
   _tcscpy_s(service->exe, _T("new.exe")); _tcscpy_s(service->flags, _T("-v"));
   registry_test::reject_write = NSSM_REG_FLAGS;

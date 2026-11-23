@@ -61,9 +61,9 @@ ctest --preset windows-x64-release -R '^nssm.upgrade_live$'
 
 The output directory must not already exist. Ordinary builds keep SCM tests
 disabled. In CI, only matrix x64 Release supplies the legacy executable and
-runs this additional group (42 groups total). Source-archive packaging retains
-41 groups for x64 Release because it carries no historical Git objects or
-legacy executable. All other configurations run 37 groups. CI uploads the
+runs this additional group (42 groups total). With SCM tests enabled, the packager builds the legacy executable
+from the full checkout before testing the archived source. The packaged x64
+Release run also includes all 42 groups. All other configurations run 37 groups. CI uploads the
 legacy build metadata/logs, candidate identity and CTest output as
 `nssm-upgrade-evidence`; candidate release packages never include the legacy
 executable. The existing crash/restart/STOP lifecycle also repeats ten times

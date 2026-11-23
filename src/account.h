@@ -24,6 +24,6 @@ TCHAR *virtual_account(const TCHAR *);
 int is_virtual_account(const TCHAR *, const TCHAR *);
 const TCHAR *well_known_sid(SID *);
 const TCHAR *well_known_username(const TCHAR *);
-int grant_logon_as_service(const TCHAR *);
+int grant_logon_as_service(const TCHAR *, bool *added = NULL);
 
 #endif

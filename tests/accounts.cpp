@@ -233,7 +233,9 @@ void test_account_rights() {
   for (int scenario : {0, 4, 5, 6}) {
     reset(scenario);
     if (scenario == 6) right.Length -= sizeof(wchar_t);
-    CHECK((grant_logon_as_service(_T("MACHINE\\Example")) == 0) == (scenario == 0 || scenario == 4));
+    bool granted = true;
+    CHECK((grant_logon_as_service(_T("MACHINE\\Example"), &granted) == 0) == (scenario == 0 || scenario == 4));
+    CHECK(granted == (scenario == 4));
     CHECK(last_access == POLICY_ALL_ACCESS);
     CHECK(additions == (scenario == 4 || scenario == 6 ? 1U : 0U)); finish();
   }

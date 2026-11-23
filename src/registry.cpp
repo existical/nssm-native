@@ -1,3 +1,4 @@
+#include <new>
 #include "nssm.h"
 
 extern const TCHAR *exit_action_strings[];
@@ -81,177 +82,321 @@ long enumerate_registry_values(HKEY key, unsigned long *index, TCHAR *name, unsi
   return error;
 }
 
-static int delete_parameter(HKEY key, const TCHAR *name) {
-  long error = RegDeleteValue(key, name);
-  if (error == ERROR_SUCCESS || error == ERROR_FILE_NOT_FOUND) return 0;
-  log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, name, error_string(error));
-  return 1;
-}
+struct registry_value {
+  DWORD type = REG_NONE, size = 0;
+  BYTE *data = NULL; // A null pointer represents an absent value.
+  ~registry_value() { if (data) HeapFree(GetProcessHeap(), 0, data); }
 
-struct parameter_backup {
-  DWORD type, size;
-  BYTE *data;
-  bool exists;
-  parameter_backup() : type(0), size(0), data(NULL), exists(false) {}
-  ~parameter_backup() { if (data) HeapFree(GetProcessHeap(), 0, data); }
-
-  bool read(HKEY key, TCHAR *name) {
+  long allocate(DWORD bytes) {
+    size = bytes;
+    data = (BYTE *) HeapAlloc(GetProcessHeap(), 0, bytes ? bytes : 1);
+    return data ? ERROR_SUCCESS : ERROR_OUTOFMEMORY;
+  }
+  long read(HKEY key, const TCHAR *name) {
     long error = RegQueryValueEx(key, name, NULL, &type, NULL, &size);
-    if (error == ERROR_FILE_NOT_FOUND) return true;
-    if (error != ERROR_SUCCESS) return false;
-    exists = true;
-    data = (BYTE *) HeapAlloc(GetProcessHeap(), 0, size ? size : 1);
-    return data && RegQueryValueEx(key, name, NULL, &type, data, &size) == ERROR_SUCCESS;
+    if (error == ERROR_FILE_NOT_FOUND) return ERROR_SUCCESS;
+    if (error || (error = allocate(size))) return error;
+    return RegQueryValueEx(key, name, NULL, &type, data, &size);
+  }
+  bool equals(const registry_value &other) const {
+    if (!data || !other.data) return data == other.data;
+    return type == other.type && size == other.size && !memcmp(data, other.data, size);
+  }
+  bool matches_string(const TCHAR *value, DWORD stored_type) const {
+    if (!data || !stored_type) return !data && !stored_type;
+    size_t bytes = (_tcslen(value) + 1) * sizeof(TCHAR);
+    if (type != stored_type || size < bytes || size % sizeof(TCHAR) || memcmp(data, value, bytes)) return false;
+    for (size_t i = bytes; i < size; ++i) if (data[i]) return false;
+    return true;
+  }
+  long write(HKEY key, const TCHAR *name) const {
+    if (data) return RegSetValueEx(key, name, 0, type, data, size);
+    long error = RegDeleteValue(key, name);
+    return error == ERROR_FILE_NOT_FOUND ? ERROR_SUCCESS : error;
   }
 };
 
-static int save_launch_parameters(HKEY key, nssm_service_t *service) {
-  TCHAR *names[] = {NSSM_REG_EXE, NSSM_REG_FLAGS, NSSM_REG_DIR};
-  TCHAR *values[] = {service->exe, service->flags, service->dir};
-  parameter_backup old[_countof(names)];
-  for (unsigned i = 0; i < _countof(names); i++) {
-    if (! old[i].read(key, names[i])) return 1;
-  }
-  bool changed[_countof(names)] = {};
-  for (unsigned i = 0; i < _countof(names); i++) {
-    /* Keep an absent working directory dynamic on later launches. */
-    if (i == 2 && !old[i].exists && !values[i][0]) continue;
-    DWORD bytes = (DWORD) ((_tcslen(values[i]) + 1) * sizeof(TCHAR));
-    if (old[i].exists && (old[i].type == REG_SZ || old[i].type == REG_EXPAND_SZ) &&
-        old[i].size == bytes && ! memcmp(old[i].data, values[i], bytes)) continue;
-    if (!set_string(key, names[i], values[i], !old[i].exists || old[i].type != REG_SZ)) { changed[i] = true; continue; }
-    while (i) {
-      --i;
-      if (! changed[i]) continue;
-      if (! old[i].exists) delete_parameter(key, names[i]);
-      else {
-        long error = RegSetValueEx(key, names[i], 0, old[i].type, old[i].data, old[i].size);
-        if (error) log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, names[i], error_string(error));
-      }
+struct registry_edit::change {
+  change *previous = NULL, *next = NULL;
+  HKEY key = NULL;
+  TCHAR missing_path[KEY_LENGTH] = {};
+  TCHAR name[128] = {}, label[256] = {};
+  registry_value before, after;
+  bool applied = false;
+  // Keep the nearest existing ancestor open when a hook or AppExit key is absent.
+  long open(HKEY parent, const TCHAR *path) {
+    if (!path) return RegOpenKeyEx(parent, _T(""), 0, KEY_QUERY_VALUE | KEY_SET_VALUE, &key);
+    long error = RegOpenKeyEx(parent, path, 0, KEY_QUERY_VALUE | KEY_SET_VALUE, &key);
+    if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND) return error;
+    const TCHAR *slash = _tcsrchr(path, _T('\\'));
+    if (slash) {
+      TCHAR prefix[KEY_LENGTH];
+      if (_tcsncpy_s(prefix, path, slash - path)) return ERROR_INVALID_NAME;
+      error = RegOpenKeyEx(parent, prefix, 0, KEY_CREATE_SUB_KEY, &key);
+      if (!error) { _tcscpy_s(missing_path, slash + 1); return 0; }
+      if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND) return error;
     }
-    return 1;
+    _tcscpy_s(missing_path, path);
+    return RegOpenKeyEx(parent, _T(""), 0, KEY_CREATE_SUB_KEY, &key);
+  }
+  long materialise() {
+    if (!*missing_path) return 0;
+    HKEY child;
+    long error = RegCreateKeyEx(key, missing_path, 0, NULL, 0, KEY_QUERY_VALUE | KEY_SET_VALUE, NULL, &child, NULL);
+    if (!error) { RegCloseKey(key); key = child; missing_path[0] = 0; }
+    return error;
+  }
+  ~change() { if (key) RegCloseKey(key); }
+};
+
+registry_edit::~registry_edit() {
+  while (last) {
+    change *previous = last->previous;
+    delete last;
+    last = previous;
+  }
+}
+
+long registry_edit::stage(HKEY key, const TCHAR *name, DWORD type, const BYTE *data, DWORD bytes,
+                          const TCHAR *section, const TCHAR *original, DWORD original_type) {
+  change *entry = new (std::nothrow) change;
+  if (!entry) return ERROR_OUTOFMEMORY;
+  _tcscpy_s(entry->name, name);
+  _sntprintf_s(entry->label, _countof(entry->label), _TRUNCATE, _T("%s%s%s"), section ? section : _T(""),
+               section && *name ? _T("\\") : _T(""), name);
+  long error = entry->open(key, section);
+  if (!error && !*entry->missing_path) error = entry->before.read(entry->key, name);
+  if (!error && data) {
+    entry->after.type = type;
+    error = entry->after.allocate(bytes);
+    if (!error) memcpy(entry->after.data, data, bytes);
+  }
+  if (!error && entry->before.equals(entry->after)) { delete entry; return 0; }
+  if (!error && original && !entry->before.matches_string(original, original_type)) error = ERROR_REVISION_MISMATCH;
+  if (error) {
+    if (!service->edit_error[0]) _tcscpy_s(service->edit_error, entry->label);
+    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, entry->label, error_string(error));
+    delete entry;
+    return error;
+  }
+  entry->previous = last;
+  if (last) last->next = entry;
+  else first = entry;
+  last = entry;
+  return 0;
+}
+
+long registry_edit::apply() {
+  for (change *entry = first; entry; entry = entry->next) {
+    registry_value current;
+    long error = entry->materialise();
+    if (!error) error = current.read(entry->key, entry->name);
+    if (!error && current.equals(entry->after)) continue;
+    if (!error && !current.equals(entry->before)) error = ERROR_REVISION_MISMATCH;
+    if (!error) error = entry->after.write(entry->key, entry->name);
+    if (error) {
+      _tcscpy_s(service->edit_error, entry->label);
+      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, entry->label, error_string(error));
+      return error;
+    }
+    entry->applied = true;
   }
   return 0;
 }
 
-static int save_io_option(HKEY key, TCHAR *stream, TCHAR *option, DWORD value, DWORD fallback, bool editing) {
-  if (value != fallback) return set_createfile_parameter(key, stream, option, value);
-  return editing ? delete_createfile_parameter(key, stream, option) : 0;
+void registry_edit::rollback() {
+  for (change *entry = last; entry; entry = entry->previous) {
+    if (!entry->applied) continue;
+    registry_value current;
+    long error = current.read(entry->key, entry->name);
+    if (!error && !current.equals(entry->before)) {
+      error = current.equals(entry->after) ? entry->before.write(entry->key, entry->name) : ERROR_REVISION_MISMATCH;
+    }
+    if (error) {
+      _tcsncat_s(service->rollback_errors, entry->label, _TRUNCATE);
+      _tcsncat_s(service->rollback_errors, _T(" "), _TRUNCATE);
+      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, entry->label, error_string(error));
+    }
+    entry->applied = false;
+  }
 }
 
-static int save_io_path(HKEY key, TCHAR *name, TCHAR *path, DWORD type, bool editing) {
-  if (*path) return set_string(key, name, path, type != REG_SZ);
-  return editing ? delete_parameter(key, name) : 0;
+static int save_launch_parameters(HKEY key, nssm_service_t *service, registry_edit *edit) {
+  const TCHAR *names[] = {NSSM_REG_EXE, NSSM_REG_FLAGS, NSSM_REG_DIR};
+  const TCHAR *values[] = {service->exe, service->flags, service->dir};
+  const nssm_service_t *orig = service->original;
+  const TCHAR *original[] = {orig ? orig->exe : NULL, orig ? orig->flags : NULL, orig ? orig->dir : NULL};
+  for (unsigned i = 0; i < _countof(names); ++i) {
+    if (orig && !_tcscmp(values[i], original[i])) continue;
+    DWORD type = REG_NONE;
+    if (orig) type = orig->launch_types[i];
+    else {
+      long error = RegQueryValueEx(key, names[i], NULL, &type, NULL, NULL);
+      if (error && error != ERROR_FILE_NOT_FOUND) return 1;
+      if (i == 2 && error == ERROR_FILE_NOT_FOUND && !*values[i]) continue;
+    }
+    DWORD bytes = (DWORD) ((_tcslen(values[i]) + 1) * sizeof(TCHAR));
+    if (edit->stage(key, names[i], type == REG_SZ ? REG_SZ : REG_EXPAND_SZ, (const BYTE *) values[i],
+                    bytes, NULL, original[i], type)) return 1;
+  }
+  return 0;
 }
 
-int create_parameters(nssm_service_t *service, bool editing) {
-  HKEY key = open_registry(service->name, KEY_QUERY_VALUE | KEY_WRITE);
-  if (! key) return 1;
+static int save_string(registry_edit *edit, HKEY key, const TCHAR *name, const TCHAR *value, DWORD type = REG_SZ) {
+  return edit->stage(key, name, type, (const BYTE *) value, (DWORD) ((_tcslen(value) + 1) * sizeof(TCHAR))) != 0;
+}
+
+static int save_number(registry_edit *edit, HKEY key, const TCHAR *name, DWORD value) {
+  return edit->stage(key, name, REG_DWORD, (const BYTE *) &value, sizeof(value)) != 0;
+}
+
+static int delete_parameter(registry_edit *edit, HKEY key, const TCHAR *name) {
+  return edit->stage(key, name, REG_NONE, NULL, 0) != 0;
+}
+
+static int save_io_option(registry_edit *edit, HKEY key, TCHAR *stream, TCHAR *option, DWORD value, DWORD fallback, bool editing) {
+  TCHAR name[NSSM_STDIO_LENGTH];
+  if (_sntprintf_s(name, _countof(name), _TRUNCATE, _T("%s%s"), stream, option) < 0) return 1;
+  if (value != fallback) return save_number(edit, key, name, value);
+  return editing ? delete_parameter(edit, key, name) : 0;
+}
+
+static int save_io_path(registry_edit *edit, HKEY key, TCHAR *name, TCHAR *path, DWORD type, bool editing) {
+  if (*path) return save_string(edit, key, name, path, type == REG_SZ ? REG_SZ : REG_EXPAND_SZ);
+  return editing ? delete_parameter(edit, key, name) : 0;
+}
+
+int create_parameters(nssm_service_t *service, bool editing, registry_edit *external) {
+  registry_edit local(service);
+  registry_edit *edit = external ? external : &local;
+  HKEY key = NULL;
+  if (editing && service->original) {
+    TCHAR path[NSSM_SERVICE_KEY_PATH_LENGTH];
+    if (service_registry_path(service->name, true, NULL, path, _countof(path)) >= 0)
+      RegOpenKeyEx(HKEY_LOCAL_MACHINE, path, 0, KEY_QUERY_VALUE | KEY_SET_VALUE, &key);
+  }
+  else key = open_registry(service->name, KEY_QUERY_VALUE | KEY_WRITE);
+  if (!key) { _tcscpy_s(service->edit_error, NSSM_REG_PARAMETERS); return 1; }
   struct key_owner {
     HKEY key;
     ~key_owner() { RegCloseKey(key); }
   } owner = {key};
-  if (! service->exe[0] || save_launch_parameters(key, service)) return 2;
+  if (! service->exe[0] || save_launch_parameters(key, service, edit)) return 2;
   int errors = 0;
 
   /* Other non-default parameters. May fail. */
   if (!editing || !service->preserve_priority) {
-    if (service->priority != NORMAL_PRIORITY_CLASS) errors += set_number(key, NSSM_REG_PRIORITY, service->priority);
-    else if (editing) errors += delete_parameter(key, NSSM_REG_PRIORITY);
+    if (service->priority != NORMAL_PRIORITY_CLASS) errors += save_number(edit, key, NSSM_REG_PRIORITY, service->priority);
+    else if (editing) errors += delete_parameter(edit, key, NSSM_REG_PRIORITY);
   }
   if (service->affinity) {
     TCHAR *string = NULL;
     if (affinity_mask_to_string(service->affinity, &string)) errors++;
     else {
-      errors += set_string(key, NSSM_REG_AFFINITY, string);
+      errors += save_string(edit, key, NSSM_REG_AFFINITY, string);
       HeapFree(GetProcessHeap(), 0, string);
     }
   }
-  else if (editing) errors += delete_parameter(key, NSSM_REG_AFFINITY);
+  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_AFFINITY);
   unsigned long stop_method_skip = ~service->stop_method;
-  if (stop_method_skip) errors += set_number(key, NSSM_REG_STOP_METHOD_SKIP, stop_method_skip);
-  else if (editing) errors += delete_parameter(key, NSSM_REG_STOP_METHOD_SKIP);
-  if (service->default_exit_action < NSSM_NUM_EXIT_ACTIONS) errors += create_exit_action(service->name, exit_action_strings[service->default_exit_action], editing);
-  if (service->restart_delay) errors += set_number(key, NSSM_REG_RESTART_DELAY, service->restart_delay);
-  else if (editing) errors += delete_parameter(key, NSSM_REG_RESTART_DELAY);
-  if (service->throttle_delay != NSSM_RESET_THROTTLE_RESTART) errors += set_number(key, NSSM_REG_THROTTLE, service->throttle_delay);
-  else if (editing) errors += delete_parameter(key, NSSM_REG_THROTTLE);
-  if (service->kill_console_delay != NSSM_KILL_CONSOLE_GRACE_PERIOD) errors += set_number(key, NSSM_REG_KILL_CONSOLE_GRACE_PERIOD, service->kill_console_delay);
-  else if (editing) errors += delete_parameter(key, NSSM_REG_KILL_CONSOLE_GRACE_PERIOD);
-  if (service->kill_window_delay != NSSM_KILL_WINDOW_GRACE_PERIOD) errors += set_number(key, NSSM_REG_KILL_WINDOW_GRACE_PERIOD, service->kill_window_delay);
-  else if (editing) errors += delete_parameter(key, NSSM_REG_KILL_WINDOW_GRACE_PERIOD);
-  if (service->kill_threads_delay != NSSM_KILL_THREADS_GRACE_PERIOD) errors += set_number(key, NSSM_REG_KILL_THREADS_GRACE_PERIOD, service->kill_threads_delay);
-  else if (editing) errors += delete_parameter(key, NSSM_REG_KILL_THREADS_GRACE_PERIOD);
-  if (! service->kill_process_tree) errors += set_number(key, NSSM_REG_KILL_PROCESS_TREE, 0);
-  else if (editing) errors += delete_parameter(key, NSSM_REG_KILL_PROCESS_TREE);
+  if (stop_method_skip) errors += save_number(edit, key, NSSM_REG_STOP_METHOD_SKIP, stop_method_skip);
+  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_STOP_METHOD_SKIP);
+  if (service->default_exit_action < NSSM_NUM_EXIT_ACTIONS) {
+    long error = ERROR_FILE_NOT_FOUND;
+    if (!editing) {
+      HKEY existing;
+      error = RegOpenKeyEx(key, NSSM_REG_EXIT, 0, KEY_QUERY_VALUE, &existing);
+      if (!error) RegCloseKey(existing);
+    }
+    if (error == ERROR_FILE_NOT_FOUND) {
+      const TCHAR *action = exit_action_strings[service->default_exit_action];
+      errors += edit->stage(key, _T(""), REG_SZ, (const BYTE *) action,
+                            (DWORD) ((_tcslen(action) + 1) * sizeof(TCHAR)), NSSM_REG_EXIT) != 0;
+    }
+    else if (error) ++errors;
+  }
+  if (service->restart_delay) errors += save_number(edit, key, NSSM_REG_RESTART_DELAY, service->restart_delay);
+  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_RESTART_DELAY);
+  if (service->throttle_delay != NSSM_RESET_THROTTLE_RESTART) errors += save_number(edit, key, NSSM_REG_THROTTLE, service->throttle_delay);
+  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_THROTTLE);
+  if (service->kill_console_delay != NSSM_KILL_CONSOLE_GRACE_PERIOD) errors += save_number(edit, key, NSSM_REG_KILL_CONSOLE_GRACE_PERIOD, service->kill_console_delay);
+  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_KILL_CONSOLE_GRACE_PERIOD);
+  if (service->kill_window_delay != NSSM_KILL_WINDOW_GRACE_PERIOD) errors += save_number(edit, key, NSSM_REG_KILL_WINDOW_GRACE_PERIOD, service->kill_window_delay);
+  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_KILL_WINDOW_GRACE_PERIOD);
+  if (service->kill_threads_delay != NSSM_KILL_THREADS_GRACE_PERIOD) errors += save_number(edit, key, NSSM_REG_KILL_THREADS_GRACE_PERIOD, service->kill_threads_delay);
+  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_KILL_THREADS_GRACE_PERIOD);
+  if (! service->kill_process_tree) errors += save_number(edit, key, NSSM_REG_KILL_PROCESS_TREE, 0);
+  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_KILL_PROCESS_TREE);
   if (service->stdin_path[0] || editing) {
-    if (! service->preserve_stdin_path) errors += save_io_path(key, NSSM_REG_STDIN, service->stdin_path, service->stdin_type, editing);
+    if (! service->preserve_stdin_path) errors += save_io_path(edit, key, NSSM_REG_STDIN, service->stdin_path, service->stdin_type, editing);
     if (! service->preserve_advanced_io) {
-      errors += save_io_option(key, NSSM_REG_STDIN, NSSM_REG_STDIO_SHARING, service->stdin_sharing, NSSM_STDIN_SHARING, editing);
-      errors += save_io_option(key, NSSM_REG_STDIN, NSSM_REG_STDIO_FLAGS, service->stdin_flags, NSSM_STDIN_FLAGS, editing);
-      errors += save_io_option(key, NSSM_REG_STDIN, NSSM_REG_STDIO_DISPOSITION, service->stdin_disposition, NSSM_STDIN_DISPOSITION, editing);
+      errors += save_io_option(edit, key, NSSM_REG_STDIN, NSSM_REG_STDIO_SHARING, service->stdin_sharing, NSSM_STDIN_SHARING, editing);
+      errors += save_io_option(edit, key, NSSM_REG_STDIN, NSSM_REG_STDIO_FLAGS, service->stdin_flags, NSSM_STDIN_FLAGS, editing);
+      errors += save_io_option(edit, key, NSSM_REG_STDIN, NSSM_REG_STDIO_DISPOSITION, service->stdin_disposition, NSSM_STDIN_DISPOSITION, editing);
     }
   }
   if (service->stdout_path[0] || editing) {
-    if (! service->preserve_stdout_path) errors += save_io_path(key, NSSM_REG_STDOUT, service->stdout_path, service->stdout_type, editing);
+    if (! service->preserve_stdout_path) errors += save_io_path(edit, key, NSSM_REG_STDOUT, service->stdout_path, service->stdout_type, editing);
     if (! service->preserve_advanced_io) {
-      errors += save_io_option(key, NSSM_REG_STDOUT, NSSM_REG_STDIO_SHARING, service->stdout_sharing, NSSM_STDOUT_SHARING, editing);
-      errors += save_io_option(key, NSSM_REG_STDOUT, NSSM_REG_STDIO_FLAGS, service->stdout_flags, NSSM_STDOUT_FLAGS, editing);
-      errors += save_io_option(key, NSSM_REG_STDOUT, NSSM_REG_STDIO_COPY_AND_TRUNCATE, service->stdout_copy_and_truncate, 0, editing);
+      errors += save_io_option(edit, key, NSSM_REG_STDOUT, NSSM_REG_STDIO_SHARING, service->stdout_sharing, NSSM_STDOUT_SHARING, editing);
+      errors += save_io_option(edit, key, NSSM_REG_STDOUT, NSSM_REG_STDIO_FLAGS, service->stdout_flags, NSSM_STDOUT_FLAGS, editing);
+      errors += save_io_option(edit, key, NSSM_REG_STDOUT, NSSM_REG_STDIO_COPY_AND_TRUNCATE, service->stdout_copy_and_truncate, 0, editing);
     }
     if (! service->preserve_output_dispositions)
-      errors += save_io_option(key, NSSM_REG_STDOUT, NSSM_REG_STDIO_DISPOSITION, service->stdout_disposition, NSSM_STDOUT_DISPOSITION, editing);
+      errors += save_io_option(edit, key, NSSM_REG_STDOUT, NSSM_REG_STDIO_DISPOSITION, service->stdout_disposition, NSSM_STDOUT_DISPOSITION, editing);
   }
   if (service->stderr_path[0] || editing) {
-    if (! service->preserve_stderr_path) errors += save_io_path(key, NSSM_REG_STDERR, service->stderr_path, service->stderr_type, editing);
+    if (! service->preserve_stderr_path) errors += save_io_path(edit, key, NSSM_REG_STDERR, service->stderr_path, service->stderr_type, editing);
     if (! service->preserve_advanced_io) {
-      errors += save_io_option(key, NSSM_REG_STDERR, NSSM_REG_STDIO_SHARING, service->stderr_sharing, NSSM_STDERR_SHARING, editing);
-      errors += save_io_option(key, NSSM_REG_STDERR, NSSM_REG_STDIO_FLAGS, service->stderr_flags, NSSM_STDERR_FLAGS, editing);
-      errors += save_io_option(key, NSSM_REG_STDERR, NSSM_REG_STDIO_COPY_AND_TRUNCATE, service->stderr_copy_and_truncate, 0, editing);
+      errors += save_io_option(edit, key, NSSM_REG_STDERR, NSSM_REG_STDIO_SHARING, service->stderr_sharing, NSSM_STDERR_SHARING, editing);
+      errors += save_io_option(edit, key, NSSM_REG_STDERR, NSSM_REG_STDIO_FLAGS, service->stderr_flags, NSSM_STDERR_FLAGS, editing);
+      errors += save_io_option(edit, key, NSSM_REG_STDERR, NSSM_REG_STDIO_COPY_AND_TRUNCATE, service->stderr_copy_and_truncate, 0, editing);
     }
     if (! service->preserve_output_dispositions)
-      errors += save_io_option(key, NSSM_REG_STDERR, NSSM_REG_STDIO_DISPOSITION, service->stderr_disposition, NSSM_STDERR_DISPOSITION, editing);
+      errors += save_io_option(edit, key, NSSM_REG_STDERR, NSSM_REG_STDIO_DISPOSITION, service->stderr_disposition, NSSM_STDERR_DISPOSITION, editing);
   }
-  if (service->timestamp_log) errors += set_number(key, NSSM_REG_TIMESTAMP_LOG, 1);
-  else if (editing) errors += delete_parameter(key, NSSM_REG_TIMESTAMP_LOG);
-  if (service->hook_share_output_handles) errors += set_number(key, NSSM_REG_HOOK_SHARE_OUTPUT_HANDLES, 1);
-  else if (editing) errors += delete_parameter(key, NSSM_REG_HOOK_SHARE_OUTPUT_HANDLES);
-  if (service->rotate_files) errors += set_number(key, NSSM_REG_ROTATE, 1);
-  else if (editing) errors += delete_parameter(key, NSSM_REG_ROTATE);
-  if (service->rotate_stdout_online) errors += set_number(key, NSSM_REG_ROTATE_ONLINE, 1);
-  else if (editing) errors += delete_parameter(key, NSSM_REG_ROTATE_ONLINE);
-  if (service->rotate_seconds) errors += set_number(key, NSSM_REG_ROTATE_SECONDS, service->rotate_seconds);
-  else if (editing) errors += delete_parameter(key, NSSM_REG_ROTATE_SECONDS);
-  if (service->rotate_bytes_low) errors += set_number(key, NSSM_REG_ROTATE_BYTES_LOW, service->rotate_bytes_low);
-  else if (editing) errors += delete_parameter(key, NSSM_REG_ROTATE_BYTES_LOW);
-  if (service->rotate_bytes_high) errors += set_number(key, NSSM_REG_ROTATE_BYTES_HIGH, service->rotate_bytes_high);
-  else if (editing) errors += delete_parameter(key, NSSM_REG_ROTATE_BYTES_HIGH);
+  if (service->timestamp_log) errors += save_number(edit, key, NSSM_REG_TIMESTAMP_LOG, 1);
+  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_TIMESTAMP_LOG);
+  if (service->hook_share_output_handles) errors += save_number(edit, key, NSSM_REG_HOOK_SHARE_OUTPUT_HANDLES, 1);
+  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_HOOK_SHARE_OUTPUT_HANDLES);
+  if (service->rotate_files) errors += save_number(edit, key, NSSM_REG_ROTATE, 1);
+  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_ROTATE);
+  if (service->rotate_stdout_online) errors += save_number(edit, key, NSSM_REG_ROTATE_ONLINE, 1);
+  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_ROTATE_ONLINE);
+  if (service->rotate_seconds) errors += save_number(edit, key, NSSM_REG_ROTATE_SECONDS, service->rotate_seconds);
+  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_ROTATE_SECONDS);
+  if (service->rotate_bytes_low) errors += save_number(edit, key, NSSM_REG_ROTATE_BYTES_LOW, service->rotate_bytes_low);
+  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_ROTATE_BYTES_LOW);
+  if (service->rotate_bytes_high) errors += save_number(edit, key, NSSM_REG_ROTATE_BYTES_HIGH, service->rotate_bytes_high);
+  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_ROTATE_BYTES_HIGH);
   if (! service->preserve_advanced_io) {
-    if (service->rotate_delay != NSSM_ROTATE_DELAY) errors += set_number(key, NSSM_REG_ROTATE_DELAY, service->rotate_delay);
-    else if (editing) errors += delete_parameter(key, NSSM_REG_ROTATE_DELAY);
+    if (service->rotate_delay != NSSM_ROTATE_DELAY) errors += save_number(edit, key, NSSM_REG_ROTATE_DELAY, service->rotate_delay);
+    else if (editing) errors += delete_parameter(edit, key, NSSM_REG_ROTATE_DELAY);
   }
-  if (service->no_console) errors += set_number(key, NSSM_REG_NO_CONSOLE, 1);
-  else if (editing) errors += delete_parameter(key, NSSM_REG_NO_CONSOLE);
+  if (service->no_console) errors += save_number(edit, key, NSSM_REG_NO_CONSOLE, 1);
+  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_NO_CONSOLE);
 
   /* Environment */
   if (service->env) {
-    long env_error = RegSetValueEx(key, NSSM_REG_ENV, 0, REG_MULTI_SZ, (const unsigned char *) service->env, (unsigned long) service->envlen * sizeof(TCHAR));
+    long env_error = edit->stage(key, NSSM_REG_ENV, REG_MULTI_SZ, (const unsigned char *) service->env, (unsigned long) service->envlen * sizeof(TCHAR));
     if (env_error != ERROR_SUCCESS) {
       errors++;
       log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, NSSM_REG_ENV, error_string(env_error));
     }
   }
-  else if (editing) errors += delete_parameter(key, NSSM_REG_ENV);
+  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_ENV);
   if (service->env_extra) {
-    long env_error = RegSetValueEx(key, NSSM_REG_ENV_EXTRA, 0, REG_MULTI_SZ, (const unsigned char *) service->env_extra, (unsigned long) service->env_extralen * sizeof(TCHAR));
+    long env_error = edit->stage(key, NSSM_REG_ENV_EXTRA, REG_MULTI_SZ, (const unsigned char *) service->env_extra, (unsigned long) service->env_extralen * sizeof(TCHAR));
     if (env_error != ERROR_SUCCESS) {
       errors++;
       log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, NSSM_REG_ENV_EXTRA, error_string(env_error));
     }
   }
-  else if (editing) errors += delete_parameter(key, NSSM_REG_ENV_EXTRA);
+  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_ENV_EXTRA);
 
-  return errors ? 5 : 0;
+  if (errors) return 5;
+  if (!external && local.apply()) { local.rollback(); return 5; }
+  return 0;
 }
 
 int create_exit_action(TCHAR *service_name, const TCHAR *action_string, bool editing) {
@@ -278,7 +423,8 @@ int create_exit_action(TCHAR *service_name, const TCHAR *action_string, bool edi
   }
 
   /* Create the default value */
-  error = RegSetValueEx(key, 0, 0, REG_SZ, (const unsigned char *) action_string, (unsigned long) (_tcslen(action_string) + 1) * sizeof(TCHAR));
+  DWORD bytes = (DWORD) ((_tcslen(action_string) + 1) * sizeof(TCHAR));
+  error = RegSetValueEx(key, NULL, 0, REG_SZ, (const BYTE *) action_string, bytes);
   if (error != ERROR_SUCCESS) {
     log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, NSSM_REG_EXIT, error_string(error));
     RegCloseKey(key);
@@ -617,7 +763,7 @@ int copy_double_null(TCHAR *dn, unsigned long dnlen, TCHAR **newdn) {
   replaced once at the first match; unrelated entry order is preserved.
   A blank append copies the original block.
 */
-int append_to_double_null(TCHAR *dn, unsigned long dnlen, TCHAR **newdn, unsigned long *newlen, TCHAR *append, size_t keylen, bool case_sensitive) {
+int append_to_double_null(TCHAR *dn, unsigned long dnlen, TCHAR **newdn, unsigned long *newlen, TCHAR *append, size_t keylen, bool case_sensitive, int (*compare)(const TCHAR *, const TCHAR *, size_t)) {
   *newdn = 0;
   *newlen = 0;
   unsigned long length;
@@ -630,7 +776,7 @@ int append_to_double_null(TCHAR *dn, unsigned long dnlen, TCHAR **newdn, unsigne
   size_t appendlen = _tcslen(append);
   bool whole_string = ! keylen || keylen > appendlen;
   if (whole_string) keylen = appendlen;
-  int (*fn)(const TCHAR *, const TCHAR *, size_t) = case_sensitive ? _tcsncmp : _tcsnicmp;
+  int (*fn)(const TCHAR *, const TCHAR *, size_t) = compare ? compare : case_sensitive ? _tcsncmp : _tcsnicmp;
 
   /* Reserve the replacement once, regardless of how many keys match. */
   size_t len = 1;
@@ -830,8 +976,9 @@ int get_parameters(nssm_service_t *service, STARTUPINFO *si) {
     return 2;
   }
 
+  ZeroMemory(service->launch_types, sizeof(service->launch_types));
   /* Try to get executable file - MUST succeed */
-  if (get_string(key, NSSM_REG_EXE, service->exe, sizeof(service->exe), expand, false, si != NULL)) {
+  if (get_string(key, NSSM_REG_EXE, service->exe, sizeof(service->exe), expand, false, si != NULL, &service->launch_types[0])) {
     RegCloseKey(key);
     return 3;
   }
@@ -841,12 +988,12 @@ int get_parameters(nssm_service_t *service, STARTUPINFO *si) {
   }
 
   /* Missing arguments are optional. Corrupt or oversized arguments must fail launch. */
-  if (get_string(key, NSSM_REG_FLAGS, service->flags, sizeof(service->flags), expand, false, false)) {
+  if (get_string(key, NSSM_REG_FLAGS, service->flags, sizeof(service->flags), expand, false, false, &service->launch_types[1])) {
     RegCloseKey(key);
     return 3;
   }
 
-  int directory_error = get_string(key, NSSM_REG_DIR, service->dir, sizeof(service->dir), expand, expand, false);
+  int directory_error = get_string(key, NSSM_REG_DIR, service->dir, sizeof(service->dir), expand, expand, false, &service->launch_types[2]);
   if (directory_error) {
     RegCloseKey(key);
     return 4;
@@ -1046,7 +1193,7 @@ int get_exit_action(const TCHAR *service_name, unsigned long *ret, TCHAR *action
   return 0;
 }
 
-int set_hook(const TCHAR *service_name, const TCHAR *hook_event, const TCHAR *hook_action, TCHAR *cmd, bool expand) {
+int set_hook(const TCHAR *service_name, const TCHAR *hook_event, const TCHAR *hook_action, TCHAR *cmd, bool expand, registry_edit *edit) {
   /* Try to open the registry */
   TCHAR registry[KEY_LENGTH];
   if (_sntprintf_s(registry, _countof(registry), _TRUNCATE, _T("%s\\%s"), NSSM_REG_HOOK, hook_event) < 0) {
@@ -1068,11 +1215,18 @@ int set_hook(const TCHAR *service_name, const TCHAR *hook_event, const TCHAR *ho
     if (error != ERROR_SUCCESS) return 1;
   }
 
+  if (edit) {
+    key = open_registry(service_name, KEY_READ);
+    if (!key) return 1;
+    error = edit->stage(key, hook_action, expand ? REG_EXPAND_SZ : REG_SZ, *cmd ? (const BYTE *) cmd : NULL,
+                        (DWORD) ((_tcslen(cmd) + 1) * sizeof(TCHAR)), registry);
+    RegCloseKey(key);
+    return error != 0;
+  }
   key = open_registry(service_name, registry, KEY_WRITE);
-  if (! key) return 1;
-
+  if (!key) return 1;
   int ret = 1;
-  if (_tcslen(cmd)) ret = set_string(key, (TCHAR *) hook_action, cmd, expand);
+  if (*cmd) ret = set_string(key, (TCHAR *) hook_action, cmd, expand);
   else {
     error = RegDeleteValue(key, hook_action);
     if (error == ERROR_SUCCESS || error == ERROR_FILE_NOT_FOUND) ret = 0;

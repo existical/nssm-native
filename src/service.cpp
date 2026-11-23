@@ -779,10 +779,16 @@ int change_service_startup(const TCHAR *name, SC_HANDLE handle, unsigned long ch
   }
   if (ChangeServiceConfig(handle, type, start, SERVICE_NO_CHANGE, NULL, NULL, NULL, dependencies, account, password, display)) return 0;
   DWORD error = GetLastError();
-  if (changed && !ChangeServiceConfig2(handle, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, &old))
-    log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SERVICE_CONFIG_DELAYED_AUTO_START_INFO_FAILED, name, error_string(GetLastError()));
+  bool restored = true;
+  if (changed) {
+    SERVICE_DELAYED_AUTO_START_INFO current = {};
+    restored = QueryServiceConfig2(handle, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, (BYTE *)&current, sizeof(current), &required) &&
+               (!!current.fDelayedAutostart == !!old.fDelayedAutostart ||
+                ChangeServiceConfig2(handle, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, &old));
+    if (!restored) log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SERVICE_CONFIG_DELAYED_AUTO_START_INFO_FAILED, name, error_string(GetLastError()));
+  }
   print_message(stderr, NSSM_MESSAGE_CHANGESERVICECONFIG_FAILED, error_string(error));
-  return 1;
+  return restored ? 1 : 2;
 }
 
 int get_service_startup(const TCHAR *service_name, SC_HANDLE service_handle, const QUERY_SERVICE_CONFIG *qsc, unsigned long *startup) {
@@ -1435,9 +1441,10 @@ int install_service(nssm_service_t *service, int (*save_hooks)(TCHAR *)) {
 }
 
 /* Edit the service. */
-int edit_service(nssm_service_t *service, bool editing) {
+int edit_service(nssm_service_t *service, bool editing, int (*stage_hooks)(TCHAR *, registry_edit *)) {
   if (! service) return 1;
 
+  service->edit_error[0] = service->rollback_errors[0] = 0;
   resolved_dependencies_t dependencies;
   if (resolve_service_dependencies(service->name, service->dependencieslen ? service->dependencies : NULL, dependencies)) return 5;
 
@@ -1461,7 +1468,10 @@ int edit_service(nssm_service_t *service, bool editing) {
   TCHAR *canon = 0;
   TCHAR *password = 0;
   boolean virtual_account = false;
-  if (service->usernamelen) {
+  bool same_account = editing && service->original && !service->passwordlen &&
+                      str_equiv(service->username ? service->username : NSSM_LOCALSYSTEM_ACCOUNT,
+                                service->original->username ? service->original->username : NSSM_LOCALSYSTEM_ACCOUNT);
+  if (!same_account && service->usernamelen) {
     username = service->username;
     if (is_virtual_account(service->name, username)) {
       virtual_account = true;
@@ -1472,40 +1482,67 @@ int edit_service(nssm_service_t *service, bool editing) {
       if (service->passwordlen) password = service->password;
     }
   }
-  else if (editing) username = canon = NSSM_LOCALSYSTEM_ACCOUNT;
+  else if (!same_account && editing) username = canon = NSSM_LOCALSYSTEM_ACCOUNT;
 
-  if (! virtual_account) {
-    if (well_known_username(canon)) password = _T("");
-    else {
-      if (grant_logon_as_service(canon)) {
-        if (canon != username) HeapFree(GetProcessHeap(), 0, canon);
-        print_message(stderr, NSSM_MESSAGE_GRANT_LOGON_AS_SERVICE_FAILED, username);
-        return 5;
-      }
+  // The account and password go in the final SCM write. An old password cannot be recovered.
+  const bool needs_right = !virtual_account && canon && !well_known_username(canon);
+  if (canon && !virtual_account && !needs_right) password = _T("");
+  registry_edit changes(service);
+  text_buffer<VALUE_LENGTH> previous_description;
+  bool description_changed = false, granted = false;
+  int result = 0;
+  bool update_description = service->original ? _tcscmp(service->original->description, service->description) != 0 :
+                            (editing || service->description[0]);
+  if (editing && update_description) {
+    if (!previous_description.get() || get_service_description(service->name, service->handle,
+        previous_description.size(), previous_description.get())) {
+      _tcscpy_s(service->edit_error, _T("Description"));
+      result = 5;
+    }
+    else update_description = _tcscmp(previous_description.get(), service->description) != 0;
+  }
+  if (!result && !service->native && create_parameters(service, editing, &changes)) {
+    print_message(stderr, NSSM_MESSAGE_CREATE_PARAMETERS_FAILED);
+    result = 6;
+  }
+  if (!result && !service->native && stage_hooks && stage_hooks(service->name, &changes)) result = 6;
+  if (!result && changes.apply()) result = 6;
+  if (!result && update_description) {
+    if (set_service_description(service->name, service->handle, service->description)) {
+      _tcscpy_s(service->edit_error, _T("Description"));
+      result = 5;
+    }
+    else description_changed = true;
+  }
+  if (!result && needs_right && grant_logon_as_service(canon, &granted)) {
+    print_message(stderr, NSSM_MESSAGE_GRANT_LOGON_AS_SERVICE_FAILED, username);
+    _tcscpy_s(service->edit_error, NSSM_LOGON_AS_SERVICE_RIGHT);
+    result = 5;
+  }
+  if (!result) {
+    int error = change_service_startup(service->name, service->handle, service->startup, service->type,
+                                       dependencies.data(), canon, password, service->displayname);
+    if (error) {
+      _tcscpy_s(service->edit_error, _T("Service Control Manager"));
+      if (error == 2) _tcscpy_s(service->rollback_errors, _T("DelayedAutoStart "));
+      if (granted) _tcsncat_s(service->rollback_errors, NSSM_LOGON_AS_SERVICE_RIGHT _T(" "), _TRUNCATE);
+      result = 5;
     }
   }
-
-  int change_error = change_service_startup(service->name, service->handle, service->startup, service->type,
-                                            dependencies.data(), canon, password, service->displayname);
   if (canon != username) HeapFree(GetProcessHeap(), 0, canon);
-  if (change_error) return 5;
-
-  if (service->description[0] || editing) {
-    if (set_service_description(service->name, service->handle, service->description)) return 5;
-  }
-
-  /* Don't mess with parameters which aren't ours. */
-  if (! service->native) {
-    /* Now we need to put the parameters into the registry */
-    if (create_parameters(service, editing)) {
-      print_message(stderr, NSSM_MESSAGE_CREATE_PARAMETERS_FAILED);
-      return 6;
+  if (result) {
+    if (editing && description_changed) {
+      text_buffer<VALUE_LENGTH> current;
+      if (!current.get() || get_service_description(service->name, service->handle, current.size(), current.get()) ||
+          (_tcscmp(current.get(), previous_description.get()) &&
+           (_tcscmp(current.get(), service->description) ||
+            set_service_description(service->name, service->handle, previous_description.get()))))
+        _tcsncat_s(service->rollback_errors, _T("Description "), _TRUNCATE);
     }
-
-    set_service_recovery(service);
+    changes.rollback();
   }
-
-  return 0;
+  else if (!service->native) set_service_recovery(service);
+  return result;
 }
 
 /* Control a service. */

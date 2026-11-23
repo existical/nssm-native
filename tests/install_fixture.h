@@ -12,9 +12,10 @@ BOOL close(SC_HANDLE);
 SC_HANDLE WINAPI create(SC_HANDLE, LPCTSTR, LPCTSTR, DWORD, DWORD, DWORD, DWORD, LPCTSTR, LPCTSTR, LPDWORD, LPCTSTR, LPCTSTR, LPCTSTR);
 BOOL WINAPI change(SC_HANDLE, DWORD, DWORD, DWORD, LPCTSTR, LPCTSTR, LPDWORD, LPCTSTR, LPCTSTR, LPCTSTR, LPCTSTR);
 BOOL WINAPI change2(SC_HANDLE, DWORD, LPVOID);
+BOOL query_description(LPBYTE);
 BOOL query_delayed(LPBYTE);
 BOOL WINAPI remove(SC_HANDLE);
-int parameters(nssm_service_t *, bool);
+int parameters(nssm_service_t *, bool, registry_edit *);
 int popup(HWND, unsigned int, unsigned long, ...);
 }
 void test_install_gui();

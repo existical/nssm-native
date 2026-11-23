@@ -243,7 +243,8 @@ const TCHAR *well_known_username(const TCHAR *username) {
   return well_known;
 }
 
-int grant_logon_as_service(const TCHAR *username) {
+int grant_logon_as_service(const TCHAR *username, bool *added) {
+  if (added) *added = false;
   if (! username) return 0;
   account_policy_t policy;
   if (open_lsa_policy(&policy.value)) return 1;
@@ -278,6 +279,7 @@ int grant_logon_as_service(const TCHAR *username) {
     print_message(stderr, NSSM_MESSAGE_LSAADDACCOUNTRIGHTS_FAILED, error_string(LsaNtStatusToWinError(status)));
     return 5;
   }
+  if (added) *added = true;
   print_message(stdout, NSSM_MESSAGE_GRANTED_LOGON_AS_SERVICE, username);
   return 0;
 }

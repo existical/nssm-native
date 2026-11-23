@@ -12,8 +12,8 @@ static BOOL WINAPI release_icon(HICON icon) {
   return released;
 }
 static bool fail_hook_save;
-static int write_hook(const TCHAR *service, const TCHAR *event, const TCHAR *action, TCHAR *command, bool expand) {
-  return fail_hook_save ? 1 : set_hook(service, event, action, command, expand);
+static int write_hook(const TCHAR *service, const TCHAR *event, const TCHAR *action, TCHAR *command, bool expand, registry_edit *changes) {
+  return fail_hook_save ? 1 : set_hook(service, event, action, command, expand, changes);
 }
 static int token, save_result, fail_after = -1, read_failure;
 static int display_failure, short_read;
@@ -41,10 +41,10 @@ BOOL release(HANDLE h, DWORD f, LPVOID p) {
   return HeapFree(h, f, p);
 }
 BOOL close(SC_HANDLE h) { CHECK(h == borrowed); closes++; return TRUE; }
-static int save(nssm_service_t *s, bool editing) {
-  if (! active) return edit_service(s, editing);
+static int save(nssm_service_t *s, bool editing, int (*hooks)(TCHAR *, registry_edit *)) {
+  if (! active) return edit_service(s, editing, hooks);
   if (! s) return 1;
-  CHECK(s && s->handle == borrowed); CHECK(! closes); saves++; return save_result;
+  CHECK(s && s->handle == borrowed); CHECK(! closes); saves++; return !save_result && hooks && hooks(s->name, NULL) ? 6 : save_result;
 }
 static const TCHAR *well_known(const TCHAR *s) { return active ? known_account : well_known_username(s); }
 static UINT WINAPI text(HWND h, int id, LPTSTR s, int n) {
@@ -355,10 +355,37 @@ void test_gui_retry() {
   SetDlgItemText(tablist[NSSM_TAB_IO], IDC_STDOUT, original.stdout_path);
   nssm_service_t *edited = alloc_nssm_service(); REQUIRE(edited);
   SendDlgItemMessage(tablist[NSSM_TAB_ENVIRONMENT], IDC_ENVIRONMENT_REPLACE, BM_SETCHECK, BST_CHECKED, 0);
-  REQUIRE(configure(window, edited, &original) == 0);
-  REQUIRE(edited->preserve_priority);
-  HKEY priority_key = open_registry(edited->name, KEY_READ | KEY_WRITE);
+  HKEY priority_key = open_registry(_T("NSSM-Test-GUI"), KEY_READ | KEY_WRITE);
   REQUIRE(priority_key);
+  _tcscpy_s(original.exe, L"C:\\fixture.exe");
+  original.launch_types[0] = REG_SZ;
+  REQUIRE(SetDlgItemText(tablist[NSSM_TAB_DETAILS], IDC_DESCRIPTION, L"New description"));
+  REQUIRE(SetDlgItemText(tablist[NSSM_TAB_APPLICATION], IDC_FLAGS, L"temporary"));
+  REQUIRE(SetDlgItemText(tablist[NSSM_TAB_APPLICATION], IDC_FLAGS, L""));
+  REQUIRE(configure(window, edited, &original) == 0);
+  REQUIRE(edited->preserve_priority && !_tcscmp(edited->description, L"New description"));
+  TCHAR *names[] = {NSSM_REG_EXE, NSSM_REG_FLAGS, NSSM_REG_DIR};
+  for (auto name : names) REQUIRE(!set_string(priority_key, name, L"external"));
+  REQUIRE(!create_parameters(edited, true));
+  TCHAR actual[64];
+  for (auto name : names) {
+    REQUIRE(!get_string(priority_key, name, actual, sizeof(actual), false));
+    CHECK(!_tcscmp(actual, L"external"));
+  }
+  _tcscpy_s(edited->exe, L"requested");
+  CHECK(create_parameters(edited, true) && !_tcscmp(edited->edit_error, NSSM_REG_EXE));
+  REQUIRE(!set_expand_string(priority_key, NSSM_REG_EXE, original.exe));
+  CHECK(create_parameters(edited, true)); // Only the stored type differs from the original.
+  original.launch_types[0] = REG_EXPAND_SZ; // Reload and retry.
+  REQUIRE(!create_parameters(edited, true));
+  REQUIRE(!create_parameters(edited, true)); // Another writer already installed the requested value.
+  REQUIRE(!get_string(priority_key, NSSM_REG_EXE, actual, sizeof(actual), false));
+  CHECK(!_tcscmp(actual, edited->exe));
+  _tcscpy_s(original.flags, L"external");
+  original.launch_types[1] = REG_SZ;
+  REQUIRE(!create_parameters(edited, true));
+  REQUIRE(!get_string(priority_key, NSSM_REG_FLAGS, actual, sizeof(actual), false));
+  CHECK(!*actual);
   for (DWORD stored : {static_cast<DWORD>(HIGH_PRIORITY_CLASS), 12345UL}) {
     REQUIRE(!set_number(priority_key, NSSM_REG_PRIORITY, stored));
     REQUIRE(!create_parameters(edited, true));

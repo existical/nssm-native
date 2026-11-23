@@ -110,8 +110,38 @@ static result run(const std::wstring &exe, const std::wstring &arguments, bool r
 
 #include "dependencies_live_cases.h"
 #include "controls_live_cases.h"
+#include "edit_live_cases.h"
 #include "lifecycle_live_cases.h"
 #include "upgrade_live_cases.h"
+
+// The GUI acceptance run needs a desktop shared by the test and the editor.
+static int editor_test(const std::wstring &nssm) {
+  SC_HANDLE manager = OpenSCManagerW(NULL, NULL, SC_MANAGER_CONNECT | SC_MANAGER_CREATE_SERVICE);
+  if (!manager) return 1;
+  try {
+    {
+      service_fixture source(manager, nssm, L"edit"), other(manager, nssm, L"other");
+      source.configure(nssm);
+      edit_live::rejected_edits(nssm, source, other.name);
+      for (int account : {IDC_VIRTUAL_SERVICE, IDC_LOCALSYSTEM}) {
+        edit_live::editor editor(nssm, source.name);
+        editor.open();
+        SendMessageW(editor.field(account), BM_CLICK, 0, 0);
+        editor.save(true);
+        result selected = run(nssm, L"get " + quoted(source.name) + L" ObjectName");
+        require(!selected.code && selected.output.find(account == IDC_LOCALSYSTEM ? L"LocalSystem" : source.name) != std::wstring::npos,
+                "Read back the account selected in the editor");
+      }
+    }
+  }
+  catch (const std::exception &error) {
+    fprintf(stderr, "Editor test failed: %s\n", error.what());
+    CloseServiceHandle(manager);
+    return 1;
+  }
+  CloseServiceHandle(manager);
+  return service_fixture::cleanup_failed ? 1 : lifecycle_live::test(nssm, true);
+}
 
 int wmain(int argc, wchar_t **argv) {
   if (argc == 4 && ! wcscmp(argv[1], L"--upgrade-stop")) return upgrade_live::stop(argv[2]);
@@ -121,6 +151,7 @@ int wmain(int argc, wchar_t **argv) {
   if (argc == 5 && ! wcscmp(argv[1], L"--wrapped-hook")) return lifecycle_live::hook(argv[2], argv[3], argv[4]);
   if (argc == 3 && ! wcscmp(argv[2], L"lifecycle")) return lifecycle_live::test(argv[1]);
   if (argc == 4 && ! wcscmp(argv[1], L"--control-service")) return control_live::host(argv[2], argv[3]);
+  if (argc == 3 && !wcscmp(argv[2], L"editor")) return editor_test(argv[1]);
   if (argc == 3 && ! wcscmp(argv[2], L"controls")) return control_live::test(argv[1]);
   if (argc == 3 && ! wcscmp(argv[2], L"dependencies")) return dependencies_live(argv[1]);
   SC_HANDLE manager = NULL;
@@ -168,9 +199,21 @@ int wmain(int argc, wchar_t **argv) {
       const std::wstring unicode = L"\u96ea\u03a9";
       service_fixture::set(source.key, L"AppParameters", unicode, REG_SZ);
       const wchar_t empty_environment[2] = {};
-      const wchar_t repeated[] = L"MODE=first value\0OTHER=one & two\0mode=last\0";
+      for (const wchar_t *setting : {L"AppEnvironment", L"AppEnvironmentExtra", L"Environment"}) {
+        auto command = [&](const wchar_t *verb, const wchar_t *args) {
+          return run(argv[1], std::wstring(verb) + L" " + quoted(source.name) + L" " + setting + L" " + args);
+        };
+        require(!command(L"set", L":NSSM_\u00c4=first NSSM_\u00c4X=prefix NSSM_\u00e4=last").code, "Store Unicode duplicates");
+        for (const wchar_t *key : {L"NSSM_\u00c4", L"NSSM_\u00e4"})
+          require(command(L"get", key).output.find(L"last") != std::wstring::npos, "Read Unicode assignment through either spelling");
+        require(!command(L"set", L"+NSSM_\u00c4=a=b").code && !command(L"set", L"-NSSM_\u00e4=A=B").code, "Update key and retain case-sensitive value");
+        require(command(L"get", L"NSSM_\u00e4").output.find(L"a=b") != std::wstring::npos, "Read value containing equals");
+        require(!command(L"set", L"-NSSM_\u00e4=a=b").code, "Remove matching value");
+        require(!command(L"set", L"+NSSM_\u00e4=").code, "Append empty value");
+        require(command(L"get", L"NSSM_\u00c4X").output.find(L"prefix") != std::wstring::npos, "Preserve longer key");
+      }
+      const wchar_t repeated[] = L"NSSM_\u00c4=first value\0OTHER=one & two\0NSSM_\u00e4=last\0";
       require(RegSetValueExW(source.key, L"AppEnvironmentExtra", 0, REG_MULTI_SZ, (const BYTE *)repeated, sizeof(repeated)) == ERROR_SUCCESS, "Store repeated environment keys");
-      require(run(argv[1], L"get " + quoted(source.name) + L" AppEnvironmentExtra MODE").output.find(L"last") != std::wstring::npos, "Read the last assignment");
       require(RegSetValueExW(source.key, L"AppEnvironment", 0, REG_MULTI_SZ, (const BYTE *)empty_environment, sizeof(empty_environment)) == ERROR_SUCCESS, "Write empty replacement environment");
       source.query_only();
       require(run(argv[1], L"status " + quoted(source.name)).code != 0, "Named status requires service query-status access");

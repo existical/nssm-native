@@ -48,7 +48,21 @@ HKEY open_registry(const TCHAR *, const TCHAR *, REGSAM sam);
 HKEY open_registry(const TCHAR *, REGSAM sam);
 long enumerate_registry_values(HKEY, unsigned long *, TCHAR *, unsigned long);
 int create_messages();
-int create_parameters(nssm_service_t *, bool);
+class registry_edit {
+  struct change;
+  change *first = NULL, *last = NULL;
+  nssm_service_t *service;
+  registry_edit(const registry_edit &) = delete;
+  registry_edit &operator=(const registry_edit &) = delete;
+public:
+  explicit registry_edit(nssm_service_t *s) : service(s) {}
+  ~registry_edit();
+  long stage(HKEY, const TCHAR *name, DWORD type, const BYTE *data, DWORD bytes, const TCHAR *section = NULL,
+             const TCHAR *original = NULL, DWORD original_type = REG_NONE);
+  long apply();
+  void rollback();
+};
+int create_parameters(nssm_service_t *, bool, registry_edit * = NULL);
 int create_exit_action(TCHAR *, const TCHAR *, bool);
 int get_environment(TCHAR *, HKEY, TCHAR *, TCHAR **, unsigned long *);
 /* Count through the first double NUL within a supplied character capacity. */
@@ -68,7 +82,7 @@ int get_number(HKEY, TCHAR *, unsigned long *);
 int format_double_null(TCHAR *, unsigned long, TCHAR **, unsigned long *);
 int unformat_double_null(TCHAR *, unsigned long, TCHAR **, unsigned long *);
 int copy_double_null(TCHAR *, unsigned long, TCHAR **);
-int append_to_double_null(TCHAR *, unsigned long, TCHAR **, unsigned long *, TCHAR *, size_t, bool);
+int append_to_double_null(TCHAR *, unsigned long, TCHAR **, unsigned long *, TCHAR *, size_t, bool, int (*compare)(const TCHAR *, const TCHAR *, size_t) = NULL);
 int remove_from_double_null(TCHAR *, unsigned long, TCHAR **, unsigned long *, TCHAR *, size_t, bool);
 void override_milliseconds(TCHAR *, HKEY, TCHAR *, unsigned long *, unsigned long, unsigned long);
 int get_io_parameters(nssm_service_t *, HKEY, bool = true);
@@ -76,7 +90,7 @@ int get_parameters(nssm_service_t *, STARTUPINFO *);
 int get_exit_action(const TCHAR *, unsigned long *, TCHAR *, bool *);
 /* Read one explicit REG_SZ action. Output is Restart on any error. */
 long query_exit_action(HKEY, const TCHAR *, TCHAR *);
-int set_hook(const TCHAR *, const TCHAR *, const TCHAR *, TCHAR *, bool = true);
+int set_hook(const TCHAR *, const TCHAR *, const TCHAR *, TCHAR *, bool = true, registry_edit * = NULL);
 int get_hook(const TCHAR *, const TCHAR *, const TCHAR *, TCHAR *, unsigned long, bool = true, unsigned long * = 0);
 
 #endif

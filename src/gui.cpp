@@ -541,13 +541,17 @@ static void set_hook_tab(int event_index, int action_index) {
   }
 }
 
-static int update_hooks(TCHAR *service_name) {
+static int stage_hooks(TCHAR *service_name, registry_edit *changes) {
   for (size_t i = 0; i < _countof(hook_names); i++) {
     hook_draft_t &draft = hook_drafts[i];
     if (draft.edited && (draft.read_failed ||
-        set_hook(service_name, hook_names[i].event, hook_names[i].action, draft.command, draft.type != REG_SZ))) return 1;
+        set_hook(service_name, hook_names[i].event, hook_names[i].action, draft.command, draft.type != REG_SZ, changes))) return 1;
   }
   return 0;
+}
+
+static int update_hooks(TCHAR *service_name) {
+  return stage_hooks(service_name, NULL);
 }
 
 static bool check_io(HWND owner, TCHAR *name, TCHAR *buffer, int len, int control) {
@@ -599,6 +603,7 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
     service->stderr_flags = orig_service->stderr_flags;
     service->stderr_type = orig_service->stderr_type;
     service->native = orig_service->native;
+    service->original = orig_service;
   }
 
   /* Get service name. */
@@ -1052,9 +1057,16 @@ int edit(HWND window, nssm_service_t *orig_service) {
     /* Borrow only during the save; the dialog retains ownership on failure. */
     service->handle = orig_service->handle;
   }
-  int result = edit_service(service, true);
+  int result = edit_service(service, true, stage_hooks);
   if (service) service->handle = 0;
 
+  if (result && (service->edit_error[0] || service->rollback_errors[0])) {
+    popup_message(window, MB_OK | MB_ICONEXCLAMATION, service->rollback_errors[0] ? NSSM_GUI_EDIT_PARTIAL : NSSM_GUI_EDIT_DETAIL, service->edit_error,
+                  service->rollback_errors);
+    if (service->rollback_errors[0]) EnableWindow(GetDlgItem(window, IDOK), FALSE);
+    cleanup_nssm_service(service);
+    return 6;
+  }
   switch (result) {
     case 1:
       popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_EVENT_OUT_OF_MEMORY, _T("service"), _T("edit()"));
@@ -1076,12 +1088,6 @@ int edit(HWND window, nssm_service_t *orig_service) {
       popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_EDIT_PARAMETERS_FAILED);
       cleanup_nssm_service(service);
       return 6;
-  }
-
-  if (!service->native && update_hooks(service->name)) {
-    popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_HOOK_SAVE_FAILED);
-    cleanup_nssm_service(service);
-    return 6;
   }
 
   popup_message(window, MB_OK, NSSM_MESSAGE_SERVICE_EDITED, service->name);
@@ -1504,6 +1510,7 @@ INT_PTR CALLBACK nssm_dlg(HWND window, UINT message, WPARAM w, LPARAM l) {
       switch (LOWORD(w)) {
         /* OK button */
         case IDOK:
+          if (!IsWindowEnabled(GetDlgItem(window, IDOK))) break;
           if ((int) GetWindowLongPtr(window, GWLP_USERDATA) == IDD_EDIT) {
             if (! edit(window, (nssm_service_t *) GetWindowLongPtr(window, DWLP_USER))) PostQuitMessage(0);
           }

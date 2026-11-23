@@ -99,21 +99,21 @@ static void finish() {
 void test_dependencies() {
   using namespace dependency_test;
   registry_fixture registry;
-  for (unsigned scenario = 0; scenario < 3; ++scenario) {
+  for (unsigned scenario = 0; scenario < 4; ++scenario) {
     reset({_T("OriginalDependency")});
-    install_test::reset(4); // Accept description and delayed-start writes after a successful edit.
+    install_test::reset(scenario == 3 ? 3 : 4); // Accept description and delayed-start writes after a successful edit.
     editing = true; startup = SERVICE_DEMAND_START; display_name = L"Original";
     fail_change = scenario == 1;
     nssm_service_t *service = alloc_nssm_service();
     REQUIRE(service);
-    service->native = true;
+    service->native = scenario != 3;
     service->startup = NSSM_STARTUP_DISABLED;
     _tcscpy_s(service->displayname, _T("Changed"));
     TCHAR valid[] = _T("ServiceA\0"), invalid[] = _T("MissingDependency\0");
     service->dependencies = scenario ? valid : invalid;
     service->dependencieslen = scenario ? _countof(valid) : _countof(invalid);
-    CHECK(edit_service(service, true) == (scenario == 2 ? 0 : 5));
-    CHECK(writes == (scenario ? 1U : 0U));
+    CHECK(edit_service(service, true) == (scenario == 3 ? 6 : scenario == 2 ? 0 : 5));
+    CHECK(writes == (scenario == 1 || scenario == 2 ? 1U : 0U));
     if (scenario == 2) {
       expect({_T("ServiceA")}); CHECK(startup == SERVICE_DISABLED && display_name == L"Changed");
     }

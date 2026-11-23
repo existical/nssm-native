@@ -561,7 +561,7 @@ static int setting_get_environment(const TCHAR *service_name, void *param, const
     size_t len = _tcslen(additional);
     const TCHAR *last = NULL;
     for (s = env; *s; s += _tcslen(s) + 1)
-      if (!_tcsnicmp(s, additional, len) && s[len] == _T('=')) last = s + len + 1;
+      if (_tcslen(s) > len && s[len] == _T('=') && !compare_environment_key(s, additional, len)) last = s + len + 1;
     ret = last ? value_from_string(name, value, last) : 0;
     HeapFree(GetProcessHeap(), 0, env);
     return ret;
@@ -592,7 +592,7 @@ static int environment_has_duplicates(const TCHAR *block) {
   }
   auto less = [](const key_t &a, const key_t &b) {
     if (a.length != b.length) return a.length < b.length;
-    return _tcsnicmp(a.text, b.text, a.length) < 0;
+    return compare_environment_key(a.text, b.text, a.length) < 0;
   };
   std::sort(keys.get(), keys.get() + count, less);
   for (i = 1; i < count; ++i)
