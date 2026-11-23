@@ -212,7 +212,7 @@ int wmain(int argc, wchar_t **argv) {
         require(!command(L"set", L"+NSSM_\u00e4=").code, "Append empty value");
         require(command(L"get", L"NSSM_\u00c4X").output.find(L"prefix") != std::wstring::npos, "Preserve longer key");
       }
-      const wchar_t repeated[] = L"NSSM_\u00c4=first value\0OTHER=one & two\0NSSM_\u00e4=last\0";
+      const wchar_t repeated[] = L"NSSM_\u00c4=first value\0OTHER=one & two\0NSSM_COPY=%NSSM_\u00c4%\0NSSM_\u00e4=last\0";
       require(RegSetValueExW(source.key, L"AppEnvironmentExtra", 0, REG_MULTI_SZ, (const BYTE *)repeated, sizeof(repeated)) == ERROR_SUCCESS, "Store repeated environment keys");
       require(RegSetValueExW(source.key, L"AppEnvironment", 0, REG_MULTI_SZ, (const BYTE *)empty_environment, sizeof(empty_environment)) == ERROR_SUCCESS, "Write empty replacement environment");
       source.query_only();

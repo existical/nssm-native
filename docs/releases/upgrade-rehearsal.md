@@ -59,7 +59,18 @@ cmake --build --preset windows-x64-release --parallel
 ctest --preset windows-x64-release -R '^nssm.upgrade_live$'
 ```
 
-The output directory must not already exist. Ordinary builds keep SCM tests
+The legacy build output directory must be new.
+
+On an elevated, logged-in Windows desktop, run the editor acceptance separately
+against the candidate you intend to ship. It opens the actual editor for
+disposable services, submits account and launch changes, verifies rollback after
+SCM and registry errors, then starts the application selected by a second writer.
+
+```powershell
+& .\build\windows-x64\tests\Release\nssm_export_live.exe (Resolve-Path .\build\windows-x64\bin\Release\nssm.exe).Path editor
+```
+
+Ordinary builds keep SCM tests
 disabled. In CI, only matrix x64 Release supplies the legacy executable and
 runs this additional group (42 groups total). With SCM tests enabled, the packager builds the legacy executable
 from the full checkout before testing the archived source. The packaged x64

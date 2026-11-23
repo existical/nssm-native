@@ -137,9 +137,9 @@ static int test(const std::wstring &nssm, bool edit = false) {
         fixture owned(manager, nssm, dir.path);
         // Bootstrap Parameters/Application so NSSM recognises its own service
         // before using the public setting commands. The service stays disabled.
-        owned.configure(nssm);
+        owned.configure(edit ? nssm : helper);
         const std::wstring set = L"set " + quoted(owned.name) + L" ";
-        {
+        if (edit) {
           edit_live::editor editor(nssm, owned.name);
           editor.open();
           editor.set(IDC_DESCRIPTION, L"Concurrent deployment");

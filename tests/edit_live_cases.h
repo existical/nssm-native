@@ -6,6 +6,7 @@ struct editor {
   HWND window = NULL;
   explicit editor(const std::wstring &nssm, const std::wstring &name) {
     STARTUPINFOW si = {}; si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW; si.wShowWindow = SW_SHOWNORMAL;
     std::wstring command = quoted(nssm) + L" edit " + quoted(name);
     require(CreateProcessW(nssm.c_str(), &command[0], NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &process) != FALSE,
             "Open fixture editor");
@@ -20,8 +21,12 @@ struct editor {
   struct search { HWND owner, found; };
   static BOOL CALLBACK find_window(HWND h, LPARAM parameter) {
     search &s = *reinterpret_cast<search *>(parameter);
-    if (!IsWindowVisible(h) || GetWindow(h, GW_OWNER) != s.owner || !GetDlgItem(h, IDOK)) return TRUE;
-    if (!s.owner && !GetDlgItem(h, IDC_NAME)) return TRUE;
+    wchar_t kind[32];
+    if (!GetClassNameW(h, kind, _countof(kind)) || wcscmp(kind, L"#32770")) return TRUE;
+    if (s.owner) {
+      if (h == s.owner || !IsWindowEnabled(h) || !GetWindow(h, GW_OWNER)) return TRUE;
+    }
+    else if (!GetDlgItem(h, IDC_NAME) || GetWindowLongPtrW(h, GWLP_USERDATA) != IDD_EDIT) return TRUE;
     s.found = h;
     return FALSE;
   }
@@ -66,8 +71,14 @@ struct editor {
   }
   void save(bool success) {
     require(PostMessageW(window, WM_COMMAND, IDOK, 0) != FALSE, "Submit service edit");
-    require(PostMessageW(wait_window(window), WM_COMMAND, IDOK, 0) != FALSE, "Dismiss result");
-    if (!success) PostMessageW(window, WM_COMMAND, IDCANCEL, 0);
+    HWND result = wait_window(window);
+    require(PostMessageW(result, WM_CLOSE, 0, 0) != FALSE, "Dismiss result");
+    if (!success) {
+      ULONGLONG end = GetTickCount64() + 5000;
+      while (IsWindow(result) && GetTickCount64() < end) Sleep(20);
+      require(!IsWindow(result) && IsWindowEnabled(window), "Failed save retained the editor");
+      PostMessageW(window, WM_COMMAND, IDCANCEL, 0);
+    }
     require(WaitForSingleObject(process.hProcess, 8000) == WAIT_OBJECT_0, "Editor closed");
   }
 };

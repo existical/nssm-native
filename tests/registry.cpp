@@ -276,9 +276,27 @@ static void test_parameter_saves() {
   test_hook_rollback(service);
   REQUIRE(! set_number(key, _T("VendorSetting"), 13));
   _tcscpy_s(service->exe, _T("new.exe")); _tcscpy_s(service->flags, _T("-v"));
-  registry_test::reject_write = NSSM_REG_FLAGS;
-  CHECK(create_parameters(service, true) != 0);
-  registry_test::reject_write = NULL;
+  for (const TCHAR *rejected : {NSSM_REG_EXE, NSSM_REG_FLAGS}) {
+    registry_test::reject_write = rejected;
+    CHECK(create_parameters(service, true) != 0);
+    registry_test::reject_write = NULL;
+  }
+  {
+    const BYTE original[] = {0x41, 0, 0xff, 0};
+    REQUIRE(!RegSetValueExW(key, L"Raw", 0, REG_BINARY, original, sizeof(original)));
+    registry_edit edit(service);
+    REQUIRE(!edit.stage(key, L"Raw", REG_NONE, NULL, 0));
+    REQUIRE(!edit.stage(key, L"Introduced", REG_NONE, original, 0));
+    REQUIRE(!edit.stage(key, L"Denied", REG_BINARY, original, sizeof(original)));
+    registry_test::reject_write = L"Denied";
+    REQUIRE(edit.apply() == ERROR_ACCESS_DENIED);
+    edit.rollback();
+    registry_test::reject_write = NULL;
+    BYTE actual[sizeof(original)]; DWORD bytes = sizeof(actual), type = REG_NONE;
+    REQUIRE(!RegQueryValueExW(key, L"Raw", NULL, &type, actual, &bytes));
+    CHECK(type == REG_BINARY && bytes == sizeof(original) && !memcmp(original, actual, bytes));
+    CHECK(RegQueryValueExW(key, L"Introduced", NULL, NULL, NULL, NULL) == ERROR_FILE_NOT_FOUND);
+  }
   TCHAR exe[32]; DWORD number;
   CHECK(! get_string(key, NSSM_REG_EXE, exe, sizeof(exe), false) && ! _tcscmp(exe, _T("old.exe")));
   CHECK(get_number(key, _T("VendorSetting"), &number) == 1 && number == 13);
