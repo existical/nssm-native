@@ -1,5 +1,7 @@
 # Preparing NSSM Native releases
 
+The [2.25.0 stable release](v2.25.0.md) includes the beta series, the service editor fixes, and Windows 11 acceptance evidence.
+
 The [fifth beta](v2.25.0-beta.5.md) fixes service configuration edits, environment export, console handling and supervision.
 The [fourth beta](v2.25.0-beta.4.md) fixes startup checkpoint reporting, environment handling, rotation retries and package verification.
 The [third beta](v2.25.0-beta.3.md) includes the subsequent logging, configuration and service-management repairs.

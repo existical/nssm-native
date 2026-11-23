@@ -14,10 +14,11 @@ the [implementation plan](docs/remediation-plan.md) for review findings and thei
 and [comparing builds](docs/comparing-builds.md) for exact legacy baselines,
 behavior differences and release identification.
 
-The fifth public beta fixes startup configuration edits, preserves repeated environment
-assignments during export and improves service supervision. For 64-bit Windows use the x64 Release ZIP.
-The release also provides x86 and Debug builds, symbols, source and SHA-256
-checksums. The executables are unsigned. [Beta.5 downloads](https://github.com/existical/nssm-native/releases/tag/v2.25.0-beta.5) · [Release notes](docs/releases/v2.25.0-beta.5.md)
+NSSM Native 2.25.0 preserves concurrent service configuration changes during GUI
+edits and improves service supervision, logging, and configuration export.
+For 64-bit Windows, use the x64 Release ZIP. The release also provides x86 and
+Debug builds, symbols, source and SHA-256 checksums. The executables are unsigned.
+[Stable downloads](https://github.com/existical/nssm-native/releases/tag/v2.25.0) · [Release notes](docs/releases/v2.25.0.md)
 
 ## Build
 

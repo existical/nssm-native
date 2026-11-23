@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.25.0
+
+- Preserve concurrent changes to untouched service settings during GUI saves. Detect conflicting launch-field edits and report incomplete rollback after rejected saves.
+- Match non-ASCII environment variable names consistently with Windows during lookup and editing. [Stable release notes](docs/releases/v2.25.0.md)
+
 ## 2.25.0-beta.5
 
 - Preserve startup configuration when dependency validation or delayed-start changes fail. Report boot-start and system-start drivers correctly.
