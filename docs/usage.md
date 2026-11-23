@@ -353,9 +353,10 @@ could not be read. Existing values that earlier edits already expanded cannot
 be reconstructed automatically. CLI hook get/dump behavior is unchanged.
 See [NSSM-034](fixes/NSSM-034.md) for test evidence and limitations.
 
-When two operators edit the same service, saving the GUI preserves concurrent
-changes to Application, AppParameters and AppDirectory if the dialog still
-shows the original values. If both operators changed the same field to
+Saving a description from an open editor preserves changes another operator
+made to startup, dependencies, display name, service account, launch settings,
+environment blocks and other untouched parameters. For Application,
+AppParameters and AppDirectory, if both operators changed the same field to
 different values or changed its registry type, reopen the editor to load the
 current configuration and reapply the intended edit.
 

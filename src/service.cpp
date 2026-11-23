@@ -757,25 +757,28 @@ int get_service_description(const TCHAR *service_name, SC_HANDLE service_handle,
 int change_service_startup(const TCHAR *name, SC_HANDLE handle, unsigned long choice, DWORD type,
                           const TCHAR *dependencies, const TCHAR *account, const TCHAR *password, const TCHAR *display) {
   DWORD start = SERVICE_AUTO_START;
-  if (choice == NSSM_STARTUP_MANUAL) start = SERVICE_DEMAND_START;
+  if (choice == SERVICE_NO_CHANGE) start = SERVICE_NO_CHANGE;
+  else if (choice == NSSM_STARTUP_MANUAL) start = SERVICE_DEMAND_START;
   else if (choice == NSSM_STARTUP_DISABLED) start = SERVICE_DISABLED;
 
   SERVICE_DELAYED_AUTO_START_INFO old = {}, desired = {choice == NSSM_STARTUP_DELAYED};
   DWORD required;
   bool changed = false;
-  if (!QueryServiceConfig2(handle, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, (BYTE *)&old, sizeof(old), &required)) {
-    DWORD error = GetLastError();
-    if (error != ERROR_INVALID_LEVEL || desired.fDelayedAutostart) {
-      print_message(stderr, NSSM_MESSAGE_QUERYSERVICECONFIG2_FAILED, name, _T("SERVICE_CONFIG_DELAYED_AUTO_START_INFO"), error_string(error));
-      return 1;
+  if (choice != SERVICE_NO_CHANGE) {
+    if (!QueryServiceConfig2(handle, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, (BYTE *)&old, sizeof(old), &required)) {
+      DWORD error = GetLastError();
+      if (error != ERROR_INVALID_LEVEL || desired.fDelayedAutostart) {
+        print_message(stderr, NSSM_MESSAGE_QUERYSERVICECONFIG2_FAILED, name, _T("SERVICE_CONFIG_DELAYED_AUTO_START_INFO"), error_string(error));
+        return 1;
+      }
     }
-  }
-  else if (!!old.fDelayedAutostart != !!desired.fDelayedAutostart) {
-    if (!ChangeServiceConfig2(handle, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, &desired)) {
-      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SERVICE_CONFIG_DELAYED_AUTO_START_INFO_FAILED, name, error_string(GetLastError()));
-      return 1;
+    else if (!!old.fDelayedAutostart != !!desired.fDelayedAutostart) {
+      if (!ChangeServiceConfig2(handle, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, &desired)) {
+        log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SERVICE_CONFIG_DELAYED_AUTO_START_INFO_FAILED, name, error_string(GetLastError()));
+        return 1;
+      }
+      changed = true;
     }
-    changed = true;
   }
   if (ChangeServiceConfig(handle, type, start, SERVICE_NO_CHANGE, NULL, NULL, NULL, dependencies, account, password, display)) return 0;
   DWORD error = GetLastError();
@@ -1440,13 +1443,22 @@ int install_service(nssm_service_t *service, int (*save_hooks)(TCHAR *)) {
   return 0;
 }
 
+static const TCHAR *dependency_list(const nssm_service_t *service) {
+  if (!service || !service->dependencieslen || !service->dependencies || !*service->dependencies) return NULL;
+  return service->dependencies;
+}
+
 /* Edit the service. */
 int edit_service(nssm_service_t *service, bool editing, int (*stage_hooks)(TCHAR *, registry_edit *)) {
   if (! service) return 1;
 
   service->edit_error[0] = service->rollback_errors[0] = 0;
+  const nssm_service_t *original = editing ? service->original : NULL;
+  const TCHAR *requested_dependencies = dependency_list(service);
+  const bool update_dependencies = !original || !same_double_null(requested_dependencies, service->dependencieslen,
+                                                                  dependency_list(original), original->dependencieslen);
   resolved_dependencies_t dependencies;
-  if (resolve_service_dependencies(service->name, service->dependencieslen ? service->dependencies : NULL, dependencies)) return 5;
+  if (update_dependencies && resolve_service_dependencies(service->name, requested_dependencies, dependencies)) return 5;
 
   /*
     The only two valid flags for service type are SERVICE_WIN32_OWN_PROCESS
@@ -1519,9 +1531,12 @@ int edit_service(nssm_service_t *service, bool editing, int (*stage_hooks)(TCHAR
     _tcscpy_s(service->edit_error, NSSM_LOGON_AS_SERVICE_RIGHT);
     result = 5;
   }
-  if (!result) {
-    int error = change_service_startup(service->name, service->handle, service->startup, service->type,
-                                       dependencies.data(), canon, password, service->displayname);
+  DWORD startup = original && service->startup == original->startup ? SERVICE_NO_CHANGE : service->startup;
+  DWORD type = original && !((service->type ^ original->type) & SERVICE_INTERACTIVE_PROCESS) ? SERVICE_NO_CHANGE : service->type;
+  const TCHAR *display = original && !_tcscmp(service->displayname, original->displayname) ? NULL : service->displayname;
+  if (!result && (startup != SERVICE_NO_CHANGE || type != SERVICE_NO_CHANGE || update_dependencies || canon || display)) {
+    int error = change_service_startup(service->name, service->handle, startup, type,
+                                       update_dependencies ? dependencies.data() : NULL, canon, password, display);
     if (error) {
       _tcscpy_s(service->edit_error, _T("Service Control Manager"));
       if (error == 2) _tcscpy_s(service->rollback_errors, _T("DelayedAutoStart "));

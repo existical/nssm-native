@@ -66,6 +66,7 @@ int create_parameters(nssm_service_t *, bool, registry_edit * = NULL);
 int create_exit_action(TCHAR *, const TCHAR *, bool);
 int get_environment(TCHAR *, HKEY, TCHAR *, TCHAR **, unsigned long *);
 /* Count through the first double NUL within a supplied character capacity. */
+bool same_double_null(const TCHAR *, DWORD, const TCHAR *, DWORD);
 bool double_null_length(const TCHAR *, unsigned long, unsigned long *);
 /* String capacities are bytes; successful results include a terminating TCHAR. */
 int get_string(HKEY, TCHAR *, TCHAR *, unsigned long, bool, bool, bool, unsigned long * = 0);

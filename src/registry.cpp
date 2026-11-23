@@ -254,11 +254,30 @@ static int delete_parameter(registry_edit *edit, HKEY key, const TCHAR *name) {
   return edit->stage(key, name, REG_NONE, NULL, 0) != 0;
 }
 
+static int save_option(registry_edit *edit, HKEY key, const TCHAR *name, DWORD value, DWORD fallback, bool editing) {
+  if (value != fallback) return save_number(edit, key, name, value);
+  return editing ? delete_parameter(edit, key, name) : 0;
+}
+
+template<class T>
+static int save_changed_option(registry_edit *edit, HKEY key, const TCHAR *name, const nssm_service_t *service,
+                               T nssm_service_t::*field, DWORD fallback, bool editing) {
+  if (editing && service->original && service->*field == service->original->*field) return 0;
+  return save_option(edit, key, name, static_cast<DWORD>(service->*field), fallback, editing);
+}
+
+static int save_environment(registry_edit *edit, HKEY key, const TCHAR *name, const TCHAR *value, DWORD count,
+                            bool editing) {
+  if (!value) return editing ? delete_parameter(edit, key, name) : 0;
+  LONG error = edit->stage(key, name, REG_MULTI_SZ, reinterpret_cast<const BYTE *>(value), count * sizeof(TCHAR));
+  if (error) log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, name, error_string(error));
+  return error != ERROR_SUCCESS;
+}
+
 static int save_io_option(registry_edit *edit, HKEY key, TCHAR *stream, TCHAR *option, DWORD value, DWORD fallback, bool editing) {
   TCHAR name[NSSM_STDIO_LENGTH];
   if (_sntprintf_s(name, _countof(name), _TRUNCATE, _T("%s%s"), stream, option) < 0) return 1;
-  if (value != fallback) return save_number(edit, key, name, value);
-  return editing ? delete_parameter(edit, key, name) : 0;
+  return save_option(edit, key, name, value, fallback, editing);
 }
 
 static int save_io_path(registry_edit *edit, HKEY key, TCHAR *name, TCHAR *path, DWORD type, bool editing) {
@@ -289,19 +308,22 @@ int create_parameters(nssm_service_t *service, bool editing, registry_edit *exte
     if (service->priority != NORMAL_PRIORITY_CLASS) errors += save_number(edit, key, NSSM_REG_PRIORITY, service->priority);
     else if (editing) errors += delete_parameter(edit, key, NSSM_REG_PRIORITY);
   }
-  if (service->affinity) {
-    TCHAR *string = NULL;
-    if (affinity_mask_to_string(service->affinity, &string)) errors++;
-    else {
-      errors += save_string(edit, key, NSSM_REG_AFFINITY, string);
-      HeapFree(GetProcessHeap(), 0, string);
+  const nssm_service_t *original = editing ? service->original : NULL;
+  if (!original || service->affinity != original->affinity) {
+    if (service->affinity) {
+      TCHAR *string = NULL;
+      if (affinity_mask_to_string(service->affinity, &string)) errors++;
+      else {
+        errors += save_string(edit, key, NSSM_REG_AFFINITY, string);
+        HeapFree(GetProcessHeap(), 0, string);
+      }
     }
+    else if (editing) errors += delete_parameter(edit, key, NSSM_REG_AFFINITY);
   }
-  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_AFFINITY);
-  unsigned long stop_method_skip = ~service->stop_method;
-  if (stop_method_skip) errors += save_number(edit, key, NSSM_REG_STOP_METHOD_SKIP, stop_method_skip);
-  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_STOP_METHOD_SKIP);
-  if (service->default_exit_action < NSSM_NUM_EXIT_ACTIONS) {
+  if (!original || service->stop_method != original->stop_method)
+    errors += save_option(edit, key, NSSM_REG_STOP_METHOD_SKIP, ~service->stop_method, 0, editing);
+  if ((!original || service->default_exit_action != original->default_exit_action) &&
+      service->default_exit_action < NSSM_NUM_EXIT_ACTIONS) {
     long error = ERROR_FILE_NOT_FOUND;
     if (!editing) {
       HKEY existing;
@@ -315,18 +337,12 @@ int create_parameters(nssm_service_t *service, bool editing, registry_edit *exte
     }
     else if (error) ++errors;
   }
-  if (service->restart_delay) errors += save_number(edit, key, NSSM_REG_RESTART_DELAY, service->restart_delay);
-  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_RESTART_DELAY);
-  if (service->throttle_delay != NSSM_RESET_THROTTLE_RESTART) errors += save_number(edit, key, NSSM_REG_THROTTLE, service->throttle_delay);
-  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_THROTTLE);
-  if (service->kill_console_delay != NSSM_KILL_CONSOLE_GRACE_PERIOD) errors += save_number(edit, key, NSSM_REG_KILL_CONSOLE_GRACE_PERIOD, service->kill_console_delay);
-  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_KILL_CONSOLE_GRACE_PERIOD);
-  if (service->kill_window_delay != NSSM_KILL_WINDOW_GRACE_PERIOD) errors += save_number(edit, key, NSSM_REG_KILL_WINDOW_GRACE_PERIOD, service->kill_window_delay);
-  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_KILL_WINDOW_GRACE_PERIOD);
-  if (service->kill_threads_delay != NSSM_KILL_THREADS_GRACE_PERIOD) errors += save_number(edit, key, NSSM_REG_KILL_THREADS_GRACE_PERIOD, service->kill_threads_delay);
-  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_KILL_THREADS_GRACE_PERIOD);
-  if (! service->kill_process_tree) errors += save_number(edit, key, NSSM_REG_KILL_PROCESS_TREE, 0);
-  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_KILL_PROCESS_TREE);
+  errors += save_changed_option(edit, key, NSSM_REG_RESTART_DELAY, service, &nssm_service_t::restart_delay, 0, editing);
+  errors += save_changed_option(edit, key, NSSM_REG_THROTTLE, service, &nssm_service_t::throttle_delay, NSSM_RESET_THROTTLE_RESTART, editing);
+  errors += save_changed_option(edit, key, NSSM_REG_KILL_CONSOLE_GRACE_PERIOD, service, &nssm_service_t::kill_console_delay, NSSM_KILL_CONSOLE_GRACE_PERIOD, editing);
+  errors += save_changed_option(edit, key, NSSM_REG_KILL_WINDOW_GRACE_PERIOD, service, &nssm_service_t::kill_window_delay, NSSM_KILL_WINDOW_GRACE_PERIOD, editing);
+  errors += save_changed_option(edit, key, NSSM_REG_KILL_THREADS_GRACE_PERIOD, service, &nssm_service_t::kill_threads_delay, NSSM_KILL_THREADS_GRACE_PERIOD, editing);
+  errors += save_changed_option(edit, key, NSSM_REG_KILL_PROCESS_TREE, service, &nssm_service_t::kill_process_tree, 1, editing);
   if (service->stdin_path[0] || editing) {
     if (! service->preserve_stdin_path) errors += save_io_path(edit, key, NSSM_REG_STDIN, service->stdin_path, service->stdin_type, editing);
     if (! service->preserve_advanced_io) {
@@ -355,44 +371,24 @@ int create_parameters(nssm_service_t *service, bool editing, registry_edit *exte
     if (! service->preserve_output_dispositions)
       errors += save_io_option(edit, key, NSSM_REG_STDERR, NSSM_REG_STDIO_DISPOSITION, service->stderr_disposition, NSSM_STDERR_DISPOSITION, editing);
   }
-  if (service->timestamp_log) errors += save_number(edit, key, NSSM_REG_TIMESTAMP_LOG, 1);
-  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_TIMESTAMP_LOG);
-  if (service->hook_share_output_handles) errors += save_number(edit, key, NSSM_REG_HOOK_SHARE_OUTPUT_HANDLES, 1);
-  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_HOOK_SHARE_OUTPUT_HANDLES);
-  if (service->rotate_files) errors += save_number(edit, key, NSSM_REG_ROTATE, 1);
-  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_ROTATE);
-  if (service->rotate_stdout_online) errors += save_number(edit, key, NSSM_REG_ROTATE_ONLINE, 1);
-  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_ROTATE_ONLINE);
-  if (service->rotate_seconds) errors += save_number(edit, key, NSSM_REG_ROTATE_SECONDS, service->rotate_seconds);
-  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_ROTATE_SECONDS);
-  if (service->rotate_bytes_low) errors += save_number(edit, key, NSSM_REG_ROTATE_BYTES_LOW, service->rotate_bytes_low);
-  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_ROTATE_BYTES_LOW);
-  if (service->rotate_bytes_high) errors += save_number(edit, key, NSSM_REG_ROTATE_BYTES_HIGH, service->rotate_bytes_high);
-  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_ROTATE_BYTES_HIGH);
+  errors += save_changed_option(edit, key, NSSM_REG_TIMESTAMP_LOG, service, &nssm_service_t::timestamp_log, 0, editing);
+  errors += save_changed_option(edit, key, NSSM_REG_HOOK_SHARE_OUTPUT_HANDLES, service, &nssm_service_t::hook_share_output_handles, 0, editing);
+  errors += save_changed_option(edit, key, NSSM_REG_ROTATE, service, &nssm_service_t::rotate_files, 0, editing);
+  errors += save_changed_option(edit, key, NSSM_REG_ROTATE_ONLINE, service, &nssm_service_t::rotate_stdout_online, 0, editing);
+  errors += save_changed_option(edit, key, NSSM_REG_ROTATE_SECONDS, service, &nssm_service_t::rotate_seconds, 0, editing);
+  errors += save_changed_option(edit, key, NSSM_REG_ROTATE_BYTES_LOW, service, &nssm_service_t::rotate_bytes_low, 0, editing);
+  errors += save_changed_option(edit, key, NSSM_REG_ROTATE_BYTES_HIGH, service, &nssm_service_t::rotate_bytes_high, 0, editing);
   if (! service->preserve_advanced_io) {
     if (service->rotate_delay != NSSM_ROTATE_DELAY) errors += save_number(edit, key, NSSM_REG_ROTATE_DELAY, service->rotate_delay);
     else if (editing) errors += delete_parameter(edit, key, NSSM_REG_ROTATE_DELAY);
   }
-  if (service->no_console) errors += save_number(edit, key, NSSM_REG_NO_CONSOLE, 1);
-  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_NO_CONSOLE);
+  if (!original || !!original->no_console != !!service->no_console)
+    errors += save_option(edit, key, NSSM_REG_NO_CONSOLE, !!service->no_console, 0, editing);
 
-  /* Environment */
-  if (service->env) {
-    long env_error = edit->stage(key, NSSM_REG_ENV, REG_MULTI_SZ, (const unsigned char *) service->env, (unsigned long) service->envlen * sizeof(TCHAR));
-    if (env_error != ERROR_SUCCESS) {
-      errors++;
-      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, NSSM_REG_ENV, error_string(env_error));
-    }
-  }
-  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_ENV);
-  if (service->env_extra) {
-    long env_error = edit->stage(key, NSSM_REG_ENV_EXTRA, REG_MULTI_SZ, (const unsigned char *) service->env_extra, (unsigned long) service->env_extralen * sizeof(TCHAR));
-    if (env_error != ERROR_SUCCESS) {
-      errors++;
-      log_event(EVENTLOG_ERROR_TYPE, NSSM_EVENT_SETVALUE_FAILED, NSSM_REG_ENV_EXTRA, error_string(env_error));
-    }
-  }
-  else if (editing) errors += delete_parameter(edit, key, NSSM_REG_ENV_EXTRA);
+  if (!original || !same_double_null(service->env, service->envlen, original->env, original->envlen))
+    errors += save_environment(edit, key, NSSM_REG_ENV, service->env, service->envlen, editing);
+  if (!original || !same_double_null(service->env_extra, service->env_extralen, original->env_extra, original->env_extralen))
+    errors += save_environment(edit, key, NSSM_REG_ENV_EXTRA, service->env_extra, service->env_extralen, editing);
 
   if (errors) return 5;
   if (!external && local.apply()) { local.rollback(); return 5; }
@@ -439,6 +435,11 @@ int create_exit_action(TCHAR *service_name, const TCHAR *action_string, bool edi
 
 /* Find the first complete MULTI_SZ terminator without reading past count.
    A null pointer with zero length represents an absent block. */
+bool same_double_null(const TCHAR *left, DWORD left_count, const TCHAR *right, DWORD right_count) {
+  if (!left || !right) return left == right;
+  return left_count == right_count && !memcmp(left, right, left_count * sizeof(TCHAR));
+}
+
 bool double_null_length(const TCHAR *block, unsigned long count, unsigned long *length) {
   *length = 0;
   if (! block) return ! count;

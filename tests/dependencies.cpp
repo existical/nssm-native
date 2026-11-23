@@ -99,6 +99,28 @@ static void finish() {
 void test_dependencies() {
   using namespace dependency_test;
   registry_fixture registry;
+  // Another administrator changed startup and dependencies while the native service editor was open.
+  reset({L"NewDependency"});
+  install_test::reset(4);
+  editing = true;
+  startup = SERVICE_DISABLED;
+  nssm_service_t *original = alloc_nssm_service(), *draft = alloc_nssm_service();
+  REQUIRE(original && draft);
+  original->native = true;
+  original->startup = NSSM_STARTUP_MANUAL;
+  _tcscpy_s(original->name, L"ReviewService");
+  _tcscpy_s(original->displayname, L"Review fixture");
+  *draft = *original;
+  draft->original = original;
+  _tcscpy_s(draft->description, L"New description");
+  CHECK(!edit_service(draft, true));
+  CHECK(!writes && !manager_opens && startup == SERVICE_DISABLED);
+  expect({L"NewDependency"});
+  cleanup_nssm_service(draft);
+  cleanup_nssm_service(original);
+  editing = false;
+  install_test::finish();
+  finish();
   for (unsigned scenario = 0; scenario < 4; ++scenario) {
     reset({_T("OriginalDependency")});
     install_test::reset(scenario == 3 ? 3 : 4); // Accept description and delayed-start writes after a successful edit.

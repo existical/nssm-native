@@ -364,9 +364,26 @@ void test_gui_retry() {
   REQUIRE(SetDlgItemText(tablist[NSSM_TAB_APPLICATION], IDC_FLAGS, L""));
   REQUIRE(configure(window, edited, &original) == 0);
   REQUIRE(edited->preserve_priority && !_tcscmp(edited->description, L"New description"));
+  const TCHAR external_env[] = L"MODE=maintenance\0";
+  REQUIRE(!RegSetValueEx(priority_key, NSSM_REG_ENV_EXTRA, 0, REG_MULTI_SZ,
+                         reinterpret_cast<const BYTE *>(external_env), sizeof(external_env)));
+  REQUIRE(!set_number(priority_key, NSSM_REG_RESTART_DELAY, 375));
+
   TCHAR *names[] = {NSSM_REG_EXE, NSSM_REG_FLAGS, NSSM_REG_DIR};
   for (auto name : names) REQUIRE(!set_string(priority_key, name, L"external"));
   REQUIRE(!create_parameters(edited, true));
+  TCHAR stored_env[64];
+  DWORD size = sizeof(stored_env), type = REG_NONE, delay = 0;
+  REQUIRE(!RegQueryValueEx(priority_key, NSSM_REG_ENV_EXTRA, NULL, &type, reinterpret_cast<BYTE *>(stored_env), &size));
+  CHECK(type == REG_MULTI_SZ && size == sizeof(external_env) && !memcmp(stored_env, external_env, size));
+  CHECK(get_number(priority_key, NSSM_REG_RESTART_DELAY, &delay) == 1 && delay == 375);
+  original.restart_delay = 375;
+  edited->restart_delay = 120;
+  REQUIRE(!create_parameters(edited, true));
+  CHECK(get_number(priority_key, NSSM_REG_RESTART_DELAY, &delay) == 1 && delay == 120);
+  edited->restart_delay = 0;
+  REQUIRE(!create_parameters(edited, true));
+  CHECK(RegQueryValueEx(priority_key, NSSM_REG_RESTART_DELAY, NULL, NULL, NULL, NULL) == ERROR_FILE_NOT_FOUND);
   TCHAR actual[64];
   for (auto name : names) {
     REQUIRE(!get_string(priority_key, name, actual, sizeof(actual), false));

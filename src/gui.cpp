@@ -582,6 +582,8 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
   if (orig_service) {
     /* Preserve options that the editor cannot fully represent. */
     service->preserve_advanced_io = true;
+    service->stop_method = orig_service->stop_method | NSSM_STOP_METHOD_CONSOLE | NSSM_STOP_METHOD_WINDOW |
+                           NSSM_STOP_METHOD_THREADS | NSSM_STOP_METHOD_TERMINATE;
     service->stdin_disposition = orig_service->stdin_disposition;
     service->stdout_disposition = orig_service->stdout_disposition;
     service->stderr_disposition = orig_service->stderr_disposition;
@@ -917,10 +919,10 @@ int configure(HWND window, nssm_service_t *service, nssm_service_t *orig_service
     popup_message(window, MB_OK | MB_ICONEXCLAMATION, NSSM_GUI_INVALID_ENVIRONMENT);
     return 5;
   }
-  if (replace && !*env) {
-    service->envlen = 2;
-    service->env = (TCHAR *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, service->envlen * sizeof(TCHAR));
-    if (!service->env) return 5;
+  if (!*env && (replace || (orig_service && orig_service->env_extra && !*orig_service->env_extra))) {
+    *count = 2;
+    *env = (TCHAR *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, *count * sizeof(TCHAR));
+    if (!*env) return 5;
   }
 
   /* When both blocks exist, the editor shows AppEnvironmentExtra. */
